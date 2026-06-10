@@ -1,0 +1,493 @@
+Mini Pharmaceutical Distribution Management System
+Software Requirements Specification (SRS) – MVP Version
+1. Introduction
+1.1 Purpose
+
+The purpose of this system is to help a pharmaceutical distributor (agent) manage daily operations including:
+
+Receiving products from pharmaceutical companies
+Managing warehouse inventory
+Managing pharmacies
+Managing sales representatives
+Processing orders
+Tracking payments
+Monitoring commissions
+Generating operational reports
+
+The objective is to create a simple and practical system that can operate the business efficiently without the complexity of a full ERP.
+
+2. System Overview
+
+The solution consists of two applications:
+
+2.1 Office Web Application
+
+Used by:
+
+Owner
+Admin
+Warehouse Staff
+Finance Staff
+
+Purpose:
+
+Manage products
+Manage stock
+Approve orders
+Track payments
+Generate reports
+2.2 Sales Representative Mobile App
+
+Used by:
+
+Sales Representatives
+
+Purpose:
+
+View products
+View stock availability
+Create customer orders
+Track order status
+3. User Roles
+Admin
+
+Permissions:
+
+Full access
+Manage products
+Manage customers
+Approve orders
+View reports
+Warehouse Staff
+
+Permissions:
+
+Receive stock
+Update stock
+View inventory
+Finance Staff
+
+Permissions:
+
+Record payments
+View outstanding balances
+Generate financial reports
+Sales Representative
+
+Permissions:
+
+View assigned products
+View stock
+Create orders
+View own sales records
+
+Restrictions:
+
+Cannot approve orders
+Cannot modify inventory
+4. Company Management
+Features
+Company Information
+
+Fields:
+
+Company Name
+Contact Person
+Phone Number
+Address
+Status
+Company Product Assignment
+
+Each company may have:
+
+Multiple products
+Different commission rates
+Different FOC rules
+5. Product Management
+Product Information
+
+Fields:
+
+Product Code
+Product Name
+Product Image
+Company
+Category
+Brand
+Purchase Cost
+Selling Price
+Batch Number
+Expiry Date
+Status
+Product Images
+
+Support:
+
+Upload image
+View image gallery
+6. Multi Unit Management
+
+The system must support pharmaceutical packaging.
+
+Example:
+
+1 Box = 10 Cards
+
+1 Card = 10 Bottles
+
+Therefore:
+
+1 Box = 100 Bottles
+
+Features
+Unit conversion
+Automatic stock calculation
+Selling by Box
+Selling by Card
+Selling by Bottle
+7. Customer (Pharmacy) Management
+Customer Information
+
+Fields:
+
+Pharmacy Name
+Owner Name
+Phone Number
+Address
+Status
+Customer History
+
+View:
+
+Purchase history
+Outstanding balance
+Payment history
+8. Sales Representative Management
+Information
+
+Fields:
+
+Employee Code
+Name
+Phone
+Assigned Company
+Status
+Business Rules
+
+A sales representative can only:
+
+View products belonging to assigned company
+Sell products belonging to assigned company
+9. Inventory Management
+Stock Receiving
+
+Products received from companies.
+
+Fields:
+
+Company
+Product
+Batch Number
+Expiry Date
+Quantity
+Received Date
+Stock Balance
+
+View:
+
+Available Stock
+Reserved Stock
+Sold Stock
+Stock Movement History
+
+Track:
+
+Received
+Sold
+Adjusted
+10. Batch & Expiry Tracking
+
+Each stock batch must contain:
+
+Batch Number
+Manufacturing Date
+Expiry Date
+Alerts
+Near Expiry
+
+Alert when:
+
+Less than 90 days remaining
+Expired Products
+
+Alert when:
+
+Expiry date reached
+11. Sales Order Management
+Order Creation
+
+Sales Representative:
+
+Select Pharmacy
+Select Product
+Enter Quantity
+Submit Order
+Validation
+
+System checks:
+
+Available stock
+Customer status
+
+Order cannot exceed available stock.
+
+Order Status
+Draft
+Submitted
+Approved
+Rejected
+Delivered
+12. Order Approval Workflow
+
+Sales Representative
+
+↓
+
+Create Order
+
+↓
+
+Admin Review
+
+↓
+
+Approve / Reject
+
+↓
+
+Warehouse Prepare Goods
+
+↓
+
+Generate Invoice
+
+↓
+
+Delivery
+
+13. FOC Management
+Definition
+
+FOC (Free of Charge) products are provided by the pharmaceutical company.
+
+Example
+
+Rule:
+
+Buy 10 Boxes
+
+Get 1 Box Free
+
+Features
+Automatic FOC calculation
+Product-specific FOC rules
+Company-specific FOC rules
+14. Commission Management
+Product Based Commission
+
+Each company defines commission rates for each product.
+
+Example:
+
+Company A
+
+Product A = 10%
+
+Product B = 5%
+
+Formula
+
+Commission
+
+=
+
+Sales Amount × Commission Rate
+
+Reports
+Monthly Commission
+Company Commission Summary
+Product Commission Summary
+15. Invoice & Voucher Management
+
+Generate:
+
+Sales Invoice
+Delivery Voucher
+Payment Receipt
+Printing
+
+Support:
+
+A4 Printing
+Thermal Printing (Optional)
+16. Payment Tracking
+Customer Payments
+
+Track:
+
+Invoice Amount
+Paid Amount
+Remaining Balance
+Company Payments
+
+Track:
+
+Amount owed to company
+Due date
+Payment status
+17. Credit Control
+Pharmacy Credit Policy
+
+Payment Due:
+
+7 Days
+
+Warning
+
+If overdue > 7 Days
+
+Status:
+
+Warning
+
+Critical
+
+If overdue > 30 Days
+
+Status:
+
+Blocked
+
+Company Specific Blocking
+
+Example:
+
+Pharmacy A owes Company A.
+
+Result:
+
+Cannot buy Company A products.
+
+Can still buy Company B products.
+
+18. Notifications
+
+In-App Notifications Only
+
+Events:
+
+New Order
+Order Approved
+Order Rejected
+Low Stock
+Near Expiry
+Overdue Customer Payment
+Overdue Company Payment
+19. Dashboard
+Admin Dashboard
+
+Display:
+
+Total Sales
+Monthly Sales
+Outstanding Receivables
+Outstanding Payables
+Low Stock Products
+Expiry Alerts
+Top Products
+Top Customers
+20. Reports
+Sales Reports
+Daily Sales
+Monthly Sales
+Annual Sales
+Product Reports
+Best Selling Products
+Product Sales Summary
+Customer Reports
+Purchase Summary
+Outstanding Balance
+Sales Representative Reports
+Sales Performance
+Sales Ranking
+Company Reports
+Sales by Company
+Commission by Company
+Inventory Reports
+Current Stock
+Stock Movement
+Expiry Report
+21. Database Scope
+
+Estimated Tables: 25–35
+
+Core Tables:
+
+users
+roles
+companies
+products
+product_images
+units
+unit_conversions
+customers
+sales_representatives
+stock_batches
+stock_receipts
+stock_movements
+sales_orders
+sales_order_items
+invoices
+invoice_items
+payments
+foc_rules
+commission_rules
+notifications
+settings
+22. Technology Stack
+Backend
+Laravel API
+Web Application
+React + Tailwind CSS
+Mobile Application
+Flutter
+Database
+PostgreSQL
+Notifications
+Firebase Cloud Messaging (FCM)
+File Storage
+Local Storage / S3 Compatible Storage
+23. Project Scope Summary
+Web Application
+
+Approximately 25 screens
+
+Mobile Application
+
+Approximately 10 screens
+
+Database Tables
+
+25–35 tables
+
+API Endpoints
+
+40–60 APIs
+
+Development Duration
+
+Approximately 6–10 weeks
+
+Goal
+
+A simple pharmaceutical distribution management system that covers inventory, sales, commissions, FOC, payment tracking, and reporting without the complexity of a full ERP system.

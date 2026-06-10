@@ -1,0 +1,585 @@
+Pharmaceutical Distribution Management System
+Software Requirements Specification (SRS)
+1. Project Overview
+Project Name
+
+Pharmaceutical Distribution Management System
+
+Project Description
+
+The Pharmaceutical Distribution Management System is a centralized platform designed for pharmaceutical distributors (agents) who receive products from multiple pharmaceutical companies, store them in their warehouses, and distribute them to pharmacies through sales representatives.
+
+The system consists of:
+
+1. Head Office Application (Web-Based)
+
+Used by management, warehouse staff, finance staff, and administrators.
+
+2. Sales Representative Application (Mobile App)
+
+Used by field sales representatives to manage customers, check stock availability, and create sales orders.
+
+2. Business Actors
+2.1 Pharmaceutical Company
+
+Supplies products to the distributor.
+
+Responsibilities:
+
+Provide products
+Define product prices
+Define commission rates
+Define FOC policies
+2.2 Distributor (Agent)
+
+Main business owner using the system.
+
+Responsibilities:
+
+Receive stock from companies
+Store products in warehouse
+Sell products to pharmacies
+Manage receivables and payables
+Generate reports
+2.3 Sales Representative
+
+Responsibilities:
+
+Visit pharmacies
+Promote products
+Create sales orders
+Manage pharmacy relationships
+
+Restrictions:
+
+Can only access assigned company products
+Can only sell products belonging to assigned companies
+Cannot approve orders
+Can only view available stock
+2.4 Pharmacy
+
+Responsibilities:
+
+Purchase products
+Make payments
+Receive invoices and vouchers
+3. System Architecture
+Application 1
+Distributor Office System
+
+Platform:
+
+Web Application
+Desktop and Tablet Responsive
+
+Modules:
+
+Dashboard
+Product Management
+Company Management
+Pharmacy Management
+Sales Representative Management
+Inventory Management
+Purchase Receiving
+Sales Order Management
+Invoice Management
+Financial Management
+Reporting
+Printing
+Application 2
+Sales Representative Mobile App
+
+Platform:
+
+Android
+iOS (Optional)
+
+Modules:
+
+Login
+Product Catalog
+Stock Availability
+Customer List
+Order Creation
+Order History
+Performance Dashboard
+4. User Roles
+Super Admin
+
+Permissions:
+
+Full System Access
+System Configuration
+User Management
+Office Admin
+
+Permissions:
+
+Manage Products
+Manage Inventory
+Approve Orders
+Manage Customers
+Manage Payments
+View Reports
+Finance Staff
+
+Permissions:
+
+Payment Collection
+Receivable Tracking
+Payable Tracking
+Financial Reports
+Warehouse Staff
+
+Permissions:
+
+Receive Products
+Dispatch Products
+Stock Adjustment
+Stock Transfer
+Sales Representative
+
+Permissions:
+
+View Assigned Products
+Create Orders
+View Stock
+View Performance
+
+Restrictions:
+
+Cannot modify inventory
+Cannot approve orders
+5. Company Management Module
+
+Features:
+
+Company Master Data
+Company Name
+Contact Information
+Address
+Agreement Information
+Company Product Assignment
+
+Each company can have:
+
+Multiple Products
+Individual Commission Rates
+Individual Pricing Rules
+Individual FOC Rules
+6. Product Management Module
+Product Information
+
+Fields:
+
+Product Code
+Product Name
+Product Image
+Description
+Category
+Brand
+Company
+Batch Number
+Expiry Date
+Purchase Price
+Selling Price
+Commission Rate
+Product Images
+
+Support:
+
+Multiple Images
+Product Gallery
+7. Multi-Unit Management
+
+The system must support pharmaceutical packaging structures.
+
+Example:
+
+Base Unit:
+
+Bottle
+
+Conversions:
+
+1 Card = 10 Bottles
+
+1 Box = 10 Cards
+
+Therefore:
+
+1 Box = 100 Bottles
+
+Features
+Automatic Conversion
+Stock Calculation
+Unit-Based Selling
+Partial Unit Selling
+
+Examples:
+
+Sell:
+
+1 Box
+5 Cards
+15 Bottles
+
+System automatically updates inventory.
+
+8. Inventory Management
+Stock Receiving
+
+Receive stock from companies.
+
+Information:
+
+Company
+Product
+Batch Number
+Expiry Date
+Quantity
+Unit Cost
+Real-Time Stock Tracking
+
+Track:
+
+Available Stock
+Reserved Stock
+Sold Stock
+Damaged Stock
+Warehouse Dashboard
+
+Display:
+
+Current Stock
+Low Stock Alerts
+Near Expiry Alerts
+Expired Products
+9. Sales Representative Mobile App
+Product Catalog
+
+Sales rep can view:
+
+Assigned Products
+Product Images
+Price Lists
+FOC Promotions
+Available Stock
+Customer Management
+
+View:
+
+Pharmacy List
+Contact Information
+Outstanding Balance
+Purchase History
+Order Creation
+
+Sales rep can:
+
+Select Pharmacy
+Select Product
+Enter Quantity
+View Available Stock
+Submit Order
+
+Restrictions:
+
+Cannot order more than available stock.
+
+Order Status
+
+Statuses:
+
+Draft
+Submitted
+Approved
+Rejected
+Delivered
+Completed
+10. Sales Order Workflow
+
+Step 1
+Sales Rep Creates Order
+
+↓
+
+Step 2
+Office Reviews Order
+
+↓
+
+Step 3
+Approve or Reject
+
+↓
+
+Step 4
+Warehouse Prepares Products
+
+↓
+
+Step 5
+Invoice Generated
+
+↓
+
+Step 6
+Product Delivered
+
+↓
+
+Step 7
+Payment Tracking
+
+11. FOC Management
+Flexible FOC Rules
+
+Example:
+
+Product A
+
+Buy:
+10 Boxes
+
+Get:
+1 Box Free
+
+Split FOC Support
+
+Example:
+
+Pharmacy A buys 5 Boxes
+
+Pharmacy B buys 5 Boxes
+
+System calculates:
+
+Pharmacy A receives 5 Cards FOC
+
+Pharmacy B receives 5 Cards FOC
+
+Automatically.
+
+FOC Rule Types
+Quantity Based
+
+Buy X Get Y
+
+Example:
+
+Buy 10 Boxes
+Get 1 Box
+
+Value Based
+
+Spend $1000
+Get 1 Box
+
+Period Promotions
+
+Valid:
+
+Start Date
+End Date
+12. Customer Credit Control
+Pharmacy Credit Terms
+
+Default:
+7 Days
+
+Due Date Monitoring
+Overdue > 7 Days
+
+Status:
+Warning
+
+Office Dashboard Alert:
+Yellow
+
+Overdue > 30 Days
+
+Status:
+Critical
+
+Office Dashboard Alert:
+Red
+
+Automatic Sales Blocking
+
+Example:
+
+Pharmacy A has unpaid invoice from Company A.
+
+Result:
+
+Cannot order Company A products.
+
+Still allowed:
+
+Company B products.
+
+13. Accounts Receivable
+
+Track:
+
+Outstanding Invoices
+Customer Payments
+Credit Balance
+Aging Reports
+Aging Categories
+Current
+1-7 Days
+8-30 Days
+31-60 Days
+60+ Days
+14. Accounts Payable
+
+Track payments owed to pharmaceutical companies.
+
+Rule:
+
+Pay company within 7 days after receiving stock.
+
+Alert System
+Due Within 7 Days
+
+Reminder Alert
+
+Overdue More Than 7 Days
+
+Warning Alert
+
+Overdue More Than 30 Days
+
+Critical Alert
+
+15. Commission Management
+
+Each company may define different commission rates.
+
+Example:
+
+Company A:
+10%
+
+Company B:
+5%
+
+Company C:
+15%
+
+System calculates:
+
+Commission =
+Sales Amount × Commission Rate
+
+16. Financial Management Module
+Revenue Tracking
+
+Track:
+
+Gross Sales
+Net Sales
+Discounts
+FOC Costs
+Expense Tracking
+
+Track:
+
+Transportation
+Warehouse Expenses
+Staff Expenses
+Operational Expenses
+Profit & Loss
+
+Generate:
+
+Monthly P&L
+Quarterly P&L
+Yearly P&L
+17. Reporting Module
+Sales Reports
+Daily Sales
+Monthly Sales
+Annual Sales
+Product Reports
+Best Selling Products
+Slow Moving Products
+Pharmacy Reports
+Purchase Summary
+Top Customers
+Customer Ranking
+Sales Representative Reports
+Sales Performance
+Order Count
+Revenue Generated
+Best Sales Representatives
+Company Reports
+Company-wise Sales
+Company-wise Commission
+Company-wise Outstanding Balance
+Inventory Reports
+Stock Movement
+Stock Valuation
+Expiry Report
+18. Printing Module
+
+Support:
+
+Sales Order Printing
+Invoice Printing
+Delivery Voucher Printing
+Payment Receipt Printing
+Stock Receiving Voucher
+Company Settlement Report
+19. Dashboard
+Management Dashboard
+
+Display:
+
+Total Sales
+Monthly Revenue
+Outstanding Receivables
+Outstanding Payables
+Low Stock Alerts
+Expiry Alerts
+Due Payment Alerts
+Top Products
+Top Pharmacies
+Top Sales Representatives
+20. Recommended Technology Stack
+Backend
+Laravel 12 API
+Web Frontend
+React.js
+Tailwind CSS
+Mobile App
+Flutter
+Database
+PostgreSQL
+Cache
+Redis
+File Storage
+S3 Compatible Storage / MinIO
+Reporting
+Laravel Excel
+PDF Export
+Notifications
+Firebase Cloud Messaging (FCM)
+Estimated Development Scope
+Web Office System
+
+~25 Modules
+
+Mobile Sales App
+
+~10 Modules
+
+Database Tables
+
+~50–70 Tables
+
+User Roles
+
+5 Roles
