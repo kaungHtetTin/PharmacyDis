@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Icon from '../components/shared/Icon';
 import Logo from '../components/shared/Logo';
-import { officeNav } from '../data/navigation';
+import { officeNavSections } from '../data/navigation';
 
 export default function OfficeLayout({ activePage, getPageUrl, onNavigate, onSwitchApp, salesUrl, children }) {
     const [theme, setTheme] = useState('light');
@@ -12,19 +12,24 @@ export default function OfficeLayout({ activePage, getPageUrl, onNavigate, onSwi
             <aside className="admin-sidebar glass">
                 <Logo />
                 <nav aria-label="Office navigation">
-                    {officeNav.map(([key, icon, label]) => (
-                        <a
-                            className={activePage === key ? 'active' : ''}
-                            href={getPageUrl(key)}
-                            key={key}
-                            onClick={(event) => {
-                                event.preventDefault();
-                                onNavigate(key);
-                            }}
-                        >
-                            <Icon name={icon} size={17} />
-                            <span>{label}</span>
-                        </a>
+                    {officeNavSections.map((section) => (
+                        <div className="nav-section" key={section.label}>
+                            <p>{section.label}</p>
+                            {section.items.map(([key, icon, label]) => (
+                                <a
+                                    className={activePage === key ? 'active' : ''}
+                                    href={getPageUrl(key)}
+                                    key={key}
+                                    onClick={(event) => {
+                                        event.preventDefault();
+                                        onNavigate(key);
+                                    }}
+                                >
+                                    <Icon name={icon} size={17} />
+                                    <span>{label}</span>
+                                </a>
+                            ))}
+                        </div>
                     ))}
                 </nav>
                 <a

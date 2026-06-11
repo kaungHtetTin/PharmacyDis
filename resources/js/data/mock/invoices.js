@@ -39,8 +39,17 @@ const documents = [
 export const invoices = {
     eyebrow: 'Documents',
     title: 'Invoices',
-    description: 'Generate sales invoices, delivery vouchers, payment receipts, and print-ready transaction documents.',
-    primaryAction: 'Generate invoice',
+    description: 'Generate invoices from approved order records, then print sales invoices, delivery vouchers, and payment receipts.',
+    primaryAction: 'Generate invoice from order',
+    primaryActionTarget: 'orders',
+    viewActionLabel: 'View invoice',
+    showEditAction: false,
+    rowActions: [
+        { label: 'Record payment', modalScreenKey: 'payments', submitLabel: 'Record payment' },
+        { label: 'Edit invoice', modalTitle: 'Edit invoice', submitLabel: 'Save invoice' },
+        { label: 'Print invoice', openDrawer: true },
+        { label: 'Delete invoice', confirm: true, variant: 'danger' },
+    ],
     filters: [
         { label: 'Status', options: ['All', 'Paid', 'Unpaid', 'Printed', 'Prepared'] },
         { label: 'Customer', options: ['All', 'Aung Pharmacy', 'Mandalay Care', 'Shwe Clinic Store'] },
@@ -60,7 +69,6 @@ export const invoices = {
         { id: 'inv-1002', invoice: 'INV-1002', order: 'SO-1006', pharmacy: 'Mandalay Care', dueDate: '14 Jun 2026', amount: '265,000', status: 'Paid', invoiceItems: [], documents },
     ],
     formFields: [
-        { label: 'Approved order', type: 'select', options: ['SO-1008', 'SO-1007', 'SO-1006'] },
         { label: 'Invoice date', type: 'date' },
         { label: 'Due date', type: 'date' },
         { label: 'Payment status', type: 'select', options: ['Paid', 'Unpaid', 'Partial Payment'] },
@@ -79,6 +87,7 @@ export const invoices = {
     documents,
     print: { title: 'Sales Invoice', type: 'A4' },
     drawerSections: [
+        { title: 'Contextual generation rule', items: ['Invoice generation starts from the related approved order record', 'Order, pharmacy, products, FOC, discount, and totals are copied into the invoice', 'Invoice form does not require searching a large order selector'] },
         { title: 'Document workflow', items: ['Invoice is generated from approved sales order', 'Delivery voucher uses selected units and warehouse checklist', 'Receipt can be printed after payment allocation'] },
     ],
     summaries: [

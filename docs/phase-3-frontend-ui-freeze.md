@@ -38,10 +38,12 @@ This document records the current frontend scope after Phase 1 and Phase 2. It i
 | --- | --- | --- |
 | `/office/dashboard` | Dashboard | Management metrics, top tables, and alerts. |
 | `/office/companies` | Companies | Company records, assigned products, FOC summary, product commission coverage. |
-| `/office/products` | Products | Product setup, barcode, images, product-unit pricing, base unit, product commission rate. |
-| `/office/units` | Units | Unit master and product-specific conversion preview. |
+| `/office/products` | Products | Product setup, barcode, primary image, product-unit pricing, base unit, product discount percentage, product commission rate, and product-linked FOC rules. |
+| `/office/units` | Units | Unit master records and read-only product-specific conversion preview. |
 | `/office/pharmacies` | Pharmacies | Customer records, balances, histories, company-specific credit status. |
+| `/office/pharmacies-detail` | Pharmacy Detail | Pharmacy profile, performance, orders, invoices, payment history, filtering, and pagination. |
 | `/office/representatives` | Sales Representatives | Rep records, company/product access, performance preview. |
+| `/office/representatives-detail` | Sales Representative Detail | Rep profile, performance chart, sales history, top products, pharmacy ranking, and commission preview. |
 | `/office/inventory` | Inventory | Current stock, batch stock, stock movements, low stock and expiry alerts. |
 | `/office/receiving` | Stock Receiving | Company receiving, stock quantity update, payable preview, receiving voucher. |
 | `/office/orders` | Sales Orders | Approval queue, reject flow, stock/credit/FOC review, warehouse checklist. |
@@ -49,22 +51,23 @@ This document records the current frontend scope after Phase 1 and Phase 2. It i
 | `/office/payments` | Payments | Customer payments and invoice allocation. |
 | `/office/receivables` | Accounts Receivable | Customer aging and company-specific credit blocking. |
 | `/office/payables` | Accounts Payable | Company payable aging and settlement tracking. |
-| `/office/foc-rules` | FOC Rules | Quantity/value promotion rules and active date ranges. |
-| `/office/commissions` | Product Commission Rules | Product-level commission rate setup and examples. |
-| `/office/reports` | Reports | Sales, product, customer, rep, company, inventory, and financial reports. |
+| `/office/reports-representatives` | Sales Representative Reports | Rep performance, order count, product-based commission preview, assigned company, and customer coverage. |
+| `/office/reports-pharmacies` | Pharmacy Reports | Pharmacy purchases, outstanding balances, payment history, and company-specific credit status. |
+| `/office/reports-finance` | Finance Reports | Receivables, payables, collections, aging buckets, and overdue states. |
 | `/office/settings` | Settings | Users, roles, permission matrix, local storage, credit policy. |
 
 ### Sales Representative Application
 
 | Route | Screen | Purpose |
 | --- | --- | --- |
-| `/sales/dashboard` | Dashboard | Assigned companies, today orders, status counts, monthly sales, alerts, quick actions. |
-| `/sales/products` | Products | Assigned product catalog with unit prices, stock, FOC, expiry, and barcode. |
-| `/sales/stock` | Stock | Assigned stock availability by product, company, batch, expiry, and base quantity. |
-| `/sales/pharmacies` | Pharmacies | Customer list/detail, outstanding balance, credit warning, purchase/payment history. |
-| `/sales/new-order` | New Order | Pharmacy selector, assigned product selector, unit quantity, base conversion, FOC, credit warning, submit preview. |
+| `/sales/login` | Login | Sales representative sign-in; signup is not included. |
+| `/sales/dashboard` | Dashboard | Today orders, submitted count, monthly sales, and vertical monthly sales/order bar chart. |
+| `/sales/stock` | Stock | Assigned-company stock availability by product, batch, expiry, and base quantity with pagination. |
+| `/sales/pharmacies` | Pharmacies | Customer list with row navigation to pharmacy detail. |
+| `/sales/pharmacies-detail` | Pharmacy Detail | Customer profile, assigned-company credit status, purchase history, payment history, and pagination. |
+| `/sales/new-order` | New Order | Order submit form with fixed sales representative and company context, assigned product lines, base conversion, FOC, and company credit blocking. |
 | `/sales/orders` | Order History | Submitted/approved/rejected/delivered orders with status timeline and rejection reason. |
-| `/sales/performance` | Performance | Monthly sales, order count, top products, pharmacy ranking, commission preview. |
+| `/sales/profile` | Edit Profile | Sales representative profile editing and assigned company review. |
 
 ## Office Table Columns and Form Fields
 
@@ -72,33 +75,36 @@ This document records the current frontend scope after Phase 1 and Phase 2. It i
 | --- | --- | --- |
 | Dashboard | Metrics, top products, top pharmacies, top sales representatives, alerts | None |
 | Companies | Company, Contact, Agreement, Products, Product Commissions, FOC Rules, Status | Company name, Contact person, Phone number, Email, Agreement type, Payment term days, Address, Agreement information, Status |
-| Products | Product, Barcode, Company, Category, Brand, Base Unit, Unit Prices, Base Stock, Commission, Setup, Status | Product code, Product name, Barcode, Company, Category, Brand, Product image, Minimum stock level in base unit, Expiry alert days, Product commission rate, Setup status, Review note, Tax method, Status |
-| Units | Unit, Short Name, Usage, Products, Example Rule, Status | Unit name, Short name, Usage, Status, Product for conversion preview, Base unit explanation, Conversion factor, Selling price for selected product unit |
+| Products | Product, Barcode, Company, Category, Brand, Base Unit, Unit Prices, Base Stock, Discount, Commission, FOC Rule, FOC, Setup, Status | Product code, Product name, Barcode, Company, Category, Brand, Product image, Minimum stock level in base unit, Expiry alert days, Product discount percentage, Product commission rate, FOC rule type, buy quantity or spend value, get quantity, FOC status, FOC date range, Setup status, Review note, Tax method, Status |
+| Units | Unit, Short Name, Usage, Products, Product Usage Example, Status | Unit name, Short name, Usage, Status |
 | Pharmacies | Pharmacy, Owner, Phone, Township, Outstanding, Credit, Status | Pharmacy name, Owner name, Phone number, Township, Credit limit, Payment term days, Address, Finance note, Status |
-| Sales Representatives | Employee, Phone, Region, Assigned Companies, Product Access, Monthly Sales, Orders, Status | Employee code, Name, Phone number, Email, Region, Assigned company, Product access mode, Assigned product note, Status |
+| Pharmacy Detail | Order, Invoice, Payment history tables | Full page with performance metrics, credit status, filters, pagination, page-level Create order/Save/Delete, order Save/Delete/Generate invoice, shared invoice detail drawer/print previews, and compact invoice icon actions with More for Edit/Print/Delete |
+| Sales Representatives | Employee, Phone, Region, Assigned Company, Product Access, Monthly Sales, Orders, Status | Employee code, Name, Phone number, Email, Region, Assigned company, Product access mode, Assigned product note, Status |
+| Sales Representative Detail | Order, Pharmacy, Company, Date, Amount, Status | Read-only performance chart and sales history review |
 | Inventory | Product, Batch, Warehouse, Available, Reserved, Sold, Damaged, Expired, Expiry, Status | Product, Batch number, Warehouse, Adjustment type, Quantity, Unit, Base quantity preview, Reason |
 | Stock Receiving | Receipt, Company Invoice, Company, Warehouse, Items, Base Qty, Payable, Due, Payment, Received Date, Status | Company, Company invoice number, Received date, Product, Batch number, Manufacturing date, Expiry date, Quantity, Received unit, Base quantity preview, Unit cost, Selling price for selected unit, Payment status, Paid amount, Payable due date |
-| Sales Orders | Order, Pharmacy, Sales Rep, Company, Date, Base Qty, Credit, Stock, Total, Status | Pharmacy, Sales representative, Company, Product, Quantity, Selected unit, Unit price preview, Converted base quantity preview, FOC item preview, Customer credit status, Approval decision, Approval note, Reject reason |
-| Invoices | Invoice, Order, Pharmacy, Due Date, Amount, Status | Approved order, Invoice date, Due date, Payment status, Print template, Document note |
+| Sales Orders | Order, Pharmacy, Sales Rep, Company, Date, Base Qty, Credit, Stock, Total, Status | Opened from selected pharmacy; Company selector first, company credit status, sales representative filtered by selected company, requested delivery date, order note, multiple order item rows with Product, Quantity, Selected unit, Unit price preview, Converted base quantity preview, Discount, FOC item preview, Line total, Approval decision, Approval note, Reject reason. Blocked company credit disables order creation. |
+| Invoices | Invoice, Order, Pharmacy, Due Date, Amount, Status | Opened from selected approved order; Invoice date, Due date, Payment status, Print template, Document note, contextual Record payment, and icon row actions with More for Edit/Print/Delete |
 | Payments | Payment, Customer, Invoice, Amount, Method, Status | Customer, Invoice, Received amount, Payment method, Payment date, Allocation note |
 | Receivables | Customer, Company, Current, 1-7 Days, 8-30 Days, Status | Customer, Company, Credit term days, Due date, Credit status |
 | Payables | Company, Receipt, Company Invoice, Amount Due, Paid, Due Date, Status | Company, Stock receipt, Company invoice number, Payment amount, Payment date, Payment status |
-| FOC Rules | Rule, Type, Company, Product, Validity, Status | Rule type, Company, Eligible product, Buy quantity or spend value, Reward product, Get quantity, Start date, End date |
-| Commissions | Product, Company, Rate, Effective Date, Status | Product, Company, Commission rate, Effective date, Status |
-| Reports | Report, Period, Records, Owner, Status | Report type, Start date, End date, Company, Export format |
+| Sales Representative Reports | Sales Rep, Companies, Orders, Sales, Commission Preview, Status | Sales representative, Company, Start date, End date, Export format |
+| Pharmacy Reports | Pharmacy, Owner, Orders, Sales, Outstanding, Credit | Pharmacy, Credit status, Start date, End date, Export format |
+| Finance Reports | Report, Current, Warning, Critical, Total, Status | Finance report type, Aging status, Start date, End date, Export format |
 | Settings | Setting, Group, Value, Owner, Updated, Status | User name, Email, Role, Permission group, Credit term days, Local storage path, Near expiry alert days |
 
 ## Sales Representative Table Columns and Form Fields
 
 | Screen | Table Columns | Form Fields |
 | --- | --- | --- |
-| Dashboard | Assigned company coverage table and alert lists | Quick actions only |
-| Products | Product, Barcode, Company, Unit Prices, Available, Status | Start order uses Product, Quantity, Product unit, Unit price preview, Base quantity preview |
-| Stock | Product, Company, Batch, Available, Base Qty, Expiry, Status | Refresh/search only |
-| Pharmacies | Pharmacy, Owner, Phone, Outstanding, Company Credit, Status | New order uses selected pharmacy |
-| New Order | Step, Requirement, Validation, Preview, Status | Pharmacy, Product, Quantity, Product unit, Unit price preview, Base quantity preview, FOC preview, Credit warning |
+| Login | None | Employee code or phone, Password, Remember device |
+| Dashboard | Today orders, submitted count, monthly sales, and vertical monthly sales/order bar chart | None |
+| Stock | Product, Batch, Available, Base Qty, Expiry, Status | Search, status filter, pagination |
+| Pharmacies | Pharmacy, Owner, Phone, Outstanding, Company Credit, Status | Row opens pharmacy detail page |
+| Pharmacy Detail | Purchase history, Payment history | Create order from selected pharmacy context; purchase and payment tables include filters, date field, and pagination |
+| New Order | Direct submit form | Opened from pharmacy card or New Order tab; sales representative and assigned company are fixed by login account, no company or sales rep selectors; multiple order item rows with Product, Quantity, Product unit, Unit price preview, Base quantity preview, FOC preview, Credit warning. Blocked company credit disables order creation. |
 | Order History | Order, Pharmacy, Total, Submitted, Status | Create order redirects to new order flow |
-| Performance | Metric, This Month, Last Month, Change, Status | Report period and company filters |
+| Edit Profile | None | Name, Employee code, Phone number, Email, Region, Profile note |
 
 ## Shared UI Contracts
 
@@ -114,13 +120,16 @@ This document records the current frontend scope after Phase 1 and Phase 2. It i
 
 - Money values are display strings during UI review; backend should normalize to numeric decimal columns.
 - Dates are display strings during UI review; backend should normalize to date/datetime columns.
-- Product commission rate belongs to product/product commission rules, not company.
+- Product commission rate belongs to Product CRUD, not a separate commission rules page.
+- Product discount percentage belongs to Product CRUD and applies during order line total calculation.
+- FOC rules are managed from Product CRUD; there is no standalone FOC Rules page in the MVP UI.
 - Product unit pricing must support one base unit and multiple selling units per product.
+- Unit conversion factors belong to product-unit rows, not unit master records.
 - Inventory stock balance should be stored in base units.
 - Receiving from company creates stock batches, inventory movement records, and company payable records.
 - Company payable aging is alert-only.
 - Customer/pharmacy credit blocking can block order approval by company.
-- Sales representative product visibility is filtered by assigned companies.
+- Each sales representative is assigned to one company; product visibility is filtered by that assigned company.
 - Files use local storage.
 
 ## Change Request Log

@@ -24,7 +24,7 @@ export default function FilterToolbar({
                 </select>
             ))}
             {showDate && <input aria-label="Date range" className="date-filter" type="date" />}
-            <button className="btn secondary" onClick={onReset} type="button">Reset</button>
+            <button className="btn secondary filter-reset-btn" onClick={onReset} type="button">Reset</button>
         </div>
     );
 }

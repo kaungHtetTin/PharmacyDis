@@ -55,7 +55,7 @@ function OrderBuilder({ builder }) {
     return (
         <div className="sales-order-builder">
             <section>
-                <p className="eyebrow">Pharmacy selector</p>
+                <p className="eyebrow">Pharmacy cards</p>
                 <div className="sales-selector-list">
                     {builder.pharmacies.map((pharmacy) => (
                         <article key={pharmacy.name}>

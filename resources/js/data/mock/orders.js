@@ -35,8 +35,15 @@ const approvalCards = [
 export const orders = {
     eyebrow: 'Sales',
     title: 'Sales Orders',
-    description: 'Review submitted orders, approve or reject requests, reserve stock, and prepare warehouse dispatch.',
-    primaryAction: 'Create order',
+    description: 'Review pharmacy-linked orders, approve or reject requests, reserve stock, and prepare warehouse dispatch.',
+    primaryAction: 'Create order from pharmacy',
+    primaryActionTarget: 'pharmacies',
+    rowActions: [
+        { label: 'Generate invoice', modalScreenKey: 'invoices', icon: 'I' },
+    ],
+    contextActions: [
+        { label: 'Generate invoice', modalScreenKey: 'invoices', variant: 'primary' },
+    ],
     filters: [
         { label: 'Status', options: ['All', 'Draft', 'Submitted', 'Approved', 'Prepared', 'Rejected', 'Delivered'] },
         { label: 'Sales Rep', options: ['All', 'May Zin', 'Ko Htet', 'Nilar'] },
@@ -201,16 +208,34 @@ export const orders = {
         },
     ],
     formFields: [
-        { label: 'Pharmacy', type: 'select', options: ['Aung Pharmacy', 'Shwe Clinic Store', 'Mandalay Care'] },
         { label: 'Sales representative', type: 'select', options: ['May Zin', 'Ko Htet', 'Nilar'] },
-        { label: 'Company', type: 'select', options: ['MediLife Co.', 'Zenith Pharma', 'Golden Health'] },
-        { label: 'Product', type: 'select', options: ['Paracetamol 500mg', 'Amoxicillin 250mg', 'Cough Syrup 100ml'] },
-        { label: 'Quantity', type: 'number' },
-        { label: 'Selected unit', type: 'select', options: ['Tablet', 'Card', 'Box', 'Capsule', 'Strip', 'Bottle', 'Carton'] },
-        { label: 'Unit price preview' },
-        { label: 'Converted base quantity preview' },
-        { label: 'FOC item preview' },
+        { label: 'Requested delivery date', type: 'date' },
         { label: 'Customer credit status' },
+        { label: 'Order note', type: 'textarea', placeholder: 'Optional note for warehouse or office approval' },
+    ],
+    orderLineItems: [
+        {
+            id: 'draft-line-1',
+            product: 'Paracetamol 500mg',
+            selectedUnit: 'Box',
+            orderedQuantity: '10',
+            unitPrice: '32,000',
+            baseQuantity: '1,000 Tablets',
+            discount: '2%',
+            focPreview: '1 Box',
+            lineTotal: '313,600',
+        },
+        {
+            id: 'draft-line-2',
+            product: 'Amoxicillin 250mg',
+            selectedUnit: 'Card',
+            orderedQuantity: '4',
+            unitPrice: '25,000',
+            baseQuantity: '40 Capsules',
+            discount: '0%',
+            focPreview: 'None',
+            lineTotal: '100,000',
+        },
     ],
     approvalFields: [
         { label: 'Approval decision', type: 'select', options: ['Approve and reserve stock', 'Reject order', 'Hold for review'] },
@@ -218,6 +243,7 @@ export const orders = {
         { label: 'Reject reason', type: 'textarea', placeholder: 'Required when rejecting an order' },
     ],
     drawerSections: [
+        { title: 'Contextual creation rule', items: ['New orders start from the selected pharmacy record', 'The pharmacy is carried into the order automatically', 'Order entry does not require searching a large pharmacy selector'] },
         { title: 'Approval queue controls', items: ['Approve and reserve stock', 'Reject with reason', 'Hold for manager review'] },
         { title: 'Warehouse preparation view', items: ['Pick by selected unit label', 'Deduct inventory in base units', 'Generate invoice and voucher after approval'] },
     ],

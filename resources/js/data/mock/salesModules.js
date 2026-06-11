@@ -1,88 +1,16 @@
-const productCards = [
-    {
-        id: 'sprd-001',
-        imageCode: 'PCM',
-        name: 'Paracetamol 500mg',
-        company: 'MediLife Co.',
-        category: 'Tablet',
-        price: 'Tablet 120 / Card 1,200 / Box 12,000',
-        stock: '12,000 Tablets available',
-        status: 'Available',
-        foc: 'FOC: Buy 10 Boxes get 1 Box',
-        expiry: 'Nearest expiry: 12 Oct 2026',
-    },
-    {
-        id: 'sprd-002',
-        imageCode: 'AMX',
-        name: 'Amoxicillin 250mg',
-        company: 'Zenith Pharma',
-        category: 'Capsule',
-        price: 'Capsule 185 / Strip 1,850 / Box 18,500',
-        stock: '4,200 Capsules available',
-        status: 'Near Expiry',
-        foc: 'FOC: Spend 1M get 1 Box',
-        expiry: 'Nearest expiry: 03 Aug 2026',
-    },
-    {
-        id: 'sprd-003',
-        imageCode: 'CS',
-        name: 'Cough Syrup 100ml',
-        company: 'Golden Health',
-        category: 'Syrup',
-        price: 'Bottle 8,900 / Carton 106,800',
-        stock: '216 Bottles available',
-        status: 'Available',
-        foc: 'FOC: No active promotion',
-        expiry: 'Nearest expiry: 21 Nov 2026',
-    },
-];
-
-export const salesProducts = {
-    eyebrow: 'Assigned Catalog',
-    title: 'Products',
-    description: 'Browse assigned company products with price, image, stock availability, and FOC promotion information.',
-    primaryAction: 'Start order',
-    previewTitle: 'Assigned product catalog',
-    searchPlaceholder: 'Search product, company, barcode',
-    filters: [
-        { label: 'Company', options: ['All', 'MediLife Co.', 'Zenith Pharma', 'Golden Health'] },
-        { label: 'Category', options: ['All', 'Tablet', 'Capsule', 'Syrup'] },
-        { label: 'Status', options: ['All', 'Available', 'Near Expiry', 'Low Stock'] },
-    ],
-    columns: [
-        { key: 'name', label: 'Product' },
-        { key: 'barcode', label: 'Barcode' },
-        { key: 'company', label: 'Company' },
-        { key: 'unitPrices', label: 'Unit Prices' },
-        { key: 'stock', label: 'Available' },
-        { key: 'status', label: 'Status', type: 'status' },
-    ],
-    rows: [
-        { id: 'sprd-001', name: 'Paracetamol 500mg', barcode: '8850001001012', company: 'MediLife Co.', unitPrices: '120 Tab / 1,200 Card / 12,000 Box', stock: '12,000 Tablets base', status: 'Available', productCards: [productCards[0]] },
-        { id: 'sprd-002', name: 'Amoxicillin 250mg', barcode: '8850001002040', company: 'Zenith Pharma', unitPrices: '185 Cap / 1,850 Strip / 18,500 Box', stock: '4,200 Capsules base', status: 'Near Expiry', productCards: [productCards[1]] },
-        { id: 'sprd-003', name: 'Cough Syrup 100ml', barcode: '8850001003092', company: 'Golden Health', unitPrices: '8,900 Bottle / 106,800 Carton', stock: '216 Bottles base', status: 'Available', productCards: [productCards[2]] },
-    ],
-    productCards,
-    drawerSections: [
-        { title: 'Product detail', items: ['Image placeholder ready', 'Barcode shown for lookup', 'FOC promotion visible', 'Expiry warning shown when needed'] },
-        { title: 'Assigned-company rule', items: ['Only products from assigned companies appear here', 'Unassigned company products are excluded from mock data'] },
-    ],
-};
-
 export const salesStock = {
     eyebrow: 'Availability',
     title: 'Stock',
-    description: 'Check available stock by product, batch, unit, and expiry date before creating customer orders.',
+    description: 'Check available stock by product, batch, unit, and expiry date for the assigned company before creating customer orders.',
     primaryAction: 'Refresh stock',
     previewTitle: 'Stock warnings',
-    searchPlaceholder: 'Search product, company, batch',
+    searchPlaceholder: 'Search product or batch',
+    pageSize: 5,
     filters: [
         { label: 'Status', options: ['All', 'Available', 'Low Stock', 'Near Expiry'] },
-        { label: 'Company', options: ['All', 'MediLife Co.', 'Zenith Pharma', 'Golden Health'] },
     ],
     columns: [
         { key: 'product', label: 'Product' },
-        { key: 'company', label: 'Company' },
         { key: 'batch', label: 'Batch' },
         { key: 'available', label: 'Available' },
         { key: 'baseQuantity', label: 'Base Qty' },
@@ -91,8 +19,17 @@ export const salesStock = {
     ],
     rows: [
         { id: 'sstk-001', product: 'Paracetamol 500mg', company: 'MediLife Co.', batch: 'B-2401', available: '120 Boxes', baseQuantity: '12,000 Tablets', expiry: '12 Oct 2026', status: 'Available' },
-        { id: 'sstk-002', product: 'Amoxicillin 250mg', company: 'Zenith Pharma', batch: 'B-2407', available: '42 Boxes', baseQuantity: '4,200 Capsules', expiry: '03 Aug 2026', status: 'Near Expiry' },
-        { id: 'sstk-003', product: 'Cough Syrup 100ml', company: 'Golden Health', batch: 'B-2411', available: '18 Cartons', baseQuantity: '216 Bottles', expiry: '21 Nov 2026', status: 'Low Stock' },
+        { id: 'sstk-002', product: 'Amoxicillin 250mg', company: 'MediLife Co.', batch: 'B-2407', available: '42 Boxes', baseQuantity: '4,200 Capsules', expiry: '03 Aug 2026', status: 'Near Expiry' },
+        { id: 'sstk-003', product: 'Cough Syrup 100ml', company: 'MediLife Co.', batch: 'B-2411', available: '18 Cartons', baseQuantity: '216 Bottles', expiry: '21 Nov 2026', status: 'Low Stock' },
+        { id: 'sstk-004', product: 'Vitamin C Syrup', company: 'MediLife Co.', batch: 'B-2415', available: '36 Cartons', baseQuantity: '432 Bottles', expiry: '19 Dec 2026', status: 'Available' },
+        { id: 'sstk-005', product: 'Cetirizine 10mg', company: 'MediLife Co.', batch: 'B-2419', available: '80 Boxes', baseQuantity: '8,000 Tablets', expiry: '11 Jan 2027', status: 'Available' },
+        { id: 'sstk-006', product: 'ORS Sachet', company: 'MediLife Co.', batch: 'B-2422', available: '25 Boxes', baseQuantity: '2,500 Sachets', expiry: '27 Sep 2026', status: 'Available' },
+        { id: 'sstk-007', product: 'Ibuprofen 400mg', company: 'MediLife Co.', batch: 'B-2425', available: '14 Boxes', baseQuantity: '1,400 Tablets', expiry: '18 Aug 2026', status: 'Near Expiry' },
+        { id: 'sstk-008', product: 'Antacid Suspension', company: 'MediLife Co.', batch: 'B-2428', available: '9 Cartons', baseQuantity: '108 Bottles', expiry: '06 Feb 2027', status: 'Low Stock' },
+        { id: 'sstk-009', product: 'Multivitamin Tablet', company: 'MediLife Co.', batch: 'B-2430', available: '58 Boxes', baseQuantity: '5,800 Tablets', expiry: '23 Mar 2027', status: 'Available' },
+        { id: 'sstk-010', product: 'Zinc Tablet', company: 'MediLife Co.', batch: 'B-2433', available: '31 Boxes', baseQuantity: '3,100 Tablets', expiry: '14 Apr 2027', status: 'Available' },
+        { id: 'sstk-011', product: 'Calcium Tablet', company: 'MediLife Co.', batch: 'B-2436', available: '16 Boxes', baseQuantity: '1,600 Tablets', expiry: '02 Oct 2026', status: 'Near Expiry' },
+        { id: 'sstk-012', product: 'Digestive Enzyme', company: 'MediLife Co.', batch: 'B-2439', available: '11 Boxes', baseQuantity: '1,100 Tablets', expiry: '30 May 2027', status: 'Low Stock' },
     ],
     infoCards: [
         { label: 'Low stock', value: '1 item', note: 'Cough Syrup below reorder point' },
@@ -104,8 +41,9 @@ export const salesStock = {
 export const salesPharmacies = {
     eyebrow: 'Customers',
     title: 'Pharmacies',
-    description: 'View pharmacy contact information, purchase history, outstanding balance, and credit restrictions.',
+    description: 'Open a pharmacy detail page to review contact information, purchase history, payment history, outstanding balance, and credit restrictions.',
     primaryAction: 'New order',
+    detailPageKey: 'pharmacies-detail',
     searchPlaceholder: 'Search pharmacy, owner, phone',
     filters: [
         { label: 'Status', options: ['All', 'Active', 'Warning', 'Blocked'] },
@@ -140,7 +78,7 @@ export const salesPharmacies = {
 export const salesNewOrder = {
     eyebrow: 'Order Entry',
     title: 'New Order',
-    description: 'Select a pharmacy, add assigned company products, preview FOC, check credit status, and submit the order.',
+    description: 'Start from a pharmacy card, add products from the assigned company, preview FOC, check credit status, and submit the order.',
     primaryAction: 'Submit order',
     previewTitle: 'Mobile order creation flow',
     filters: [
@@ -155,13 +93,12 @@ export const salesNewOrder = {
         { key: 'status', label: 'Status', type: 'status' },
     ],
     rows: [
-        { id: 'ord-step-1', step: '1', requirement: 'Select pharmacy', validation: 'Customer credit checked by company', value: 'Shwe Clinic Store', status: 'Ready' },
+        { id: 'ord-step-1', step: '1', requirement: 'Open pharmacy record', validation: 'Customer credit checked by company', value: 'Shwe Clinic Store', status: 'Ready' },
         { id: 'ord-step-2', step: '2', requirement: 'Add products', validation: 'Assigned company products only', value: '2 products, unit prices loaded', status: 'Ready' },
         { id: 'ord-step-3', step: '3', requirement: 'Check stock', validation: 'Quantity cannot exceed converted base stock', value: '1,040 base units', status: 'Ready' },
         { id: 'ord-step-4', step: '4', requirement: 'Submit order', validation: 'FOC and credit warning visible', value: 'FOC preview: 1 Box', status: 'Warning' },
     ],
     formFields: [
-        { label: 'Pharmacy', type: 'select', options: ['Aung Pharmacy', 'Shwe Clinic Store', 'Mandalay Care'] },
         { label: 'Product', type: 'select', options: ['Paracetamol 500mg', 'Amoxicillin 250mg', 'Cough Syrup 100ml'] },
         { label: 'Quantity', type: 'number', error: 'Cannot exceed available stock after conversion' },
         { label: 'Product unit', type: 'select', options: ['Tablet', 'Card', 'Box', 'Capsule', 'Strip', 'Bottle', 'Carton'] },
@@ -169,6 +106,38 @@ export const salesNewOrder = {
         { label: 'Base quantity preview' },
         { label: 'FOC preview' },
         { label: 'Credit warning' },
+    ],
+    salesOrderContext: {
+        representative: 'May Zin',
+        region: 'Yangon North',
+        company: 'MediLife Co.',
+        creditStatus: 'Blocked',
+        creditReason: 'Aung Pharmacy has overdue invoice INV-1004 for MediLife Co.',
+        outstanding: '320,000',
+    },
+    orderLineItems: [
+        {
+            id: 'sales-draft-line-1',
+            product: 'Paracetamol 500mg',
+            selectedUnit: 'Box',
+            orderedQuantity: '10',
+            unitPrice: '32,000',
+            baseQuantity: '1,000 Tablets',
+            discount: '2%',
+            focPreview: '1 Box',
+            lineTotal: '313,600',
+        },
+        {
+            id: 'sales-draft-line-2',
+            product: 'Amoxicillin 250mg',
+            selectedUnit: 'Card',
+            orderedQuantity: '4',
+            unitPrice: '25,000',
+            baseQuantity: '40 Capsules',
+            discount: '0%',
+            focPreview: 'None',
+            lineTotal: '100,000',
+        },
     ],
     orderBuilder: {
         pharmacies: [
@@ -182,14 +151,15 @@ export const salesNewOrder = {
         previews: [
             { label: 'Stock check', value: 'Ready', note: '1,040 base units will be reserved after approval' },
             { label: 'FOC preview', value: '1 Box', note: 'Buy 10 Boxes get 1 Box' },
-            { label: 'Credit warning', value: 'Open', note: 'Selected pharmacy can order these companies' },
+            { label: 'Credit warning', value: 'Open', note: 'Selected pharmacy can order this company' },
         ],
         submitTitle: 'Submit SO draft for office approval',
         submitNote: 'The sales rep can submit only; office approves, rejects, and reserves stock.',
     },
     drawerSections: [
+        { title: 'Contextual order rule', items: ['Order entry starts from a pharmacy record or pharmacy card', 'The selected pharmacy is carried into the order automatically', 'The form does not use a long pharmacy dropdown'] },
         { title: 'Cart summary', items: ['2 products selected', '10 Boxes convert to 1,000 Tablets', 'Total: 420,000', 'FOC: 1 Box'] },
-        { title: 'UI prevention', items: ['Quantity above available base stock is blocked in the form', 'Unassigned company products never appear in selector'] },
+        { title: 'UI prevention', items: ['Quantity above available base stock is blocked in the form', 'Only the assigned company products appear in selector'] },
     ],
 };
 
@@ -198,6 +168,7 @@ export const salesOrders = {
     title: 'Order History',
     description: 'Track submitted, approved, rejected, delivered, and completed orders with status timelines.',
     primaryAction: 'Create order',
+    primaryActionTarget: 'new-order',
     showDate: true,
     filters: [
         { label: 'Status', options: ['All', 'Submitted', 'Approved', 'Rejected', 'Delivered'] },
@@ -258,7 +229,7 @@ export const salesOrders = {
 export const salesPerformance = {
     eyebrow: 'Performance',
     title: 'Performance',
-    description: 'Review monthly sales, order count, top products, customer ranking, and commission previews.',
+    description: 'Review monthly sales and order count performance.',
     primaryAction: 'View report',
     filters: [
         { label: 'Period', options: ['This Month', 'Last Month', 'This Year'] },
@@ -274,26 +245,13 @@ export const salesPerformance = {
     rows: [
         { id: 'perf-001', metric: 'Sales', thisMonth: '2.1M', lastMonth: '1.8M', change: '+16%', status: 'Active' },
         { id: 'perf-002', metric: 'Orders', thisMonth: '38', lastMonth: '32', change: '+6', status: 'Active' },
-        { id: 'perf-003', metric: 'Commission preview', thisMonth: '210,000', lastMonth: '184,000', change: '+26,000', status: 'Active' },
     ],
-    summaries: [
-        { label: 'Monthly sales', value: '2.1M', note: '38 orders' },
-        { label: 'Top product', value: 'PCM 500', note: '18 orders' },
-        { label: 'Top pharmacy', value: 'Aung Pharmacy', note: '420,000' },
-        { label: 'Commission preview', value: '210,000', note: 'Product-based estimate' },
+    chart: [
+        { label: 'Jan', sales: '1.1M', orders: '18', salesPercent: 52, orderPercent: 47 },
+        { label: 'Feb', sales: '1.3M', orders: '22', salesPercent: 62, orderPercent: 58 },
+        { label: 'Mar', sales: '1.5M', orders: '26', salesPercent: 71, orderPercent: 68 },
+        { label: 'Apr', sales: '1.8M', orders: '32', salesPercent: 86, orderPercent: 84 },
+        { label: 'May', sales: '1.8M', orders: '32', salesPercent: 86, orderPercent: 84 },
+        { label: 'Jun', sales: '2.1M', orders: '38', salesPercent: 100, orderPercent: 100 },
     ],
-    infoCards: [
-        { label: 'Top products sold', value: 'PCM 500, AMX 250', note: 'Ranked by amount' },
-        { label: 'Pharmacy ranking', value: 'Aung Pharmacy', note: 'Highest current month customer' },
-        { label: 'Order count', value: '38', note: 'Submitted by this representative' },
-    ],
-};
-
-export const salesModules = {
-    products: salesProducts,
-    stock: salesStock,
-    pharmacies: salesPharmacies,
-    'new-order': salesNewOrder,
-    orders: salesOrders,
-    performance: salesPerformance,
 };

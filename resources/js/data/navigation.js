@@ -1,29 +1,64 @@
-export const officeNav = [
-    ['dashboard', 'grid', 'Dashboard'],
-    ['companies', 'building', 'Companies'],
-    ['products', 'box', 'Products'],
-    ['units', 'packageCheck', 'Units'],
-    ['pharmacies', 'users', 'Pharmacies'],
-    ['representatives', 'user', 'Sales Reps'],
-    ['inventory', 'truck', 'Inventory'],
-    ['receiving', 'packageCheck', 'Receiving'],
-    ['orders', 'cart', 'Orders'],
-    ['invoices', 'receipt', 'Invoices'],
-    ['payments', 'wallet', 'Payments'],
-    ['receivables', 'wallet', 'Receivables'],
-    ['payables', 'building', 'Payables'],
-    ['foc-rules', 'packageCheck', 'FOC Rules'],
-    ['commissions', 'chart', 'Commissions'],
-    ['reports', 'chart', 'Reports'],
-    ['settings', 'settings', 'Settings'],
+export const officeNavSections = [
+    {
+        label: 'Overview',
+        items: [
+            ['dashboard', 'grid', 'Dashboard'],
+        ],
+    },
+    {
+        label: 'Master Data',
+        items: [
+            ['companies', 'building', 'Companies'],
+            ['products', 'box', 'Products'],
+            ['units', 'packageCheck', 'Units'],
+            ['pharmacies', 'users', 'Pharmacies'],
+            ['representatives', 'user', 'Sales Reps'],
+        ],
+    },
+    {
+        label: 'Warehouse',
+        items: [
+            ['inventory', 'truck', 'Inventory'],
+            ['receiving', 'packageCheck', 'Receiving'],
+        ],
+    },
+    {
+        label: 'Sales',
+        items: [
+            ['orders', 'cart', 'Orders'],
+            ['invoices', 'receipt', 'Invoices'],
+        ],
+    },
+    {
+        label: 'Finance',
+        items: [
+            ['payments', 'wallet', 'Payments'],
+            ['receivables', 'wallet', 'Receivables'],
+            ['payables', 'building', 'Payables'],
+        ],
+    },
+    {
+        label: 'Reports',
+        items: [
+            ['reports-representatives', 'chart', 'Sales Reps'],
+            ['reports-pharmacies', 'users', 'Pharmacies'],
+            ['reports-finance', 'wallet', 'Finance'],
+        ],
+    },
+    {
+        label: 'System',
+        items: [
+            ['settings', 'settings', 'Settings'],
+        ],
+    },
 ];
+
+export const officeNav = officeNavSections.flatMap((section) => section.items);
 
 export const salesNav = [
     ['dashboard', 'grid', 'Dashboard'],
-    ['products', 'box', 'Products'],
     ['stock', 'packageCheck', 'Stock'],
     ['pharmacies', 'users', 'Pharmacies'],
     ['new-order', 'cart', 'New Order'],
     ['orders', 'receipt', 'Order History'],
-    ['performance', 'chart', 'Performance'],
 ];

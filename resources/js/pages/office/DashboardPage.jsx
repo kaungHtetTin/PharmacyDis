@@ -4,11 +4,22 @@ import PageHeader from '../../components/shared/PageHeader';
 import Panel from '../../components/shared/Panel';
 import StatusBadge from '../../components/shared/StatusBadge';
 import { officeAlerts, officeMetrics, orderQueue, topPharmacies, topProducts, topRepresentatives } from '../../data/mock/officeDashboard';
+import useApiResource from '../../hooks/useApiResource';
+import { mapOrders } from '../../services/screenAdapters';
 
 export default function DashboardPage({ activePage }) {
+    const dashboard = useApiResource('/office/dashboard');
+    const orders = useApiResource('/office/orders?per_page=5');
     const title = activePage === 'dashboard'
         ? 'Management Dashboard'
         : `${activePage.replace('-', ' ')} workspace`;
+    const liveMetrics = dashboard.data ? [
+        { label: 'Pending orders', value: dashboard.data.pending_orders, note: 'Waiting office review' },
+        { label: 'Unpaid invoices', value: dashboard.data.unpaid_invoices, note: 'Receivables follow-up' },
+        { label: 'Monthly sales', value: Number(dashboard.data.monthly_sales || 0).toLocaleString(), note: 'Issued invoices' },
+        { label: 'Low stock products', value: dashboard.data.low_stock_products, note: 'Need stock review' },
+    ] : officeMetrics;
+    const liveOrderQueue = orders.data ? mapOrders(orders.data) : orderQueue;
 
     return (
         <div className="page-stack">
@@ -20,7 +31,7 @@ export default function DashboardPage({ activePage }) {
             />
 
             <div className="metrics-grid">
-                {officeMetrics.map((metric) => (
+                {liveMetrics.map((metric) => (
                     <MetricCard key={metric.label} {...metric} />
                 ))}
             </div>
@@ -29,14 +40,16 @@ export default function DashboardPage({ activePage }) {
                 <Panel eyebrow="Approval Queue" title="Live Sales Orders" className="wide">
                     <DataTable
                         columns={[
-                            { key: 'id', label: 'Order' },
+                            { key: 'order', label: 'Order' },
                             { key: 'pharmacy', label: 'Pharmacy' },
                             { key: 'rep', label: 'Sales Rep' },
                             { key: 'company', label: 'Company' },
                             { key: 'total', label: 'Total', type: 'money' },
                             { key: 'status', label: 'Status', type: 'status' },
                         ]}
-                        rows={orderQueue}
+                        error={orders.error}
+                        loading={orders.loading}
+                        rows={liveOrderQueue}
                     />
                 </Panel>
 

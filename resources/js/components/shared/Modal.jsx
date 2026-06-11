@@ -1,6 +1,6 @@
 import Icon from './Icon';
 
-export default function Modal({ actions, children, open, onClose, onSubmit, title }) {
+export default function Modal({ actions, children, open, onClose, onSubmit, submitDisabled = false, submitDisabledReason = '', submitLabel = 'Save', title }) {
     if (!open) {
         return null;
     }
@@ -22,7 +22,8 @@ export default function Modal({ actions, children, open, onClose, onSubmit, titl
                     {actions || (
                         <>
                             <button className="btn secondary" onClick={onClose} type="button">Cancel</button>
-                            <button className="btn primary" onClick={onSubmit} type="button">Save draft</button>
+                            {submitDisabledReason && <span className="submit-disabled-note">{submitDisabledReason}</span>}
+                            <button className="btn primary" disabled={submitDisabled} onClick={onSubmit} type="button">{submitLabel}</button>
                         </>
                     )}
                 </div>

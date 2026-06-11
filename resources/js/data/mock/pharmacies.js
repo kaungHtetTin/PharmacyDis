@@ -3,6 +3,15 @@ export const pharmacies = {
     title: 'Pharmacies',
     description: 'Manage pharmacies, purchase history, payment history, outstanding balances, and company-specific credit control.',
     primaryAction: 'Add pharmacy',
+    detailPageKey: 'pharmacies-detail',
+    detailActionLabel: 'Open pharmacy',
+    showViewAction: false,
+    rowActions: [
+        { label: 'Create order', modalScreenKey: 'orders', icon: '+' },
+    ],
+    contextActions: [
+        { label: 'Create order', modalScreenKey: 'orders', variant: 'primary' },
+    ],
     filters: [
         { label: 'Status', options: ['All', 'Active', 'Blocked', 'Warning'] },
         { label: 'Credit', options: ['All', 'Current', 'Warning', 'Critical', 'Blocked'] },

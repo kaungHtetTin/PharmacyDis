@@ -19,7 +19,7 @@ Primary goals:
 - Manage pharmaceutical companies, products, pharmacies, and sales representatives.
 - Receive and track warehouse stock by batch and expiry date.
 - Support multi-unit pharmaceutical packaging and stock conversion.
-- Allow sales representatives to create pharmacy orders from assigned company products.
+- Allow sales representatives to create pharmacy orders from products belonging to their assigned company.
 - Provide admin approval, warehouse dispatch, invoicing, and delivery workflows.
 - Track customer payments, company payables, commissions, FOC rules, and reports.
 
@@ -110,8 +110,8 @@ Responsibilities:
 
 Restrictions:
 
-- Can only access products from assigned companies.
-- Can only sell products from assigned companies.
+- Can only access products from the assigned company.
+- Can only sell products from the assigned company.
 - Cannot approve orders.
 - Cannot modify inventory.
 - Can only view available stock.
@@ -184,7 +184,7 @@ Restrictions:
 
 - Cannot approve orders.
 - Cannot modify inventory.
-- Cannot access products outside assigned companies.
+- Cannot access products outside the assigned company.
 
 ---
 
@@ -224,6 +224,7 @@ Product fields:
 - Brand.
 - Minimum stock level in base unit.
 - Expiry alert days.
+- Product discount percentage.
 - Tax method, if tax is enabled.
 - Status.
 
@@ -241,11 +242,23 @@ Product commission:
 - A product commission rate applies to sales of that product regardless of the selling unit.
 - Company screens may summarize product commission coverage, but company-level default commission rates are not used for MVP calculation.
 
+Product discount:
+
+- Discount percentage must be defined on the product.
+- A product discount percentage applies to sales of that product regardless of the selling unit.
+- Order creation should use the product discount percentage when calculating line discount and totals.
+
+Product FOC rules:
+
+- FOC rules should be visible and manageable from product records.
+- In product-linked FOC setup, the selected product is the eligible product and default reward product, so no eligible-product or reward-product selector is needed.
+- Product list screens should show the current FOC rule and FOC status for each product.
+- Product detail may remain a drawer for MVP, with product-linked FOC rule cards shown in the drawer.
+- There is no standalone FOC Rules page in the MVP UI; full promotion review happens from product records and reports.
+
 Product image requirements:
 
-- Support product image upload.
-- Support multiple images per product.
-- Support product gallery view.
+- Support one primary product image upload.
 
 ### 5.3 Multi-Unit Management
 
@@ -317,13 +330,13 @@ Sales representative fields:
 - Employee code.
 - Name.
 - Phone number.
-- Assigned company or companies.
+- Assigned company.
 - Status.
 
 Business rules:
 
-- A sales representative can only view assigned company products.
-- A sales representative can only sell assigned company products.
+- A sales representative can only view products from the assigned company.
+- A sales representative can only sell products from the assigned company.
 
 ### 5.6 Inventory Management
 
@@ -420,7 +433,7 @@ Validation rules:
 - Order quantity cannot exceed available stock.
 - Order quantity must be converted to base-unit quantity before stock validation.
 - Selected unit must belong to the selected product.
-- Sales representative cannot order products from unassigned companies.
+- Sales representative cannot order products from an unassigned company.
 - Customer status must allow ordering.
 - Credit control rules must be checked before submission or approval.
 
@@ -723,9 +736,8 @@ Suggested screens:
 - Company create/edit.
 - Product list.
 - Product create/edit.
-- Product gallery.
 - Unit management.
-- Unit conversion management.
+- Product-unit conversion setup inside Product CRUD.
 - Pharmacy/customer list.
 - Pharmacy/customer detail.
 - Sales representative list.
@@ -777,7 +789,7 @@ Core tables:
 - roles.
 - companies.
 - products.
-- product_images.
+- primary product image path on products.
 - units.
 - product_units.
 - customers.
@@ -792,7 +804,6 @@ Core tables:
 - invoice_items.
 - payments.
 - foc_rules.
-- commission_rules.
 - notifications.
 - settings.
 
@@ -801,7 +812,7 @@ Possible supporting tables:
 - warehouses.
 - product_categories.
 - brands.
-- unit_conversions if global conversion templates are needed later.
+- Do not create global unit conversion rules for MVP; conversion factors belong to product_units.
 - customer_company_credit_statuses.
 - company_payables.
 - expenses.
@@ -819,7 +830,7 @@ API groups:
 - User and role management.
 - Company management.
 - Product management.
-- Product image management.
+- Primary product image management.
 - Unit and conversion management.
 - Customer management.
 - Sales representative management.
@@ -895,7 +906,7 @@ Cache:
 File storage:
 
 - Local filesystem storage.
-- Product images, documents, invoices, and vouchers will be stored on the application server.
+- Primary product images, documents, invoices, and vouchers will be stored on the application server.
 
 Reporting:
 
@@ -915,7 +926,7 @@ Notifications:
 
 - Authenticated access is required for all system functions.
 - Role-based access control is required.
-- Sales representatives must be restricted to assigned company products.
+- Sales representatives must be restricted to products from their single assigned company.
 - Sensitive financial operations must be protected by permissions.
 - Passwords must be hashed securely.
 - API access must use secure tokens or sessions.

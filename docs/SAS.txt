@@ -119,12 +119,11 @@ Selling Price
 Batch Number
 Expiry Date
 Status
-Product Images
+Primary Product Image
 
 Support:
 
 Upload image
-View image gallery
 6. Multi Unit Management
 
 The system must support pharmaceutical packaging.
@@ -437,7 +436,7 @@ users
 roles
 companies
 products
-product_images
+primary product image path on products
 units
 unit_conversions
 customers

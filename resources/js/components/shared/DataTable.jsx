@@ -1,7 +1,18 @@
 import { useMemo, useState } from 'react';
+import Icon from './Icon';
 import StatusBadge from './StatusBadge';
 
 const statusValues = ['Active', 'Available', 'Approved', 'Blocked', 'Completed', 'Critical', 'Current', 'Delivered', 'Draft', 'Due', 'Expired', 'Inactive', 'Low Stock', 'Near Expiry', 'Overdue', 'Paid', 'Prepared', 'Printed', 'Ready', 'Rejected', 'Reserved', 'Submitted', 'Unpaid', 'Warning'];
+const iconAliases = {
+    '+': 'plus',
+    '$': 'wallet',
+    D: 'trash',
+    E: 'edit',
+    I: 'receipt',
+    P: 'printer',
+    S: 'save',
+    V: 'eye',
+};
 
 function normalizeColumn(column) {
     return typeof column === 'string' ? { key: column, label: column } : column;
@@ -33,6 +44,113 @@ function renderCell(value, column, columnIndex) {
     }
 
     return columnIndex === 0 ? <strong>{value}</strong> : value;
+}
+
+function getActionIcon(action) {
+    if (iconAliases[action.icon]) {
+        return iconAliases[action.icon];
+    }
+
+    if (action.icon && /^[a-z]/.test(action.icon)) {
+        return action.icon;
+    }
+
+    const label = action.label.toLowerCase();
+
+    if (label.includes('view') || label.includes('open') || label.includes('detail')) {
+        return 'eye';
+    }
+
+    if (label.includes('record payment') || label.includes('payment')) {
+        return 'wallet';
+    }
+
+    if (label.includes('generate invoice') || label.includes('invoice') || label.includes('receipt')) {
+        return 'receipt';
+    }
+
+    if (label.includes('print')) {
+        return 'printer';
+    }
+
+    if (label.includes('delete') || label.includes('remove')) {
+        return 'trash';
+    }
+
+    if (label.includes('edit')) {
+        return 'edit';
+    }
+
+    if (label.includes('save')) {
+        return 'save';
+    }
+
+    if (label.includes('create order') || label.includes('order')) {
+        return 'cart';
+    }
+
+    if (label.includes('approve')) {
+        return 'check';
+    }
+
+    if (label.includes('add') || label.includes('create')) {
+        return 'plus';
+    }
+
+    return 'file';
+}
+
+function RowActions({ actions, row }) {
+    const hasOverflow = actions.length > 3;
+    const directActions = hasOverflow ? actions.slice(0, 2) : actions;
+    const menuActions = hasOverflow ? actions.slice(2) : [];
+
+    return (
+        <div className="inline-actions">
+            {directActions.map((action) => (
+                <button
+                    aria-label={action.label}
+                    className={`row-action-btn ${action.variant === 'danger' ? 'danger' : ''}`}
+                    key={action.label}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        action.onClick?.(row);
+                    }}
+                    title={action.label}
+                    type="button"
+                >
+                    <Icon name={getActionIcon(action)} size={15} />
+                    <span className="sr-only">{action.label}</span>
+                </button>
+            ))}
+            {menuActions.length > 0 && (
+                <details className="row-more-menu" onClick={(event) => event.stopPropagation()}>
+                    <summary aria-label="More actions" className="row-action-btn row-more-summary" title="More actions">
+                        <Icon name="moreHorizontal" size={16} />
+                        <span className="sr-only">More actions</span>
+                    </summary>
+                    <div className="row-more-list">
+                        {menuActions.map((action) => (
+                            <button
+                                className={`row-menu-item ${action.variant === 'danger' ? 'danger' : ''}`}
+                                key={action.label}
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    event.currentTarget.closest('details')?.removeAttribute('open');
+                                    action.onClick?.(row);
+                                }}
+                                type="button"
+                            >
+                                <Icon name={getActionIcon(action)} size={14} />
+                                {action.label}
+                            </button>
+                        ))}
+                    </div>
+                </details>
+            )}
+        </div>
+    );
 }
 
 export default function DataTable({
@@ -126,22 +244,7 @@ export default function DataTable({
                                 ))}
                                 {actions.length > 0 && (
                                     <td>
-                                        <div className="inline-actions">
-                                            {actions.map((action) => (
-                                                <button
-                                                    className="icon-btn small"
-                                                    key={action.label}
-                                                    onClick={(event) => {
-                                                        event.stopPropagation();
-                                                        action.onClick(row);
-                                                    }}
-                                                    title={action.label}
-                                                    type="button"
-                                                >
-                                                    {action.icon || action.label.slice(0, 1)}
-                                                </button>
-                                            ))}
-                                        </div>
+                                        <RowActions actions={actions} row={row} />
                                     </td>
                                 )}
                             </tr>

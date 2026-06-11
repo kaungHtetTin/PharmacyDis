@@ -115,25 +115,15 @@ Tasks:
 - Build light/dark theme support if required.
 - Build responsive sidebar collapse.
 
-Office navigation:
+Office navigation sections:
 
-- Dashboard.
-- Companies.
-- Products.
-- Units.
-- Pharmacies.
-- Sales Representatives.
-- Inventory.
-- Stock Receiving.
-- Sales Orders.
-- Invoices.
-- Payments.
-- Accounts Receivable.
-- Accounts Payable.
-- FOC Rules.
-- Commission Rules.
-- Reports.
-- Settings.
+- Overview: Dashboard.
+- Master Data: Companies, Products, Units, Pharmacies, Sales Representatives.
+- Warehouse: Inventory, Stock Receiving.
+- Sales: Sales Orders, Invoices.
+- Finance: Payments, Accounts Receivable, Accounts Payable.
+- Reports: Sales Representative Reports, Pharmacy Reports, Finance Reports.
+- System: Settings.
 
 Deliverables:
 
@@ -189,7 +179,7 @@ Screens:
 
 Tasks:
 
-- Build company table with filters.
+- Build company table without filtering controls.
 - Build status badges.
 - Build create/edit form.
 - Build company detail drawer.
@@ -204,7 +194,7 @@ Status: Completed.
 
 Implementation notes:
 
-- Company list table includes filters, status badges, agreement type, product count, commission coverage, and FOC coverage.
+- Company list table includes status badges, agreement type, product count, commission coverage, and FOC coverage without filtering controls.
 - Company create/edit modal includes profile fields, agreement terms, payment term, status, and assigned product preview.
 - Company detail drawer includes company profile, assigned products, product commission coverage, and FOC summary.
 - Product assignment view is included inside the company modal and drawer with product, barcode, commission rate, FOC rule, and setup status.
@@ -217,7 +207,6 @@ Screens:
 - Product create modal.
 - Product edit modal.
 - Product detail drawer.
-- Product image gallery.
 
 Tasks:
 
@@ -227,9 +216,9 @@ Tasks:
 - Add barcode field and setup review status to product create/edit.
 - Add product commission rate update inside the product form.
 - Build product-unit pricing grid with unit, conversion factor, selling price, and base-unit selection.
-- Build image upload placeholder.
-- Build gallery preview UI.
-- Show company, barcode, base unit, unit price range, product commission rate, setup status, batch, expiry, and base-unit stock information.
+- Build styled primary image upload placeholder.
+- Tie FOC rule management to product records.
+- Show company, barcode, base unit, unit price range, product discount percentage, product commission rate, FOC rule status, setup status, batch, expiry, and base-unit stock information.
 
 Deliverables:
 
@@ -239,28 +228,27 @@ Status: Completed.
 
 Implementation notes:
 
-- Product list table includes company, category, brand, barcode, base unit, unit price range, base stock, product commission rate, setup status, and active status.
-- Product filters include company, category, brand, base unit, setup status, and status.
-- Product create/edit modal includes barcode, image upload placeholder, setup review status, review note, and product commission rate.
+- Product list table includes company, category, brand, barcode, base unit, unit price range, base stock, product discount percentage, product commission rate, FOC rule, FOC status, setup status, and active status.
+- Product filters include company, category, brand, base unit, setup status, FOC status, and status.
+- Product create/edit modal includes barcode, styled primary image upload placeholder, setup review status, review note, product discount percentage, product commission rate, and product-linked FOC setup fields without eligible-product or reward-product selectors.
 - Product-unit pricing grid supports unit, conversion factor, selling price, and base-unit selection preview.
-- Product detail drawer shows company, barcode, brand, base unit, unit price range, commission, setup status, batch, expiry, base stock, unit pricing, and gallery preview.
-- Product image gallery preview supports primary image, label detail, and package image placeholders using local-storage-ready UI.
+- Product detail drawer shows company, barcode, brand, base unit, unit price range, discount, commission, FOC rule cards, setup status, batch, expiry, base stock, and unit pricing.
+- Product detail remains a drawer for MVP; create a full product detail page only if product history, stock audit, pricing history, or promotion workflows outgrow the drawer.
 
-### 1.5 Unit and Conversion UI
+### 1.5 Unit Master and Product Conversion Preview UI
 
 Screens:
 
 - Unit list.
 - Unit create/edit modal.
-- Unit conversion setup.
+- Product-unit conversion preview.
 
 Tasks:
 
 - Build unit master table.
-- Build conversion rule table.
-- Build product-specific conversion preview, for example Tablet base, Card equals 10 Tablets, Box equals 100 Tablets.
-- Add base-unit explanation in form labels only where needed.
-- Show conversion preview.
+- Show read-only product-specific conversion preview, for example Tablet base, Card equals 10 Tablets, Box equals 100 Tablets.
+- Keep conversion factor and selling price editing inside Product CRUD product-unit pricing rows.
+- Add base-unit explanation in product-unit labels only where needed.
 
 Deliverables:
 
@@ -271,10 +259,10 @@ Status: Completed.
 Implementation notes:
 
 - Unit master table includes unit name, short name, usage, assigned product count, example conversion, and status badge.
-- Create/edit modal includes unit master fields plus product-specific conversion setup fields.
-- Conversion setup preview shows product base unit, package units, conversion chain, and stock impact examples.
-- Detail drawer includes base-unit explanation, deletion rules, and product-specific conversion previews.
-- Base-unit explanation is shown only where conversion setup needs it.
+- Create/edit modal includes only unit master fields: unit name, short name, usage, and status.
+- Read-only conversion preview shows product base unit, package units, conversion chain, and stock impact examples.
+- Detail drawer explains that conversion factors and selling prices are configured per product-unit row in Product CRUD.
+- Base-unit explanation is kept with product-unit setup, not unit master setup.
 
 ### 1.6 Pharmacy Management UI
 
@@ -282,20 +270,22 @@ Screens:
 
 - Pharmacy list.
 - Pharmacy create/edit modal.
-- Pharmacy detail drawer.
-- Purchase history tab.
-- Payment history tab.
-- Outstanding balance tab.
-- Company credit status tab.
+- Pharmacy detail page.
+- Performance summary.
+- Order list with pagination and filtering.
+- Invoice list with pagination and filtering.
+- Payment history with pagination and filtering.
+- Company credit status panel.
 
 Tasks:
 
 - Build pharmacy table.
 - Add status and credit filters.
 - Build pharmacy form.
-- Build customer detail drawer.
+- Build customer detail page.
 - Build company-specific blocking display.
 - Build aging summary display.
+- Build order, invoice, and payment tables with filters and pagination controls.
 
 Deliverables:
 
@@ -307,8 +297,11 @@ Implementation notes:
 
 - Pharmacy table includes status and credit filters, customer contact details, township, outstanding balance, credit status, and status badges.
 - Pharmacy create/edit modal includes pharmacy profile fields, credit limit, payment term, finance note, and status.
-- Detail drawer includes customer facts, company-specific blocking display, aging summary, and company credit status cards.
-- Detail tabs include purchase history, payment history, outstanding balance aging, and company credit status.
+- Pharmacy detail uses a full page because performance, orders, invoices, payments, outstanding balances, and credit controls exceed drawer scope.
+- Pharmacy detail page includes customer facts, performance metrics, purchase chart, company-specific blocking display, order list, invoice list, and payment history.
+- Order, invoice, and payment sections include filter toolbars and pagination controls.
+- Pharmacy detail actions include page-level Create order, Save, and Delete; order rows include Save, Delete, and Generate invoice; invoice rows mirror the main invoice list with icon row actions, shared invoice detail drawer, invoice items, print previews, Record payment, and More-menu actions for Edit invoice, Print invoice, and Delete invoice.
+- Pharmacy list no longer shows the legacy View action or drawer; row/detail navigation opens the full pharmacy detail page.
 - Company-specific blocking is shown per company so a customer can be blocked for one company while remaining active for another.
 
 ### 1.7 Sales Representative Management UI
@@ -318,6 +311,7 @@ Screens:
 - Sales representative list.
 - Sales representative create/edit modal.
 - Sales representative detail drawer.
+- Sales representative detail page.
 - Assigned company/product view.
 
 Tasks:
@@ -327,6 +321,7 @@ Tasks:
 - Build create/edit form.
 - Build assignment controls.
 - Build performance summary preview.
+- Build representative detail page with performance chart and sales history.
 
 Deliverables:
 
@@ -336,11 +331,12 @@ Status: Completed.
 
 Implementation notes:
 
-- Sales representative table includes assigned company filter, region, assigned companies, product access, monthly sales, order count, and status badge.
+- Sales representative table includes assigned company filter, region, one assigned company, product access, monthly sales, order count, and status badge.
 - Create/edit modal includes employee profile, region, assigned company, product access mode, assignment note, and status.
-- Assignment controls preview assigned companies and product access inside the modal.
+- Assignment controls preview the single assigned company and product access inside the modal.
 - Detail drawer includes representative facts, assigned company/product access view, and performance summary preview.
-- Detail tabs include assigned companies, assigned products, and performance records.
+- Detail tabs include assigned company, assigned products, and performance records.
+- Added a full representative detail page with profile facts, monthly performance chart, sales history table, top products, pharmacy ranking, and commission preview.
 
 ### 1.8 Inventory UI
 
@@ -442,6 +438,10 @@ Status: Completed.
 Implementation notes:
 
 - Built the sales order list with status, sales representative, company, pharmacy, and date-ready filtering.
+- Order creation is launched from a selected pharmacy record; the pharmacy is carried into the order instead of selected from a large dropdown.
+- Order creation places the company selector first, shows the selected company's credit status, and filters sales representatives by selected company before submit.
+- If the selected company credit status is blocked, order creation is disabled until finance clears the credit issue.
+- Order creation supports multiple product lines in one pharmacy order, with each line carrying product, quantity, selected unit, base quantity, discount, FOC preview, and line total.
 - Added order detail drawer content for selected units, converted base quantities, FOC items, stock status, customer credit status, and totals.
 - Added approval confirmation and reject reason workflow placeholders.
 - Added warehouse preparation checklist for stock reservation, picking, expiry/batch checking, and invoice/voucher generation.
@@ -473,8 +473,10 @@ Status: Completed.
 Implementation notes:
 
 - Built invoice list/detail mock data with order, pharmacy, due date, amount, and payment status.
-- Added invoice item detail preview.
+- Invoice generation is launched from the related approved order record; the order is carried into the invoice instead of selected from a large dropdown.
+- Added shared invoice detail drawer with invoice item detail preview.
 - Added A4 invoice, delivery voucher, and payment receipt print previews.
+- Added compact icon row actions for invoices: View invoice and Record payment stay visible, while More contains Edit invoice, Print invoice, and Delete invoice. The contextual payment form carries the selected invoice.
 
 ### 1.12 Payment and Finance UI
 
@@ -509,52 +511,48 @@ Implementation notes:
 - Added overdue warning, critical, blocked, and paid states.
 - Preserved the rule that company payable aging is alert-only and does not block operational workflows.
 
-### 1.13 FOC and Commission UI
+### 1.13 Product-Linked FOC UI
 
 Screens:
 
-- FOC rule list.
-- FOC rule create/edit modal.
-- Commission rule list.
-- Commission rule create/edit modal.
+- Product create/edit modal FOC section.
+- Product detail drawer FOC rule cards.
 
 Tasks:
 
-- Build FOC rule table.
-- Build quantity-based FOC form.
-- Build value-based FOC form.
-- Build promotion date fields.
-- Build product commission rule table.
-- Build product commission form.
+- Build product-linked FOC setup inside Product CRUD.
+- Build quantity-based FOC fields.
+- Build value-based FOC fields.
+- Build promotion date fields on product FOC setup.
+- Keep product commission rate management inside Product CRUD.
 
 Deliverables:
 
-- Complete FOC and commission UI.
+- Complete product-linked FOC UI.
 
 Status: Completed.
 
 Implementation notes:
 
-- Built quantity-based and value-based FOC rule setup previews.
+- Built quantity-based and value-based FOC setup inside Product CRUD.
 - Added promotion date and active/draft/expired status support in mock data.
-- Built product commission rule preview with product-level rate calculations.
+- Removed the separate FOC rules page because FOC is managed from product records.
+- Removed the separate commission rules page because product commission rate is managed in Product CRUD.
 
 ### 1.14 Reports UI
 
 Screens:
 
-- Sales reports.
-- Product reports.
-- Customer reports.
 - Sales representative reports.
-- Company reports.
-- Inventory reports.
-- Financial reports.
+- Pharmacy reports.
+- Finance reports.
 
 Tasks:
 
 - Build report filter panels.
 - Build report metric cards.
+- Build report charts.
+- Build report summary breakdowns.
 - Build report tables.
 - Add export buttons as placeholders.
 - Add date range filters.
@@ -567,8 +565,8 @@ Status: Completed.
 
 Implementation notes:
 
-- Built report category coverage for sales, product, customer, sales representative, company, inventory, and financial reports.
-- Added report filters, metric cards, table preview, and export placeholders.
+- Built the report navigation section for sales representative, pharmacy, and finance reports.
+- Added report filters, metric cards, chart panels, summary breakdowns, table preview, and export placeholders.
 - Added date range fields for report generation forms.
 
 ### 1.15 Settings UI
@@ -615,6 +613,8 @@ Tasks:
 - Build mobile-first navigation.
 - Build dashboard header.
 - Build simple profile menu.
+- Build sales representative login page.
+- Add edit profile access from the profile menu.
 - Build responsive behavior for phone, tablet, and desktop browser.
 
 Deliverables:
@@ -627,6 +627,8 @@ Status: Completed.
 Implementation notes:
 
 - Built the sales representative web layout with fixed topbar, profile area, notification button, and mobile bottom navigation.
+- Added `/sales/login` for sales representative sign-in without a signup screen.
+- Added `/sales/profile` and an Edit profile link in the profile dropdown.
 - Added development switch back to office app.
 - Added responsive behavior for phone, tablet, and desktop browser widths.
 
@@ -634,60 +636,53 @@ Implementation notes:
 
 Tasks:
 
-- Show assigned companies.
 - Show today order count.
-- Show submitted, approved, rejected, and delivered orders.
+- Show submitted order count.
 - Show sales total.
-- Show outstanding customer alerts.
-- Show quick actions for new order and customer list.
+- Show vertical monthly sales and order performance bar chart.
 
 Deliverables:
 
-- Sales representative dashboard UI.
+- Sales representative dashboard and performance UI.
 
 Status: Completed.
 
 Implementation notes:
 
-- Added assigned companies, today order count, monthly sales, assigned item count, and customer alert summaries.
-- Added submitted, approved, rejected, and delivered status counters.
-- Added quick actions for new order, customer list, and stock check.
+- Added today order count, monthly sales, and submitted status counter.
+- Dashboard quick links and assigned company coverage were removed from the page; quick links and assigned company info live in the app-bar profile dropdown.
+- Merged the separate Performance page into the Dashboard with a vertical monthly sales and order bar chart.
 
 ### 2.3 Product Catalog
 
 Screens:
 
-- Product catalog.
-- Product detail.
+- Removed from the sales representative app.
 
 Tasks:
 
-- Build product cards/list.
-- Add company and category filters.
-- Add product image display.
-- Show selling price, available stock, FOC promotion, and expiry warning.
-- Prevent unassigned company products from appearing in mock data.
+- Remove the standalone sales product tab and page.
+- Keep product selection inside order creation.
+- Keep stock availability as the sales-side product availability workflow.
 
 Deliverables:
 
-- Product catalog UI.
-- Product detail UI.
+- Sales app without a standalone product catalog page.
 
-Status: Completed.
+Status: Removed.
 
 Implementation notes:
 
-- Built assigned-product card/list views with image placeholders.
-- Added company, category, and status filters.
-- Added selling price by unit, available stock, FOC promotion, expiry warning, barcode, and assigned-company-only mock data.
+- Removed `/sales/products` from navigation, route allowlist, and the sales module map.
+- Product and unit selection remains part of New Order; availability review remains in Stock.
 
 ### 2.4 Stock Availability
 
 Tasks:
 
 - Build stock availability screen.
-- Show product, company, batch, expiry date, available quantity, and unit.
-- Add search and filters.
+- Show product, batch, expiry date, available quantity, and unit for the sales representative's assigned company.
+- Add search, status filtering, and proper pagination.
 - Add low-stock and near-expiry badges.
 
 Deliverables:
@@ -698,8 +693,9 @@ Status: Completed.
 
 Implementation notes:
 
-- Built stock availability table by product, company, batch, expiry date, available quantity, and base unit quantity.
-- Added search/filter support plus low-stock and near-expiry badge states.
+- Built stock availability table by product, batch, expiry date, available quantity, and base unit quantity.
+- Removed the company filter and company column because one sales representative is assigned to one company.
+- Added search/status filtering, low-stock and near-expiry badge states, and paginated stock rows.
 
 ### 2.5 Pharmacy List and Detail
 
@@ -716,6 +712,8 @@ Tasks:
 - Show company-specific block warning.
 - Show purchase history.
 - Show payment history.
+- Open pharmacy detail in a dedicated page.
+- Add pagination to purchase history and payment history.
 
 Deliverables:
 
@@ -728,6 +726,8 @@ Implementation notes:
 
 - Built pharmacy list with search by pharmacy, owner, or phone.
 - Added outstanding balance, company-specific credit warning/block status, purchase history, payment history, and credit tabs.
+- Sales pharmacy rows open `/sales/pharmacies-detail` instead of a drawer.
+- Sales pharmacy detail includes customer profile, assigned-company credit status, purchase history pagination, and payment history pagination.
 
 ### 2.6 Order Creation
 
@@ -740,9 +740,12 @@ Screens:
 
 Tasks:
 
-- Build pharmacy selector.
-- Build product selector filtered by assigned companies.
+- Build pharmacy card/customer-list entry, then carry the selected pharmacy into the order.
+- Build product selector filtered by the assigned company.
+- Do not show company or sales representative selectors in the sales app because both come from the signed-in sales account.
+- Show assigned-company credit status and block order submission when company credit is blocked.
 - Build quantity and unit input.
+- Allow multiple product lines in one pharmacy order.
 - Update price when the selected product unit changes.
 - Convert selected quantity to base-unit quantity before stock validation.
 - Show stock availability during entry.
@@ -751,6 +754,7 @@ Tasks:
 - Prevent quantity above available stock in UI.
 - Build order summary.
 - Build submit confirmation.
+- Render the New Order tab as the order submit form, not as a workflow table with a modal.
 
 Deliverables:
 
@@ -760,7 +764,9 @@ Status: Completed.
 
 Implementation notes:
 
-- Built mobile order creation preview with pharmacy selector, assigned product selector, cart summary, selected unit, converted base quantity, stock validation, FOC preview, credit warning, and submit confirmation.
+- Built mobile order creation preview with pharmacy card/customer-list entry, assigned sales/company context, company credit block status, multiple assigned product lines, cart summary, selected unit, converted base quantity, stock validation, FOC preview, credit warning, and submit confirmation.
+- Sales app order creation hides company and sales representative selectors because the signed-in sales representative account defines both values.
+- The sales New Order tab now shows the submit form directly; Order History Create order redirects to this form.
 - Added quantity validation placeholder for preventing orders above available stock.
 
 ### 2.7 Order History
@@ -793,21 +799,38 @@ Implementation notes:
 
 Tasks:
 
-- Show monthly sales.
-- Show order count.
-- Show top products sold.
-- Show pharmacy ranking.
-- Show commission preview if enabled.
+- Merge performance metrics into the sales representative dashboard.
+- Remove the standalone Performance tab and route.
 
 Deliverables:
 
-- Sales representative performance UI.
+- Combined sales representative dashboard/performance UI.
+
+Status: Merged into Dashboard.
+
+Implementation notes:
+
+- Monthly sales and order comparison now live on the sales dashboard as a compact vertical bar chart.
+- Removed `/sales/performance` from navigation, route allowlist, and the sales module map.
+
+### 2.9 Sales Representative Profile
+
+Tasks:
+
+- Build edit profile page.
+- Keep assigned company visible as read-only context.
+- Add profile dropdown entry for edit profile.
+
+Deliverables:
+
+- Sales representative edit profile UI.
 
 Status: Completed.
 
 Implementation notes:
 
-- Added monthly sales, order count, top products sold, pharmacy ranking, and product-based commission preview.
+- Added profile editing fields for name, employee code, phone, email, region, and profile note.
+- Kept assigned company context visible because one sales representative can be assigned to one company.
 
 ---
 
@@ -882,7 +905,7 @@ Migrations:
 - product_categories.
 - brands.
 - products.
-- product_images.
+- primary product image path on products.
 - units.
 - product_units.
 - customers.
@@ -916,6 +939,7 @@ Tasks:
 
 - Store stock in base units.
 - Store product-unit conversion factors and selling prices per product.
+- Do not store conversion factors on unit master records.
 - Track batch number and expiry date.
 - Track available, reserved, sold, damaged, and expired stock through movements.
 - Add indexes for product, company, batch, and expiry date.
@@ -976,7 +1000,6 @@ Deliverables:
 Migrations:
 
 - foc_rules.
-- commission_rules.
 - customer_company_credit_statuses.
 - notifications.
 - settings.
@@ -985,7 +1008,7 @@ Migrations:
 Tasks:
 
 - Store FOC rule type, value, date range, product, and company.
-- Store commission rates by product.
+- Store product discount percentage and product commission rate on product records or product fields used by Product CRUD.
 - Store company-specific customer blocking status.
 - Store in-app notifications.
 
@@ -1039,7 +1062,7 @@ API groups:
 
 - Companies.
 - Products.
-- Product images.
+- Primary product image.
 - Units.
 - Unit conversions.
 - Customers/pharmacies.
@@ -1050,7 +1073,7 @@ Tasks:
 - Build CRUD endpoints.
 - Add search, filter, sort, and pagination.
 - Add validation.
-- Add file upload for local product images.
+- Add file upload for a local primary product image.
 
 Deliverables:
 
@@ -1104,7 +1127,7 @@ Deliverables:
 - Order workflow service.
 - Stock reservation service.
 
-### 5.6 FOC and Commission Logic
+### 5.6 FOC and Product Commission Logic
 
 Tasks:
 
@@ -1113,13 +1136,12 @@ Tasks:
 - Support quantity-based rules.
 - Support value-based rules.
 - Support date-limited promotions.
-- Build commission rule CRUD.
-- Build product commission calculation service.
+- Use the product commission rate from Product CRUD for commission calculation.
 
 Deliverables:
 
 - FOC APIs.
-- Commission APIs.
+- Product commission calculation service.
 - Calculation services.
 
 ### 5.7 Invoice, Voucher, and Printing Backend
@@ -1127,6 +1149,7 @@ Deliverables:
 Tasks:
 
 - Generate invoice from approved order.
+- Carry source order, pharmacy, products, FOC, discount, and totals into generated invoice.
 - Generate invoice numbers.
 - Generate delivery voucher numbers.
 - Generate payment receipt numbers.
@@ -1209,7 +1232,7 @@ Tasks:
 - Connect sales order workflow.
 - Connect invoice and voucher screens.
 - Connect payment and finance screens.
-- Connect FOC and commission screens.
+- Connect product-linked FOC fields and product commission fields from Product CRUD.
 - Connect reports.
 - Connect sales representative dashboard.
 - Connect sales representative product catalog.
@@ -1352,7 +1375,7 @@ Project lead:
 - Payment UI.
 - Receivables UI.
 - Payables UI.
-- FOC UI.
+- Product-linked FOC UI.
 - Commission UI.
 - Reports UI.
 - UI review and freeze.
@@ -1360,13 +1383,13 @@ Project lead:
 ### Sprint 5: Sales Representative UI
 
 - Sales representative layout.
+- Sales representative login/profile.
 - Dashboard.
-- Product catalog.
 - Stock availability.
 - Pharmacy list/detail.
 - Order creation.
 - Order history.
-- Performance dashboard.
+- Dashboard performance section.
 
 ### Sprint 6: Database and Backend Foundation
 

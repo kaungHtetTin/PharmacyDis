@@ -1,7 +1,7 @@
 export const units = {
     eyebrow: 'Stock Setup',
     title: 'Units',
-    description: 'Maintain unit master records and preview product-specific conversion rules used for stock, receiving, orders, and prices.',
+    description: 'Maintain reusable unit master records. Conversion factors and selling prices are configured per product in Product CRUD.',
     primaryAction: 'Add unit',
     filters: [
         { label: 'Usage', options: ['All', 'Base capable', 'Package only'] },
@@ -13,13 +13,13 @@ export const units = {
         { key: 'shortName', label: 'Short Name' },
         { key: 'usage', label: 'Usage' },
         { key: 'productCount', label: 'Products' },
-        { key: 'example', label: 'Example Rule' },
+        { key: 'example', label: 'Product Usage Example' },
         { key: 'status', label: 'Status', type: 'status' },
     ],
     rows: [
         { id: 'unit-001', name: 'Tablet', shortName: 'Tab', usage: 'Base capable', productCount: '48', example: 'Base for tablets', status: 'Active' },
-        { id: 'unit-002', name: 'Card', shortName: 'Card', usage: 'Package only', productCount: '38', example: '1 Card = 10 Tablets', status: 'Active' },
-        { id: 'unit-003', name: 'Box', shortName: 'Box', usage: 'Package only', productCount: '42', example: '1 Box = 100 Tablets', status: 'Active' },
+        { id: 'unit-002', name: 'Card', shortName: 'Card', usage: 'Package only', productCount: '38', example: 'Product-specific package unit', status: 'Active' },
+        { id: 'unit-003', name: 'Box', shortName: 'Box', usage: 'Package only', productCount: '42', example: 'Product-specific package unit', status: 'Active' },
         { id: 'unit-004', name: 'Milliliter', shortName: 'ml', usage: 'Base capable', productCount: '16', example: 'Base for liquid', status: 'Active' },
         { id: 'unit-005', name: 'Bottle', shortName: 'Btl', usage: 'Package only', productCount: '18', example: '1 Bottle = 100 ml', status: 'Active' },
     ],
@@ -28,19 +28,16 @@ export const units = {
         { label: 'Short name' },
         { label: 'Usage', type: 'select', options: ['Base capable', 'Package only'] },
         { label: 'Status', type: 'select', options: ['Active', 'Inactive'] },
-        { label: 'Product for conversion preview', type: 'select', options: ['Paracetamol 500mg', 'Amoxicillin 250mg', 'Vitamin C Syrup'] },
-        { label: 'Base unit explanation', value: 'Base unit is the inventory quantity used for stock balance.' },
-        { label: 'Conversion factor', type: 'number' },
-        { label: 'Selling price for selected product unit', type: 'number' },
     ],
     factFields: [
         { key: 'name', label: 'Unit name' },
         { key: 'shortName', label: 'Short name' },
         { key: 'usage', label: 'Usage' },
         { key: 'productCount', label: 'Assigned products' },
-        { key: 'example', label: 'Example conversion' },
+        { key: 'example', label: 'Product usage' },
         { key: 'status', label: 'Status' },
     ],
+    conversionPreviewOnly: true,
     conversionPreviews: [
         {
             id: 'conv-001',
@@ -68,8 +65,8 @@ export const units = {
         },
     ],
     drawerSections: [
-        { title: 'Base-unit rule', items: ['Base-capable units can be used as the smallest inventory quantity', 'Package-only units convert back to a product base unit', 'Conversion factor lives on product-unit pricing rows'] },
-        { title: 'Product conversion examples', items: ['Paracetamol: 1 Card = 10 Tablets', 'Paracetamol: 1 Box = 100 Tablets', 'Vitamin C Syrup: 1 Bottle = 100 ml'] },
+        { title: 'Unit master rule', items: ['Unit records only define reusable names and short names', 'Conversion factor does not live on the unit record', 'Conversion factor and selling price live on product-unit pricing rows in Product CRUD'] },
+        { title: 'Product conversion preview', items: ['Paracetamol: 1 Card = 10 Tablets', 'Paracetamol: 1 Box = 100 Tablets', 'Vitamin C Syrup: 1 Bottle = 100 ml'] },
         { title: 'Deletion rule', items: ['A unit cannot be deleted when assigned to product pricing rows', 'Archive or replace product-unit rows first'] },
     ],
     summaries: [

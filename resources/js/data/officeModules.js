@@ -1,6 +1,4 @@
-import { commissions } from './mock/commissions';
 import { companies } from './mock/companies';
-import { focRules } from './mock/foc';
 import { inventory } from './mock/inventory';
 import { invoices } from './mock/invoices';
 import { payables, receivables } from './mock/finance';
@@ -8,7 +6,7 @@ import { payments } from './mock/payments';
 import { pharmacies } from './mock/pharmacies';
 import { products } from './mock/products';
 import { receiving } from './mock/receiving';
-import { reports } from './mock/reports';
+import { financeReports, pharmacyReports, representativeReports } from './mock/reports';
 import { representatives } from './mock/representatives';
 import { settings } from './mock/settings';
 import { units } from './mock/units';
@@ -27,8 +25,8 @@ export const officeModules = {
     payments,
     receivables,
     payables,
-    'foc-rules': focRules,
-    commissions,
-    reports,
+    'reports-representatives': representativeReports,
+    'reports-pharmacies': pharmacyReports,
+    'reports-finance': financeReports,
     settings,
 };

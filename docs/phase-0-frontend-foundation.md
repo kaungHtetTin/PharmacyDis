@@ -73,7 +73,6 @@ resources/js/
       payments.js
       finance.js
       foc.js
-      commissions.js
       reports.js
       settings.js
       officeDashboard.js
@@ -127,9 +126,9 @@ Current office shell navigation:
 - Payments.
 - Receivables.
 - Payables.
-- FOC Rules.
-- Commissions.
-- Reports.
+- Sales Rep Reports.
+- Pharmacy Reports.
+- Finance Reports.
 - Settings.
 
 ## Sales Representative Navigation
@@ -137,12 +136,10 @@ Current office shell navigation:
 Current sales representative shell navigation:
 
 - Dashboard.
-- Products.
 - Stock.
 - Pharmacies.
 - New Order.
 - Order History.
-- Performance.
 
 ## Route Endpoints
 
@@ -156,6 +153,7 @@ Laravel web routes now serve the React app at these endpoints:
 /office/units
 /office/pharmacies
 /office/representatives
+/office/representatives-detail
 /office/inventory
 /office/receiving
 /office/orders
@@ -163,25 +161,27 @@ Laravel web routes now serve the React app at these endpoints:
 /office/payments
 /office/receivables
 /office/payables
-/office/foc-rules
-/office/commissions
-/office/reports
+/office/reports-representatives
+/office/reports-pharmacies
+/office/reports-finance
 /office/settings
 
 /sales
+/sales/login
 /sales/dashboard
-/sales/products
 /sales/stock
 /sales/pharmacies
+/sales/pharmacies-detail
 /sales/new-order
 /sales/orders
-/sales/performance
+/sales/profile
 ```
 
 With the current local XAMPP base URL, examples are:
 
 ```text
 http://localhost/paramacy-dis/public/office/dashboard
+http://localhost/paramacy-dis/public/sales/login
 http://localhost/paramacy-dis/public/sales/dashboard
 ```
 

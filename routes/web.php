@@ -21,11 +21,14 @@ Route::view('/office', 'welcome')->name('office.index');
 Route::view('/office/{page}', 'welcome')
     ->whereIn('page', [
         'dashboard',
+        'login',
         'companies',
         'products',
         'units',
         'pharmacies',
+        'pharmacies-detail',
         'representatives',
+        'representatives-detail',
         'inventory',
         'receiving',
         'orders',
@@ -33,9 +36,9 @@ Route::view('/office/{page}', 'welcome')
         'payments',
         'receivables',
         'payables',
-        'foc-rules',
-        'commissions',
-        'reports',
+        'reports-representatives',
+        'reports-pharmacies',
+        'reports-finance',
         'settings',
     ])
     ->name('office.page');
@@ -43,12 +46,13 @@ Route::view('/office/{page}', 'welcome')
 Route::view('/sales', 'welcome')->name('sales.index');
 Route::view('/sales/{page}', 'welcome')
     ->whereIn('page', [
+        'login',
         'dashboard',
-        'products',
         'stock',
         'pharmacies',
+        'pharmacies-detail',
         'new-order',
         'orders',
-        'performance',
+        'profile',
     ])
     ->name('sales.page');

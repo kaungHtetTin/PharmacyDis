@@ -25,6 +25,8 @@ The admin dashboard is built for **daily operations**, not marketing pages.
 | One primary action | Each panel has at most one `.btn.primary` in its header |
 | Scan-first layout | Metrics → wide queue tables → side summaries |
 | Context without navigation | Order detail opens in a right drawer; CRUD opens in modals |
+| Contextual workflows | High-volume relationships start from the related record, not a giant select |
+| Full detail pages | Use a page, not a drawer, when a record needs multiple filtered/paginated tables |
 | Semantic color | Brand color is configurable; status colors stay fixed |
 
 ---
@@ -396,7 +398,8 @@ Conventions:
 - Primary line: `<strong>`; secondary: `<small>` below
 - Row hover: `--color-primary-soft` background
 - Rider cell: `.rider-cell` with circular initials
-- Row actions: `.inline-actions` with `.icon-btn.small`
+- Row actions: compact icon-only buttons with tooltip/ARIA labels. If a row has more than 3 actions, show the first 2 as icon buttons and collapse the rest behind a More icon menu.
+- More menu entries keep business-specific labels such as Record payment, Generate invoice, Create order, Edit invoice, Print invoice, and Delete invoice.
 - Empty state: single row, `<span class="muted">` message
 
 ### 7.7 Alert list

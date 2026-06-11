@@ -1,9 +1,14 @@
-export default function FormField({ error = '', label, options = [], placeholder, type = 'text', value = '' }) {
+import Icon from './Icon';
+
+export default function FormField({ error = '', label, name, onChange, options = [], placeholder, required = false, type = 'text', value = '' }) {
+    const fieldClassName = `form-field${error ? ' has-error' : ''}`;
+    const valueProps = onChange ? { onChange, value } : { defaultValue: value };
+
     if (type === 'textarea') {
         return (
-            <label className="form-field">
+            <label className={fieldClassName}>
                 <span>{label}</span>
-                <textarea placeholder={placeholder || label} rows="3" defaultValue={value} />
+                <textarea name={name} placeholder={placeholder || label} required={required} rows="3" {...valueProps} />
                 {error && <small className="field-error">{error}</small>}
             </label>
         );
@@ -11,9 +16,9 @@ export default function FormField({ error = '', label, options = [], placeholder
 
     if (type === 'select') {
         return (
-            <label className="form-field">
+            <label className={fieldClassName}>
                 <span>{label}</span>
-                <select defaultValue={value || ''}>
+                <select name={name} required={required} {...(onChange ? { onChange, value: value || '' } : { defaultValue: value || '' })}>
                     <option value="" disabled>{placeholder || `Select ${label}`}</option>
                     {options.map((option) => <option key={option}>{option}</option>)}
                 </select>
@@ -22,10 +27,29 @@ export default function FormField({ error = '', label, options = [], placeholder
         );
     }
 
+    if (type === 'file') {
+        return (
+            <div className={fieldClassName}>
+                <span>{label}</span>
+                <label className="file-upload-control">
+                    <input aria-label={label} name={name} onChange={onChange} required={required} type="file" />
+                    <span className="file-upload-icon">
+                        <Icon name="image" size={20} />
+                    </span>
+                    <span className="file-upload-copy">
+                        <strong>{placeholder || 'Choose product image'}</strong>
+                        <small>JPG or PNG, single primary image</small>
+                    </span>
+                </label>
+                {error && <small className="field-error">{error}</small>}
+            </div>
+        );
+    }
+
     return (
-        <label className="form-field">
+        <label className={fieldClassName}>
             <span>{label}</span>
-            <input defaultValue={value} placeholder={placeholder || label} type={type} />
+            <input name={name} placeholder={placeholder || label} required={required} type={type} {...valueProps} />
             {error && <small className="field-error">{error}</small>}
         </label>
     );
