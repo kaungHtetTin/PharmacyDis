@@ -1,6 +1,6 @@
 import Icon from './Icon';
 
-export default function FormField({ error = '', label, name, onChange, options = [], placeholder, required = false, type = 'text', value = '' }) {
+export default function FormField({ accept = '', error = '', helperText = '', label, name, onChange, options = [], placeholder, required = false, type = 'text', value = '' }) {
     const fieldClassName = `form-field${error ? ' has-error' : ''}`;
     const valueProps = onChange ? { onChange, value } : { defaultValue: value };
 
@@ -32,13 +32,13 @@ export default function FormField({ error = '', label, name, onChange, options =
             <div className={fieldClassName}>
                 <span>{label}</span>
                 <label className="file-upload-control">
-                    <input aria-label={label} name={name} onChange={onChange} required={required} type="file" />
+                    <input accept={accept} aria-label={label} name={name} onChange={onChange} required={required} type="file" />
                     <span className="file-upload-icon">
                         <Icon name="image" size={20} />
                     </span>
                     <span className="file-upload-copy">
                         <strong>{placeholder || 'Choose product image'}</strong>
-                        <small>JPG or PNG, single primary image</small>
+                        <small>{helperText || 'JPG or PNG, single primary image'}</small>
                     </span>
                 </label>
                 {error && <small className="field-error">{error}</small>}

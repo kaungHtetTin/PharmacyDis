@@ -11,6 +11,8 @@ use App\Models\SalesOrder;
 use App\Models\Unit;
 use Database\Seeders\RolesAndSampleDataSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class BusinessWorkflowTest extends TestCase
@@ -161,25 +163,39 @@ class BusinessWorkflowTest extends TestCase
 
     public function test_office_can_create_update_and_delete_product(): void
     {
+        Storage::fake('public');
+
         $company = Company::where('code', 'MEDILIFE')->firstOrFail();
         $category = ProductCategory::where('code', 'PAIN')->firstOrFail();
         $unit = Unit::where('abbreviation', 'Tab')->firstOrFail();
+        $box = Unit::where('abbreviation', 'Box')->firstOrFail();
 
         $created = $this->withToken($this->officeToken)
-            ->postJson('/api/office/products', [
+            ->post('/api/office/products', [
                 'company_id' => $company->id,
                 'product_category_id' => $category->id,
                 'base_unit_id' => $unit->id,
                 'sku' => 'TEST-PROD-001',
+                'barcode' => '9559000000012',
+                'brand' => 'Test Health',
                 'name' => 'Test Product 001',
+                'primary_image' => $this->fakePngUpload(),
                 'default_discount_percentage' => 4,
                 'commission_rate_percentage' => 2,
                 'low_stock_threshold_base_units' => 20,
                 'base_unit_selling_price' => 1500,
+                'product_units' => [
+                    ['unit_id' => $unit->id, 'conversion_factor_to_base' => 1, 'selling_price' => 1500, 'is_default_sales_unit' => false, 'status' => 'active'],
+                    ['unit_id' => $box->id, 'conversion_factor_to_base' => 100, 'selling_price' => 140000, 'is_default_sales_unit' => true, 'status' => 'active'],
+                ],
                 'status' => 'active',
             ])
             ->assertCreated()
+            ->assertJsonPath('brand', 'Test Health')
+            ->assertJsonPath('barcode', '9559000000012')
             ->json();
+
+        Storage::disk('public')->assertExists($created['primary_image_path']);
 
         $this->withToken($this->officeToken)
             ->putJson("/api/office/products/{$created['id']}", [
@@ -187,15 +203,23 @@ class BusinessWorkflowTest extends TestCase
                 'product_category_id' => $category->id,
                 'base_unit_id' => $unit->id,
                 'sku' => 'TEST-PROD-001',
+                'barcode' => '9559000000013',
+                'brand' => 'Test Health Plus',
                 'name' => 'Test Product 001 Updated',
                 'default_discount_percentage' => 5,
                 'commission_rate_percentage' => 3,
                 'low_stock_threshold_base_units' => 25,
                 'base_unit_selling_price' => 1800,
+                'product_units' => [
+                    ['unit_id' => $unit->id, 'conversion_factor_to_base' => 1, 'selling_price' => 1800, 'is_default_sales_unit' => false, 'status' => 'active'],
+                    ['unit_id' => $box->id, 'conversion_factor_to_base' => 100, 'selling_price' => 150000, 'is_default_sales_unit' => true, 'status' => 'active'],
+                ],
                 'status' => 'inactive',
             ])
             ->assertOk()
             ->assertJsonPath('status', 'inactive')
+            ->assertJsonPath('brand', 'Test Health Plus')
+            ->assertJsonPath('barcode', '9559000000013')
             ->assertJsonPath('name', 'Test Product 001 Updated');
 
         $this->assertDatabaseHas('product_units', [
@@ -203,6 +227,14 @@ class BusinessWorkflowTest extends TestCase
             'unit_id' => $unit->id,
             'is_base_unit' => 1,
             'selling_price' => 1800,
+        ]);
+
+        $this->assertDatabaseHas('product_units', [
+            'product_id' => $created['id'],
+            'unit_id' => $box->id,
+            'conversion_factor_to_base' => 100,
+            'is_default_sales_unit' => 1,
+            'selling_price' => 150000,
         ]);
 
         $this->withToken($this->officeToken)
@@ -213,5 +245,13 @@ class BusinessWorkflowTest extends TestCase
             'id' => $created['id'],
             'sku' => 'TEST-PROD-001',
         ]);
+    }
+
+    private function fakePngUpload(): UploadedFile
+    {
+        $path = tempnam(sys_get_temp_dir(), 'product-image');
+        file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII='));
+
+        return new UploadedFile($path, 'test-product.png', 'image/png', null, true);
     }
 }

@@ -108,8 +108,9 @@ class RolesAndSampleDataSeeder extends Seeder
             [
                 'company_id' => $medilife->id,
                 'product_category_id' => $painRelief->id,
-                'brand_id' => $medilifeBrand->id,
+                'brand' => $medilifeBrand->name,
                 'base_unit_id' => $tablet->id,
+                'barcode' => '9551000005001',
                 'name' => 'Paracetamol 500mg',
                 'default_discount_percentage' => 2,
                 'commission_rate_percentage' => 1.5,
@@ -123,8 +124,9 @@ class RolesAndSampleDataSeeder extends Seeder
             [
                 'company_id' => $medilife->id,
                 'product_category_id' => $painRelief->id,
-                'brand_id' => $medilifeBrand->id,
+                'brand' => $medilifeBrand->name,
                 'base_unit_id' => $bottle->id,
+                'barcode' => '9551000001007',
                 'name' => 'Cough Relief Syrup 100ml',
                 'default_discount_percentage' => 1,
                 'commission_rate_percentage' => 2,
@@ -138,8 +140,9 @@ class RolesAndSampleDataSeeder extends Seeder
             [
                 'company_id' => $zenith->id,
                 'product_category_id' => $vitamins->id,
-                'brand_id' => $zenithBrand->id,
+                'brand' => $zenithBrand->name,
                 'base_unit_id' => $bottle->id,
+                'barcode' => '9552000001004',
                 'name' => 'Vitamin C 100 Tablets',
                 'default_discount_percentage' => 3,
                 'commission_rate_percentage' => 2,
@@ -186,7 +189,6 @@ class RolesAndSampleDataSeeder extends Seeder
                 'address' => 'Chan Aye Thar Zan',
                 'city' => 'Mandalay',
                 'region' => 'Mandalay',
-                'assigned_sales_representative_id' => $salesRep->id,
                 'status' => 'active',
             ]
         );
@@ -200,7 +202,6 @@ class RolesAndSampleDataSeeder extends Seeder
                 'address' => 'Aungmyaythazan',
                 'city' => 'Mandalay',
                 'region' => 'Mandalay',
-                'assigned_sales_representative_id' => $salesRep->id,
                 'status' => 'active',
             ]
         );

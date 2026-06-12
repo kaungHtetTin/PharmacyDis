@@ -3,16 +3,11 @@ export const units = {
     title: 'Units',
     description: 'Maintain reusable unit master records. Conversion factors and selling prices are configured per product in Product CRUD.',
     primaryAction: 'Add unit',
-    filters: [
-        { label: 'Usage', options: ['All', 'Base capable', 'Package only'] },
-        { label: 'Status', options: ['All', 'Active', 'Inactive'] },
-        { label: 'Assigned Products', options: ['All', 'Used', 'Unused'] },
-    ],
+    showFilterToolbar: false,
     columns: [
         { key: 'name', label: 'Unit' },
         { key: 'shortName', label: 'Short Name' },
-        { key: 'usage', label: 'Usage' },
-        { key: 'productCount', label: 'Products' },
+        { key: 'productCount', label: 'Product Unit Rows' },
         { key: 'example', label: 'Product Usage Example' },
         { key: 'status', label: 'Status', type: 'status' },
     ],
@@ -26,14 +21,12 @@ export const units = {
     formFields: [
         { label: 'Unit name' },
         { label: 'Short name' },
-        { label: 'Usage', type: 'select', options: ['Base capable', 'Package only'] },
         { label: 'Status', type: 'select', options: ['Active', 'Inactive'] },
     ],
     factFields: [
         { key: 'name', label: 'Unit name' },
         { key: 'shortName', label: 'Short name' },
-        { key: 'usage', label: 'Usage' },
-        { key: 'productCount', label: 'Assigned products' },
+        { key: 'productCount', label: 'Assigned product rows' },
         { key: 'example', label: 'Product usage' },
         { key: 'status', label: 'Status' },
     ],
@@ -68,10 +61,5 @@ export const units = {
         { title: 'Unit master rule', items: ['Unit records only define reusable names and short names', 'Conversion factor does not live on the unit record', 'Conversion factor and selling price live on product-unit pricing rows in Product CRUD'] },
         { title: 'Product conversion preview', items: ['Paracetamol: 1 Card = 10 Tablets', 'Paracetamol: 1 Box = 100 Tablets', 'Vitamin C Syrup: 1 Bottle = 100 ml'] },
         { title: 'Deletion rule', items: ['A unit cannot be deleted when assigned to product pricing rows', 'Archive or replace product-unit rows first'] },
-    ],
-    summaries: [
-        { label: 'Unit master', value: '15', note: 'Reusable across products' },
-        { label: 'Base-capable units', value: '6', note: 'Tablet, capsule, ml, gram' },
-        { label: 'Product-unit rows', value: '318', note: 'Conversions live per product' },
     ],
 };

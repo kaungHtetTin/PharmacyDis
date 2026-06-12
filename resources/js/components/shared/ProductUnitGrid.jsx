@@ -1,11 +1,13 @@
-export default function ProductUnitGrid({ rows = [], readonly = false }) {
+import Icon from './Icon';
+
+export default function ProductUnitGrid({ defaultActionBusy = false, onDefaultSalesUnitChange, rows = [] }) {
     return (
         <div className="product-unit-grid">
             <div className="product-unit-head">
                 <span>Unit</span>
                 <span>Conversion to base</span>
                 <span>Selling price</span>
-                <span>Base</span>
+                <span>Role</span>
             </div>
             {rows.map((row) => (
                 <div className={row.isBase ? 'product-unit-row base' : 'product-unit-row'} key={row.id || row.unit}>
@@ -21,8 +23,16 @@ export default function ProductUnitGrid({ rows = [], readonly = false }) {
                         <strong>{row.price}</strong>
                         <small>{row.priceLabel || 'Per selected unit'}</small>
                     </div>
-                    <div>
-                        <span className={row.isBase ? 'base-pill active' : 'base-pill'}>{row.isBase ? 'Base' : readonly ? 'Unit' : 'Set base'}</span>
+                    <div className="product-unit-role-stack">
+                        {row.isBase && <span className="base-pill active">Base unit</span>}
+                        {row.isDefaultSalesUnit ? (
+                            <span className="base-pill sales-default">Sales default</span>
+                        ) : onDefaultSalesUnitChange ? (
+                            <button className="unit-default-btn" disabled={defaultActionBusy} onClick={() => onDefaultSalesUnitChange(row)} type="button">
+                                <Icon name="check" size={13} />
+                                {defaultActionBusy ? 'Updating...' : 'Set default'}
+                            </button>
+                        ) : null}
                     </div>
                 </div>
             ))}

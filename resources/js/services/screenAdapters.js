@@ -8,6 +8,21 @@ function titleCase(value) {
         .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function storageUrl(path) {
+    if (!path) {
+        return '';
+    }
+
+    if (/^(https?:)?\/\//.test(path) || path.startsWith('data:') || path.startsWith('blob:')) {
+        return path;
+    }
+
+    const baseUrl = String(window.appConfig?.baseUrl || '').replace(/\/+$/g, '');
+    const normalizedPath = String(path).replace(/^\/+/, '').replace(/^storage\//, '');
+
+    return `${baseUrl}/storage/${normalizedPath}`;
+}
+
 export function unwrapCollection(response) {
     return Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
 }
@@ -97,20 +112,22 @@ export function mapProducts(response) {
         id: product.id,
         name: product.name,
         sku: product.sku,
-        barcode: product.sku,
+        barcode: product.barcode || '-',
+        barcode_value: product.barcode || '',
         company_id: product.company_id,
         product_category_id: product.product_category_id || '',
-        brand_id: product.brand_id || '',
+        brand_value: product.brand || '',
         base_unit_id: product.base_unit_id,
         description: product.description || '',
         primary_image_path: product.primary_image_path || '',
+        imageUrl: storageUrl(product.primary_image_path),
         default_discount_percentage: product.default_discount_percentage || 0,
         commission_rate_percentage: product.commission_rate_percentage || 0,
         low_stock_threshold_base_units: product.low_stock_threshold_base_units || 0,
         base_unit_selling_price: product.product_units?.find((unit) => unit.is_base_unit)?.selling_price || 0,
         company: product.company?.name || `Company #${product.company_id}`,
         category: product.category?.name || '-',
-        brand: product.brand?.name || '-',
+        brand: product.brand || '-',
         baseUnit: product.base_unit?.name || '-',
         priceRange: (product.product_units || []).map((unit) => `${money(unit.selling_price)} / ${unit.unit?.name || 'Unit'}`).join(', '),
         baseStock: `${product.low_stock_threshold_base_units || 0} min`,
@@ -119,15 +136,50 @@ export function mapProducts(response) {
         focRule: product.foc_rules?.length ? `${product.foc_rules.length} active` : 'No active FOC',
         focStatus: product.foc_rules?.length ? 'Active' : 'Not configured',
         status: titleCase(product.status),
+        product_units_raw: (product.product_units || []).map((unit) => ({
+            unit_id: unit.unit_id,
+            conversion_factor_to_base: unit.conversion_factor_to_base,
+            selling_price: unit.selling_price,
+            is_default_sales_unit: Boolean(unit.is_default_sales_unit),
+            status: unit.status || 'active',
+        })),
         productUnits: (product.product_units || []).map((unit) => ({
             id: unit.id,
+            unitId: unit.unit_id,
             unit: unit.unit?.name || `Unit #${unit.unit_id}`,
             shortName: unit.unit?.abbreviation || '-',
             conversion: unit.conversion_factor_to_base,
             conversionLabel: unit.is_base_unit ? 'Base stock unit' : `1 ${unit.unit?.name || 'unit'} = ${unit.conversion_factor_to_base} base units`,
             price: money(unit.selling_price),
             isBase: Boolean(unit.is_base_unit),
+            isDefaultSalesUnit: Boolean(unit.is_default_sales_unit),
+            status: titleCase(unit.status || 'active'),
         })),
+    }));
+}
+
+export function mapProductCategories(response) {
+    return unwrapCollection(response).map((category) => ({
+        id: category.id,
+        name: category.name,
+        code: category.code || '',
+        parent_id: category.parent_id || '',
+        parent: category.parent?.name || '-',
+        products: `${category.products_count || 0} ${Number(category.products_count || 0) === 1 ? 'product' : 'products'}`,
+        status: titleCase(category.status),
+    }));
+}
+
+export function mapUnits(response) {
+    return unwrapCollection(response).map((unit) => ({
+        id: unit.id,
+        name: unit.name,
+        abbreviation: unit.abbreviation || '',
+        shortName: unit.abbreviation || '-',
+        usage: Number(unit.product_units_count || 0) > 0 ? 'Used in products' : 'Unused',
+        productCount: `${unit.product_units_count || 0} ${Number(unit.product_units_count || 0) === 1 ? 'product row' : 'product rows'}`,
+        example: Number(unit.product_units_count || 0) > 0 ? 'Configured in Product CRUD' : 'Ready for product setup',
+        status: titleCase(unit.status),
     }));
 }
 
@@ -135,13 +187,20 @@ export function mapCustomers(response) {
     return unwrapCollection(response).map((customer) => ({
         id: customer.id,
         name: customer.name,
+        code: customer.code || '',
+        owner_name: customer.owner_name || '',
         owner: customer.owner_name || '-',
+        phone_value: customer.phone || '',
         phone: customer.phone || '-',
+        email: customer.email || '',
+        township_value: customer.township || '',
         township: customer.township || customer.city || '-',
+        city: customer.city || '',
+        region: customer.region || '',
         outstanding: money(customer.credit_statuses?.[0]?.outstanding_balance || 0),
         creditStatus: titleCase(customer.credit_statuses?.[0]?.credit_status || 'active'),
         status: titleCase(customer.status),
-        address: customer.address,
+        address: customer.address || '',
         creditStatuses: (customer.credit_statuses || []).map((credit) => ({
             company: credit.company?.name || `Company #${credit.company_id}`,
             status: titleCase(credit.credit_status),
@@ -179,8 +238,10 @@ export function mapSalesRepresentatives(response) {
 export function getOfficeEndpoint(pageKey) {
     const endpoints = {
         companies: '/office/companies?per_page=25',
+        'product-categories': '/office/product-categories?per_page=25',
         products: '/office/products?per_page=25',
-        pharmacies: '/lookups/customers',
+        units: '/office/units?per_page=25',
+        pharmacies: '/office/customers?per_page=25',
         representatives: '/lookups/sales-representatives',
         inventory: '/office/stock/current',
         orders: '/office/orders?per_page=25',
@@ -194,7 +255,9 @@ export function getOfficeEndpoint(pageKey) {
 export function mapOfficeRows(pageKey, response) {
     const mappers = {
         companies: mapCompanies,
+        'product-categories': mapProductCategories,
         products: mapProducts,
+        units: mapUnits,
         pharmacies: mapCustomers,
         representatives: mapSalesRepresentatives,
         inventory: mapStock,

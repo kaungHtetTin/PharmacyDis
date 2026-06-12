@@ -26,11 +26,6 @@ class SalesRepresentative extends Model
         return $this->belongsTo(Company::class);
     }
 
-    public function customers()
-    {
-        return $this->hasMany(Customer::class, 'assigned_sales_representative_id');
-    }
-
     public function salesOrders()
     {
         return $this->hasMany(SalesOrder::class);

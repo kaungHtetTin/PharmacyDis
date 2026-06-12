@@ -22,11 +22,6 @@ class Product extends Model
         return $this->belongsTo(ProductCategory::class, 'product_category_id');
     }
 
-    public function brand()
-    {
-        return $this->belongsTo(Brand::class);
-    }
-
     public function baseUnit()
     {
         return $this->belongsTo(Unit::class, 'base_unit_id');

@@ -4,6 +4,7 @@ import { invoices } from './mock/invoices';
 import { payables, receivables } from './mock/finance';
 import { payments } from './mock/payments';
 import { pharmacies } from './mock/pharmacies';
+import { productCategories } from './mock/productCategories';
 import { products } from './mock/products';
 import { receiving } from './mock/receiving';
 import { financeReports, pharmacyReports, representativeReports } from './mock/reports';
@@ -14,6 +15,7 @@ import { orders } from './mock/orders';
 
 export const officeModules = {
     companies,
+    'product-categories': productCategories,
     products,
     units,
     pharmacies,

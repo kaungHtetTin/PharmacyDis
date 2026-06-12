@@ -8,6 +8,7 @@ import Modal from '../../components/shared/Modal';
 import OrderCreateForm from '../../components/shared/OrderCreateForm';
 import { getCompanyCreditStatus, isBlockedCredit, normalizeCreditStatuses } from '../../components/shared/OrderCreditGate';
 import PageHeader from '../../components/shared/PageHeader';
+import PaginationBar from '../../components/shared/PaginationBar';
 import Panel from '../../components/shared/Panel';
 import StatusBadge from '../../components/shared/StatusBadge';
 import SummaryCard from '../../components/shared/SummaryCard';
@@ -171,11 +172,13 @@ function WorkflowModal({ detail, onClose, record, workflow }) {
             onSubmit={onClose}
             title={config.title}
         >
-            <div className="workflow-context-card">
-                <span>{config.contextLabel}</span>
-                <strong>{config.context}</strong>
-                <small>{config.note}</small>
-            </div>
+            {workflow !== 'editInvoice' && (
+                <div className="workflow-context-card">
+                    <span>{config.contextLabel}</span>
+                    <strong>{config.context}</strong>
+                    <small>{config.note}</small>
+                </div>
+            )}
             {isOrderCreate ? (
                 <OrderCreateForm
                     blocked={orderCreateBlocked}
@@ -198,13 +201,15 @@ function PaginatedTableSection({ actions = [], columns, filters, onRowClick, pag
         <Panel eyebrow={pageLabel} title={title}>
             <FilterToolbar filters={filters} searchPlaceholder={`Search ${title.toLowerCase()}`} showDate />
             <DataTable actions={actions} columns={columns} onRowClick={onRowClick} rows={rows} />
-            <div className="pagination-bar">
-                <span>Showing 1-{Math.min(rows.length, 5)} of {rows.length}</span>
-                <div>
-                    <button className="btn secondary" disabled type="button">Previous</button>
-                    <button className="btn secondary" type="button">Next</button>
-                </div>
-            </div>
+            <PaginationBar
+                currentPage={1}
+                from={rows.length ? 1 : 0}
+                lastPage={1}
+                onNext={() => {}}
+                onPrevious={() => {}}
+                to={Math.min(rows.length, 5)}
+                total={rows.length}
+            />
         </Panel>
     );
 }

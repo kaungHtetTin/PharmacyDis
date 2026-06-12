@@ -2,6 +2,7 @@ import { useState } from 'react';
 import DataTable from '../../components/shared/DataTable';
 import FilterToolbar from '../../components/shared/FilterToolbar';
 import PageHeader from '../../components/shared/PageHeader';
+import PaginationBar from '../../components/shared/PaginationBar';
 import Panel from '../../components/shared/Panel';
 import StatusBadge from '../../components/shared/StatusBadge';
 import SummaryCard from '../../components/shared/SummaryCard';
@@ -31,31 +32,15 @@ function PaginatedHistoryTable({ columns, filters, rows, title }) {
         <Panel eyebrow="History" title={title}>
             <FilterToolbar filters={filters} searchPlaceholder={`Search ${title.toLowerCase()}`} showDate />
             <DataTable columns={columns} rows={pagination.visibleRows} />
-            <div className="pagination-bar">
-                <span>
-                    {rows.length
-                        ? `Showing ${pagination.pageStart + 1}-${pagination.pageEnd} of ${rows.length}`
-                        : 'No records to show'}
-                </span>
-                <div>
-                    <button
-                        className="btn secondary"
-                        disabled={pagination.pageIndex === 0}
-                        onClick={() => pagination.setPageIndex((page) => Math.max(0, page - 1))}
-                        type="button"
-                    >
-                        Previous
-                    </button>
-                    <button
-                        className="btn secondary"
-                        disabled={pagination.pageIndex >= pagination.totalPages - 1}
-                        onClick={() => pagination.setPageIndex((page) => Math.min(pagination.totalPages - 1, page + 1))}
-                        type="button"
-                    >
-                        Next
-                    </button>
-                </div>
-            </div>
+            <PaginationBar
+                currentPage={pagination.pageIndex + 1}
+                from={rows.length ? pagination.pageStart + 1 : 0}
+                lastPage={pagination.totalPages}
+                onNext={() => pagination.setPageIndex((page) => Math.min(pagination.totalPages - 1, page + 1))}
+                onPrevious={() => pagination.setPageIndex((page) => Math.max(0, page - 1))}
+                to={pagination.pageEnd}
+                total={rows.length}
+            />
         </Panel>
     );
 }

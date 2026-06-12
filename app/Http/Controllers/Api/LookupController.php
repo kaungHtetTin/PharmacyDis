@@ -25,14 +25,8 @@ class LookupController extends Controller
 
     public function customers(Request $request)
     {
-        $salesRepresentative = $request->user()?->user_type === 'sales'
-            ? $request->user()->salesRepresentative
-            : null;
-
         return Customer::query()
             ->with(['creditStatuses.company'])
-            ->when($salesRepresentative, fn ($query) => $query->where('assigned_sales_representative_id', $salesRepresentative->id))
-            ->when($request->filled('sales_representative_id'), fn ($query) => $query->where('assigned_sales_representative_id', $request->sales_representative_id))
             ->where('status', 'active')
             ->orderBy('name')
             ->limit(50)
@@ -46,7 +40,7 @@ class LookupController extends Controller
             : null;
 
         return Product::query()
-            ->with(['company', 'category', 'brand', 'baseUnit', 'productUnits.unit', 'focRules' => fn ($query) => $query->where('status', 'active')])
+            ->with(['company', 'category', 'baseUnit', 'productUnits.unit', 'focRules' => fn ($query) => $query->where('status', 'active')])
             ->when($salesRepresentative, fn ($query) => $query->where('company_id', $salesRepresentative->company_id))
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->where('status', 'active')

@@ -12,11 +12,6 @@ class Customer extends Model
 
     protected $guarded = [];
 
-    public function assignedSalesRepresentative()
-    {
-        return $this->belongsTo(SalesRepresentative::class, 'assigned_sales_representative_id');
-    }
-
     public function creditStatuses()
     {
         return $this->hasMany(CustomerCompanyCreditStatus::class);

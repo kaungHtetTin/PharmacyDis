@@ -18,7 +18,7 @@ class CustomerPolicy
             return true;
         }
 
-        return $user->salesRepresentative?->id === $customer->assigned_sales_representative_id;
+        return $user->user_type === 'sales';
     }
 
     public function create(User $user): bool

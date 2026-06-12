@@ -5,6 +5,7 @@ import FilterToolbar from '../../components/shared/FilterToolbar';
 import FormField from '../../components/shared/FormField';
 import Modal from '../../components/shared/Modal';
 import PageHeader from '../../components/shared/PageHeader';
+import PaginationBar from '../../components/shared/PaginationBar';
 import Panel from '../../components/shared/Panel';
 import SalesOrderCreateForm from '../../components/shared/SalesOrderCreateForm';
 import SalesWorkspacePreview from '../../components/shared/SalesWorkspacePreview';
@@ -200,13 +201,15 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     onRowClick={openRecord}
                     rows={visibleRows}
                 />
-                <div className="pagination-bar">
-                    <span>{screen.rows.length ? `Showing ${pageStart + 1}-${pageEnd} of ${screen.rows.length}` : 'No records to show'}</span>
-                    <div>
-                        <button className="btn secondary" disabled={pageIndex === 0} onClick={() => setPageIndex((page) => Math.max(0, page - 1))} type="button">Previous</button>
-                        <button className="btn secondary" disabled={pageIndex >= totalPages - 1} onClick={() => setPageIndex((page) => Math.min(totalPages - 1, page + 1))} type="button">Next</button>
-                    </div>
-                </div>
+                <PaginationBar
+                    currentPage={pageIndex + 1}
+                    from={screen.rows.length ? pageStart + 1 : 0}
+                    lastPage={totalPages}
+                    onNext={() => setPageIndex((page) => Math.min(totalPages - 1, page + 1))}
+                    onPrevious={() => setPageIndex((page) => Math.max(0, page - 1))}
+                    to={pageEnd}
+                    total={screen.rows.length}
+                />
             </Panel>
 
             <div className="state-grid">

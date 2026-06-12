@@ -9,6 +9,7 @@ export const officeNavSections = [
         label: 'Master Data',
         items: [
             ['companies', 'building', 'Companies'],
+            ['product-categories', 'packageCheck', 'Product Categories'],
             ['products', 'box', 'Products'],
             ['units', 'packageCheck', 'Units'],
             ['pharmacies', 'users', 'Pharmacies'],

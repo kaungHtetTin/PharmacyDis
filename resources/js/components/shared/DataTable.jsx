@@ -27,6 +27,14 @@ function readCell(row, column, columnIndex) {
 }
 
 function renderCell(value, column, columnIndex) {
+    if (column.type === 'image') {
+        return (
+            <span className="table-image-cell">
+                {value ? <img alt="" src={value} /> : <Icon name="image" size={18} />}
+            </span>
+        );
+    }
+
     if (column.type === 'status' || statusValues.includes(value)) {
         return <StatusBadge value={value} />;
     }
@@ -153,6 +161,23 @@ function RowActions({ actions, row }) {
     );
 }
 
+function SkeletonRows({ actions, columns }) {
+    return Array.from({ length: 5 }).map((_, rowIndex) => (
+        <tr className="skeleton-row" key={`skeleton-${rowIndex}`}>
+            {columns.map((column, columnIndex) => (
+                <td key={`${column.key}-${rowIndex}`}>
+                    <span className={column.type === 'image' ? 'skeleton-thumb' : `skeleton-line ${columnIndex === 0 ? 'wide' : ''}`} />
+                </td>
+            ))}
+            {actions.length > 0 && (
+                <td>
+                    <span className="skeleton-actions" />
+                </td>
+            )}
+        </tr>
+    ));
+}
+
 export default function DataTable({
     columns,
     rows,
@@ -211,13 +236,7 @@ export default function DataTable({
                     </tr>
                 </thead>
                 <tbody>
-                    {loading && (
-                        <tr>
-                            <td colSpan={normalizedColumns.length + (actions.length ? 1 : 0)}>
-                                <span className="muted">Loading records...</span>
-                            </td>
-                        </tr>
-                    )}
+                    {loading && <SkeletonRows actions={actions} columns={normalizedColumns} />}
                     {!loading && error && (
                         <tr>
                             <td colSpan={normalizedColumns.length + (actions.length ? 1 : 0)}>

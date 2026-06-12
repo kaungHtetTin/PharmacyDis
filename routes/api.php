@@ -7,13 +7,16 @@ use App\Http\Controllers\Api\LookupController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\Office\DashboardController as OfficeDashboardController;
 use App\Http\Controllers\Api\Office\CompanyController as OfficeCompanyController;
+use App\Http\Controllers\Api\Office\CustomerController as OfficeCustomerController;
 use App\Http\Controllers\Api\Office\FocRuleController as OfficeFocRuleController;
 use App\Http\Controllers\Api\Office\InvoiceController as OfficeInvoiceController;
 use App\Http\Controllers\Api\Office\PaymentController as OfficePaymentController;
+use App\Http\Controllers\Api\Office\ProductCategoryController as OfficeProductCategoryController;
 use App\Http\Controllers\Api\Office\ProductController as OfficeProductController;
 use App\Http\Controllers\Api\Office\SalesOrderController as OfficeSalesOrderController;
 use App\Http\Controllers\Api\Office\StockController as OfficeStockController;
 use App\Http\Controllers\Api\Office\StockReceiptController as OfficeStockReceiptController;
+use App\Http\Controllers\Api\Office\UnitController as OfficeUnitController;
 use App\Http\Controllers\Api\Sales\DashboardController as SalesDashboardController;
 use App\Http\Controllers\Api\Sales\SalesOrderController as SalesSalesOrderController;
 
@@ -52,7 +55,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('office')->middleware('user.type:office')->group(function () {
         Route::get('dashboard', OfficeDashboardController::class);
         Route::apiResource('companies', OfficeCompanyController::class)->except(['show']);
+        Route::apiResource('customers', OfficeCustomerController::class)->except(['show']);
+        Route::apiResource('product-categories', OfficeProductCategoryController::class)->except(['show']);
         Route::apiResource('products', OfficeProductController::class)->except(['show']);
+        Route::apiResource('units', OfficeUnitController::class)->except(['show']);
 
         Route::get('orders', [OfficeSalesOrderController::class, 'index']);
         Route::post('orders', [OfficeSalesOrderController::class, 'store']);
