@@ -19,6 +19,7 @@ export const officeNavSections = [
     {
         label: 'Warehouse',
         items: [
+            ['warehouses', 'building', 'Warehouses'],
             ['inventory', 'truck', 'Inventory'],
             ['receiving', 'packageCheck', 'Receiving'],
         ],

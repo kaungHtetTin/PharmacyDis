@@ -3,7 +3,6 @@ import DataTable from '../../components/shared/DataTable';
 import PageHeader from '../../components/shared/PageHeader';
 import Panel from '../../components/shared/Panel';
 import StatusBadge from '../../components/shared/StatusBadge';
-import { officeAlerts, officeMetrics, orderQueue, topPharmacies, topProducts, topRepresentatives } from '../../data/mock/officeDashboard';
 import useApiResource from '../../hooks/useApiResource';
 import { mapOrders } from '../../services/screenAdapters';
 
@@ -13,13 +12,17 @@ export default function DashboardPage({ activePage }) {
     const title = activePage === 'dashboard'
         ? 'Management Dashboard'
         : `${activePage.replace('-', ' ')} workspace`;
-    const liveMetrics = dashboard.data ? [
-        { label: 'Pending orders', value: dashboard.data.pending_orders, note: 'Waiting office review' },
-        { label: 'Unpaid invoices', value: dashboard.data.unpaid_invoices, note: 'Receivables follow-up' },
-        { label: 'Monthly sales', value: Number(dashboard.data.monthly_sales || 0).toLocaleString(), note: 'Issued invoices' },
-        { label: 'Low stock products', value: dashboard.data.low_stock_products, note: 'Need stock review' },
-    ] : officeMetrics;
-    const liveOrderQueue = orders.data ? mapOrders(orders.data) : orderQueue;
+    const liveMetrics = [
+        { label: 'Pending orders', value: dashboard.data ? dashboard.data.pending_orders : '-', note: 'Waiting office review' },
+        { label: 'Unpaid invoices', value: dashboard.data ? dashboard.data.unpaid_invoices : '-', note: 'Receivables follow-up' },
+        { label: 'Monthly sales', value: dashboard.data ? Number(dashboard.data.monthly_sales || 0).toLocaleString() : '-', note: 'Issued invoices' },
+        { label: 'Low stock products', value: dashboard.data ? dashboard.data.low_stock_products : '-', note: 'Need stock review' },
+    ];
+    const liveOrderQueue = orders.data ? mapOrders(orders.data) : [];
+    const operationalAlerts = dashboard.data?.alerts || [];
+    const topProducts = dashboard.data?.top_products || [];
+    const topPharmacies = dashboard.data?.top_customers || [];
+    const topRepresentatives = dashboard.data?.top_representatives || [];
 
     return (
         <div className="page-stack">
@@ -55,7 +58,8 @@ export default function DashboardPage({ activePage }) {
 
                 <Panel eyebrow="Risk Monitor" title="Operational Alerts">
                     <div className="alert-list">
-                        {officeAlerts.map((alert) => (
+                        {operationalAlerts.length === 0 && <span className="muted">No operational alerts.</span>}
+                        {operationalAlerts.map((alert) => (
                             <div key={alert.title}>
                                 <span className="alert-icon">
                                     <StatusBadge value={alert.status} />
@@ -80,6 +84,7 @@ export default function DashboardPage({ activePage }) {
                             { key: 'orders', label: 'Orders' },
                             { key: 'status', label: 'Status', type: 'status' },
                         ]}
+                        loading={dashboard.loading}
                         rows={topProducts}
                     />
                 </Panel>
@@ -91,6 +96,7 @@ export default function DashboardPage({ activePage }) {
                             { key: 'outstanding', label: 'Outstanding', type: 'money' },
                             { key: 'status', label: 'Status', type: 'status' },
                         ]}
+                        loading={dashboard.loading}
                         rows={topPharmacies}
                     />
                 </Panel>
@@ -103,6 +109,7 @@ export default function DashboardPage({ activePage }) {
                             { key: 'orders', label: 'Orders' },
                             { key: 'status', label: 'Status', type: 'status' },
                         ]}
+                        loading={dashboard.loading}
                         rows={topRepresentatives}
                     />
                 </Panel>

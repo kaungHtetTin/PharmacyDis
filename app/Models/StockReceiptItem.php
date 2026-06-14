@@ -30,4 +30,9 @@ class StockReceiptItem extends Model
     {
         return $this->belongsTo(Unit::class);
     }
+
+    public function focUnit()
+    {
+        return $this->belongsTo(Unit::class, 'foc_unit_id');
+    }
 }

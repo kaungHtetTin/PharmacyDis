@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Brand;
+use App\Models\CompanyPayable;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\CustomerBalance;
@@ -23,6 +24,8 @@ use App\Models\SalesRepresentative;
 use App\Models\Setting;
 use App\Models\StockBatch;
 use App\Models\StockMovement;
+use App\Models\StockReceipt;
+use App\Models\StockReceiptItem;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -69,28 +72,71 @@ class RolesAndSampleDataSeeder extends Seeder
 
         $medilife = Company::updateOrCreate(
             ['code' => 'MEDILIFE'],
-            ['name' => 'MediLife Co.', 'contact_person' => 'Daw Hnin', 'phone' => '09-420-111111', 'status' => 'active']
+            [
+                'name' => 'MediLife Healthcare Ltd.',
+                'contact_person' => 'Daw Hnin Wai',
+                'phone' => '09-420-111111',
+                'email' => 'orders@medilife.test',
+                'address' => 'No. 18, 62nd Street, Mandalay',
+                'status' => 'active',
+            ]
         );
 
         $zenith = Company::updateOrCreate(
             ['code' => 'ZENITH'],
-            ['name' => 'Zenith Pharma', 'contact_person' => 'U Kyaw', 'phone' => '09-420-222222', 'status' => 'active']
+            [
+                'name' => 'Zenith Pharma Distribution',
+                'contact_person' => 'U Kyaw Min',
+                'phone' => '09-420-222222',
+                'email' => 'supply@zenithpharma.test',
+                'address' => 'Warehouse Road, Hlaing Township, Yangon',
+                'status' => 'active',
+            ]
+        );
+
+        $apex = Company::updateOrCreate(
+            ['code' => 'APEXMED'],
+            [
+                'name' => 'Apex Medical Supplies',
+                'contact_person' => 'Daw Thandar',
+                'phone' => '09-420-333333',
+                'email' => 'sales@apexmed.test',
+                'address' => 'Bayint Naung Wholesale Center, Yangon',
+                'status' => 'active',
+            ]
         );
 
         $tablet = Unit::updateOrCreate(['abbreviation' => 'Tab'], ['name' => 'Tablet', 'status' => 'active']);
+        $capsule = Unit::updateOrCreate(['abbreviation' => 'Cap'], ['name' => 'Capsule', 'status' => 'active']);
         $strip = Unit::updateOrCreate(['abbreviation' => 'Strip'], ['name' => 'Strip', 'status' => 'active']);
         $box = Unit::updateOrCreate(['abbreviation' => 'Box'], ['name' => 'Box', 'status' => 'active']);
         $bottle = Unit::updateOrCreate(['abbreviation' => 'Bot'], ['name' => 'Bottle', 'status' => 'active']);
         $carton = Unit::updateOrCreate(['abbreviation' => 'Ctn'], ['name' => 'Carton', 'status' => 'active']);
+        $sachet = Unit::updateOrCreate(['abbreviation' => 'Sachet'], ['name' => 'Sachet', 'status' => 'active']);
 
         $painRelief = ProductCategory::updateOrCreate(
             ['code' => 'PAIN'],
             ['name' => 'Pain Relief', 'status' => 'active']
         );
 
+        $coldCough = ProductCategory::updateOrCreate(
+            ['code' => 'COUGH'],
+            ['name' => 'Cold & Cough', 'status' => 'active']
+        );
+
+        $antibiotics = ProductCategory::updateOrCreate(
+            ['code' => 'ANTI'],
+            ['name' => 'Antibiotics', 'status' => 'active']
+        );
+
         $vitamins = ProductCategory::updateOrCreate(
             ['code' => 'VIT'],
             ['name' => 'Vitamins', 'status' => 'active']
+        );
+
+        $digestive = ProductCategory::updateOrCreate(
+            ['code' => 'DIGEST'],
+            ['name' => 'Digestive & Rehydration', 'status' => 'active']
         );
 
         $medilifeBrand = Brand::updateOrCreate(
@@ -101,6 +147,11 @@ class RolesAndSampleDataSeeder extends Seeder
         $zenithBrand = Brand::updateOrCreate(
             ['code' => 'ZN-PLUS'],
             ['company_id' => $zenith->id, 'name' => 'Zenith Plus', 'status' => 'active']
+        );
+
+        $apexBrand = Brand::updateOrCreate(
+            ['code' => 'AP-ESS'],
+            ['company_id' => $apex->id, 'name' => 'Apex Essentials', 'status' => 'active']
         );
 
         $paracetamol = Product::updateOrCreate(
@@ -123,7 +174,7 @@ class RolesAndSampleDataSeeder extends Seeder
             ['sku' => 'ML-COUGH-100'],
             [
                 'company_id' => $medilife->id,
-                'product_category_id' => $painRelief->id,
+                'product_category_id' => $coldCough->id,
                 'brand' => $medilifeBrand->name,
                 'base_unit_id' => $bottle->id,
                 'barcode' => '9551000001007',
@@ -131,6 +182,22 @@ class RolesAndSampleDataSeeder extends Seeder
                 'default_discount_percentage' => 1,
                 'commission_rate_percentage' => 2,
                 'low_stock_threshold_base_units' => 60,
+                'status' => 'active',
+            ]
+        );
+
+        $cetirizine = Product::updateOrCreate(
+            ['sku' => 'ML-CET-10'],
+            [
+                'company_id' => $medilife->id,
+                'product_category_id' => $coldCough->id,
+                'brand' => $medilifeBrand->name,
+                'base_unit_id' => $tablet->id,
+                'barcode' => '9551000000010',
+                'name' => 'Cetirizine 10mg Tablet',
+                'default_discount_percentage' => 1.5,
+                'commission_rate_percentage' => 1,
+                'low_stock_threshold_base_units' => 300,
                 'status' => 'active',
             ]
         );
@@ -151,6 +218,38 @@ class RolesAndSampleDataSeeder extends Seeder
             ]
         );
 
+        $amoxicillin = Product::updateOrCreate(
+            ['sku' => 'ZN-AMOX-250'],
+            [
+                'company_id' => $zenith->id,
+                'product_category_id' => $antibiotics->id,
+                'brand' => $zenithBrand->name,
+                'base_unit_id' => $capsule->id,
+                'barcode' => '9552000002506',
+                'name' => 'Amoxicillin 250mg Capsule',
+                'default_discount_percentage' => 2,
+                'commission_rate_percentage' => 1.8,
+                'low_stock_threshold_base_units' => 400,
+                'status' => 'active',
+            ]
+        );
+
+        $ors = Product::updateOrCreate(
+            ['sku' => 'AP-ORS-LEMON'],
+            [
+                'company_id' => $apex->id,
+                'product_category_id' => $digestive->id,
+                'brand' => $apexBrand->name,
+                'base_unit_id' => $sachet->id,
+                'barcode' => '9553000000201',
+                'name' => 'ORS Lemon Sachet',
+                'default_discount_percentage' => 1,
+                'commission_rate_percentage' => 1.2,
+                'low_stock_threshold_base_units' => 500,
+                'status' => 'active',
+            ]
+        );
+
         $this->seedProductUnits($paracetamol, [
             [$tablet, 1, 120, true, false],
             [$strip, 10, 1100, false, true],
@@ -163,9 +262,27 @@ class RolesAndSampleDataSeeder extends Seeder
             [$carton, 12, 51000, false, false],
         ]);
 
+        $this->seedProductUnits($cetirizine, [
+            [$tablet, 1, 90, true, false],
+            [$strip, 10, 850, false, true],
+            [$box, 100, 8000, false, false],
+        ]);
+
         $this->seedProductUnits($vitaminC, [
             [$bottle, 1, 8500, true, true],
             [$carton, 24, 195000, false, false],
+        ]);
+
+        $this->seedProductUnits($amoxicillin, [
+            [$capsule, 1, 180, true, false],
+            [$strip, 10, 1700, false, true],
+            [$box, 100, 16000, false, false],
+        ]);
+
+        $this->seedProductUnits($ors, [
+            [$sachet, 1, 350, true, false],
+            [$box, 50, 16500, false, true],
+            [$carton, 500, 155000, false, false],
         ]);
 
         $salesRep = SalesRepresentative::updateOrCreate(
@@ -221,6 +338,11 @@ class RolesAndSampleDataSeeder extends Seeder
             ['name' => 'Main Warehouse', 'address' => 'Mandalay distribution hub', 'status' => 'active']
         );
 
+        $yangonWarehouse = Warehouse::updateOrCreate(
+            ['code' => 'YGN-HUB'],
+            ['name' => 'Yangon Warehouse', 'address' => 'Hlaing township dispatch hub', 'status' => 'active']
+        );
+
         FocRule::updateOrCreate(
             ['company_id' => $medilife->id, 'product_id' => $paracetamol->id, 'rule_type' => 'quantity'],
             [
@@ -233,72 +355,120 @@ class RolesAndSampleDataSeeder extends Seeder
             ]
         );
 
-        $paracetamolBatch = StockBatch::updateOrCreate(
-            ['company_id' => $medilife->id, 'warehouse_id' => $warehouse->id, 'product_id' => $paracetamol->id, 'batch_no' => 'ML-PARA-B2606'],
+        StockMovement::where('reference_type', 'seed')->delete();
+
+        $this->seedStockReceipt(
+            'SR-DEMO-2606-001',
+            $medilife,
+            $warehouse,
+            $adminUser,
             [
-                'expiry_date' => now()->addMonths(10)->toDateString(),
-                'received_base_quantity' => 20000,
-                'available_base_quantity' => 15200,
-                'reserved_base_quantity' => 1000,
-                'sold_base_quantity' => 3800,
+                'supplier_invoice_no' => 'ML-INV-2606-041',
+                'received_date' => now()->subDays(12)->toDateString(),
+                'payable_due_date' => now()->addDays(18)->toDateString(),
+                'paid_amount' => 800000,
+            ],
+            [
+                [
+                    'product' => $paracetamol,
+                    'unit' => $carton,
+                    'quantity' => 20,
+                    'unit_cost' => 76000,
+                    'foc_unit' => $box,
+                    'foc_quantity' => 10,
+                    'batch_no' => 'ML-PARA-B2606',
+                    'manufactured_date' => now()->subMonths(3)->toDateString(),
+                    'expiry_date' => now()->addMonths(21)->toDateString(),
+                    'available_base_quantity' => 16200,
+                    'reserved_base_quantity' => 1000,
+                    'sold_base_quantity' => 3800,
+                ],
+                [
+                    'product' => $coughSyrup,
+                    'unit' => $carton,
+                    'quantity' => 75,
+                    'unit_cost' => 42000,
+                    'foc_unit' => $bottle,
+                    'foc_quantity' => 24,
+                    'batch_no' => 'ML-COUGH-B2606',
+                    'manufactured_date' => now()->subMonths(2)->toDateString(),
+                    'expiry_date' => now()->addMonths(16)->toDateString(),
+                    'available_base_quantity' => 664,
+                    'reserved_base_quantity' => 24,
+                    'sold_base_quantity' => 236,
+                ],
             ]
         );
 
-        StockMovement::updateOrCreate(
-            ['reference_type' => 'seed', 'reference_id' => 1, 'product_id' => $paracetamol->id, 'movement_type' => 'receipt'],
+        $this->seedStockReceipt(
+            'SR-DEMO-2606-002',
+            $zenith,
+            $warehouse,
+            $adminUser,
             [
-                'company_id' => $medilife->id,
-                'warehouse_id' => $warehouse->id,
-                'stock_batch_id' => $paracetamolBatch->id,
-                'base_unit_quantity' => 20000,
-                'note' => 'Opening stock for demo operations',
-                'created_by' => $adminUser->id,
+                'supplier_invoice_no' => 'ZN-INV-2606-118',
+                'received_date' => now()->subDays(8)->toDateString(),
+                'payable_due_date' => now()->addDays(22)->toDateString(),
+                'paid_amount' => 500000,
+            ],
+            [
+                [
+                    'product' => $vitaminC,
+                    'unit' => $carton,
+                    'quantity' => 40,
+                    'unit_cost' => 158000,
+                    'foc_unit' => $bottle,
+                    'foc_quantity' => 20,
+                    'batch_no' => 'ZN-VITC-B2606',
+                    'manufactured_date' => now()->subMonths(1)->toDateString(),
+                    'expiry_date' => now()->addMonths(18)->toDateString(),
+                    'available_base_quantity' => 440,
+                    'reserved_base_quantity' => 24,
+                    'sold_base_quantity' => 516,
+                ],
+                [
+                    'product' => $amoxicillin,
+                    'unit' => $box,
+                    'quantity' => 35,
+                    'unit_cost' => 13200,
+                    'foc_unit' => $strip,
+                    'foc_quantity' => 20,
+                    'batch_no' => 'ZN-AMOX-B2606',
+                    'manufactured_date' => now()->subMonths(4)->toDateString(),
+                    'expiry_date' => now()->addMonths(14)->toDateString(),
+                    'available_base_quantity' => 3250,
+                    'reserved_base_quantity' => 150,
+                    'sold_base_quantity' => 300,
+                ],
             ]
         );
 
-        $coughBatch = StockBatch::updateOrCreate(
-            ['company_id' => $medilife->id, 'warehouse_id' => $warehouse->id, 'product_id' => $coughSyrup->id, 'batch_no' => 'ML-COUGH-B2606'],
+        $this->seedStockReceipt(
+            'SR-DEMO-2606-003',
+            $apex,
+            $yangonWarehouse,
+            $adminUser,
             [
-                'expiry_date' => now()->addMonths(7)->toDateString(),
-                'received_base_quantity' => 900,
-                'available_base_quantity' => 640,
-                'reserved_base_quantity' => 24,
-                'sold_base_quantity' => 236,
-            ]
-        );
-
-        StockMovement::updateOrCreate(
-            ['reference_type' => 'seed', 'reference_id' => 3, 'product_id' => $coughSyrup->id, 'movement_type' => 'receipt'],
+                'supplier_invoice_no' => 'APX-INV-2606-027',
+                'received_date' => now()->subDays(4)->toDateString(),
+                'payable_due_date' => now()->addDays(26)->toDateString(),
+                'paid_amount' => 250000,
+            ],
             [
-                'company_id' => $medilife->id,
-                'warehouse_id' => $warehouse->id,
-                'stock_batch_id' => $coughBatch->id,
-                'base_unit_quantity' => 900,
-                'note' => 'Opening stock for demo operations',
-                'created_by' => $adminUser->id,
-            ]
-        );
-
-        $vitaminBatch = StockBatch::updateOrCreate(
-            ['company_id' => $zenith->id, 'warehouse_id' => $warehouse->id, 'product_id' => $vitaminC->id, 'batch_no' => 'ZN-VITC-B2606'],
-            [
-                'expiry_date' => now()->addMonths(8)->toDateString(),
-                'received_base_quantity' => 800,
-                'available_base_quantity' => 420,
-                'reserved_base_quantity' => 24,
-                'sold_base_quantity' => 356,
-            ]
-        );
-
-        StockMovement::updateOrCreate(
-            ['reference_type' => 'seed', 'reference_id' => 2, 'product_id' => $vitaminC->id, 'movement_type' => 'receipt'],
-            [
-                'company_id' => $zenith->id,
-                'warehouse_id' => $warehouse->id,
-                'stock_batch_id' => $vitaminBatch->id,
-                'base_unit_quantity' => 800,
-                'note' => 'Opening stock for demo operations',
-                'created_by' => $adminUser->id,
+                [
+                    'product' => $ors,
+                    'unit' => $carton,
+                    'quantity' => 12,
+                    'unit_cost' => 128000,
+                    'foc_unit' => $box,
+                    'foc_quantity' => 8,
+                    'batch_no' => 'AP-ORS-B2606',
+                    'manufactured_date' => now()->subMonths(1)->toDateString(),
+                    'expiry_date' => now()->addMonths(23)->toDateString(),
+                    'available_base_quantity' => 5600,
+                    'reserved_base_quantity' => 0,
+                    'sold_base_quantity' => 800,
+                ],
             ]
         );
 
@@ -468,6 +638,144 @@ class RolesAndSampleDataSeeder extends Seeder
             ['key' => 'invoice_due_days'],
             ['setting_group' => 'finance', 'value' => '30', 'value_type' => 'integer']
         );
+    }
+
+    private function seedStockReceipt(string $receiptNo, Company $company, Warehouse $warehouse, User $actor, array $receiptData, array $items): StockReceipt
+    {
+        $receipt = StockReceipt::updateOrCreate(
+            ['receipt_no' => $receiptNo],
+            [
+                'company_id' => $company->id,
+                'warehouse_id' => $warehouse->id,
+                'received_date' => $receiptData['received_date'] ?? now()->toDateString(),
+                'supplier_invoice_no' => $receiptData['supplier_invoice_no'] ?? null,
+                'payable_due_date' => $receiptData['payable_due_date'] ?? null,
+                'status' => 'posted',
+                'created_by' => $actor->id,
+            ]
+        );
+
+        StockMovement::query()
+            ->where('reference_type', StockReceipt::class)
+            ->where('reference_id', $receipt->id)
+            ->delete();
+        StockReceiptItem::where('stock_receipt_id', $receipt->id)->delete();
+        CompanyPayable::withTrashed()->where('stock_receipt_id', $receipt->id)->forceDelete();
+
+        $subtotal = 0;
+        $commissionTotal = 0;
+
+        foreach ($items as $item) {
+            /** @var Product $product */
+            $product = $item['product'];
+            /** @var Unit $unit */
+            $unit = $item['unit'];
+            $productUnit = ProductUnit::where('product_id', $product->id)
+                ->where('unit_id', $unit->id)
+                ->firstOrFail();
+            $quantity = (int) $item['quantity'];
+            $paidBaseQuantity = $quantity * (int) $productUnit->conversion_factor_to_base;
+            $focQuantity = (int) ($item['foc_quantity'] ?? 0);
+            $focUnit = $item['foc_unit'] ?? $unit;
+            $focProductUnit = $focQuantity > 0
+                ? ProductUnit::where('product_id', $product->id)->where('unit_id', $focUnit->id)->firstOrFail()
+                : null;
+            $focBaseQuantity = $focProductUnit ? $focQuantity * (int) $focProductUnit->conversion_factor_to_base : 0;
+            $baseQuantity = $paidBaseQuantity + $focBaseQuantity;
+            $unitCost = (float) $item['unit_cost'];
+            $grossLineTotal = $quantity * $unitCost;
+            $commissionRate = (float) ($product->commission_rate_percentage ?? 0);
+            $commissionAmount = $grossLineTotal * $commissionRate / 100;
+            $lineTotal = max(0, $grossLineTotal - $commissionAmount);
+            $subtotal += $grossLineTotal;
+            $commissionTotal += $commissionAmount;
+
+            StockReceiptItem::create([
+                'stock_receipt_id' => $receipt->id,
+                'product_id' => $product->id,
+                'unit_id' => $unit->id,
+                'foc_unit_id' => $focProductUnit?->unit_id,
+                'quantity' => $quantity,
+                'foc_quantity' => $focQuantity,
+                'conversion_factor_to_base' => $productUnit->conversion_factor_to_base,
+                'foc_conversion_factor_to_base' => $focProductUnit?->conversion_factor_to_base ?? 1,
+                'base_unit_quantity' => $baseQuantity,
+                'foc_base_unit_quantity' => $focBaseQuantity,
+                'unit_cost' => $unitCost,
+                'commission_rate_percentage' => $commissionRate,
+                'commission_amount' => $commissionAmount,
+                'line_total' => $lineTotal,
+                'batch_no' => $item['batch_no'] ?? null,
+                'manufactured_date' => $item['manufactured_date'] ?? null,
+                'expiry_date' => $item['expiry_date'] ?? null,
+            ]);
+
+            $reserved = (int) ($item['reserved_base_quantity'] ?? 0);
+            $sold = (int) ($item['sold_base_quantity'] ?? 0);
+            $damaged = (int) ($item['damaged_base_quantity'] ?? 0);
+            $expired = (int) ($item['expired_base_quantity'] ?? 0);
+            $available = array_key_exists('available_base_quantity', $item)
+                ? (int) $item['available_base_quantity']
+                : max(0, $baseQuantity - $reserved - $sold - $damaged - $expired);
+
+            $batch = StockBatch::updateOrCreate(
+                [
+                    'company_id' => $company->id,
+                    'warehouse_id' => $warehouse->id,
+                    'product_id' => $product->id,
+                    'batch_no' => $item['batch_no'] ?? null,
+                ],
+                [
+                    'expiry_date' => $item['expiry_date'] ?? null,
+                    'received_base_quantity' => $baseQuantity,
+                    'available_base_quantity' => $available,
+                    'reserved_base_quantity' => $reserved,
+                    'sold_base_quantity' => $sold,
+                    'damaged_base_quantity' => $damaged,
+                    'expired_base_quantity' => $expired,
+                ]
+            );
+
+            StockMovement::create([
+                'company_id' => $company->id,
+                'warehouse_id' => $warehouse->id,
+                'product_id' => $product->id,
+                'stock_batch_id' => $batch->id,
+                'movement_type' => 'receipt',
+                'base_unit_quantity' => $baseQuantity,
+                'reference_type' => StockReceipt::class,
+                'reference_id' => $receipt->id,
+                'note' => "Seeded receiving {$receiptNo}",
+                'created_by' => $actor->id,
+            ]);
+        }
+
+        $paidAmount = (float) ($receiptData['paid_amount'] ?? 0);
+        $total = max(0, $subtotal - $commissionTotal);
+        $due = max(0, $total - $paidAmount);
+        $paymentStatus = $due <= 0 ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid');
+
+        $receipt->update([
+            'subtotal_amount' => $subtotal,
+            'discount_amount' => $commissionTotal,
+            'total_amount' => $total,
+            'paid_amount' => $paidAmount,
+            'due_amount' => $due,
+            'payment_status' => $paymentStatus,
+        ]);
+
+        CompanyPayable::create([
+            'company_id' => $company->id,
+            'stock_receipt_id' => $receipt->id,
+            'payable_date' => $receipt->received_date,
+            'due_date' => $receipt->payable_due_date,
+            'amount' => $total,
+            'paid_amount' => $paidAmount,
+            'balance_amount' => $due,
+            'status' => $paymentStatus,
+        ]);
+
+        return $receipt;
     }
 
     private function seedProductUnits(Product $product, array $units)

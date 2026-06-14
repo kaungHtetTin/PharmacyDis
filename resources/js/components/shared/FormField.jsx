@@ -1,6 +1,6 @@
 import Icon from './Icon';
 
-export default function FormField({ accept = '', error = '', helperText = '', label, name, onChange, options = [], placeholder, required = false, type = 'text', value = '' }) {
+export default function FormField({ accept = '', error = '', helperText = '', label, name, onChange, options = [], placeholder, required = false, type = 'text', value = '', ...inputProps }) {
     const fieldClassName = `form-field${error ? ' has-error' : ''}`;
     const valueProps = onChange ? { onChange, value } : { defaultValue: value };
 
@@ -8,7 +8,7 @@ export default function FormField({ accept = '', error = '', helperText = '', la
         return (
             <label className={fieldClassName}>
                 <span>{label}</span>
-                <textarea name={name} placeholder={placeholder || label} required={required} rows="3" {...valueProps} />
+                <textarea name={name} placeholder={placeholder || label} required={required} rows="3" {...inputProps} {...valueProps} />
                 {error && <small className="field-error">{error}</small>}
             </label>
         );
@@ -18,7 +18,7 @@ export default function FormField({ accept = '', error = '', helperText = '', la
         return (
             <label className={fieldClassName}>
                 <span>{label}</span>
-                <select name={name} required={required} {...(onChange ? { onChange, value: value || '' } : { defaultValue: value || '' })}>
+                <select name={name} required={required} {...inputProps} {...(onChange ? { onChange, value: value || '' } : { defaultValue: value || '' })}>
                     <option value="" disabled>{placeholder || `Select ${label}`}</option>
                     {options.map((option) => <option key={option}>{option}</option>)}
                 </select>
@@ -49,7 +49,7 @@ export default function FormField({ accept = '', error = '', helperText = '', la
     return (
         <label className={fieldClassName}>
             <span>{label}</span>
-            <input name={name} placeholder={placeholder || label} required={required} type={type} {...valueProps} />
+            <input name={name} placeholder={placeholder || label} required={required} type={type} {...inputProps} {...valueProps} />
             {error && <small className="field-error">{error}</small>}
         </label>
     );

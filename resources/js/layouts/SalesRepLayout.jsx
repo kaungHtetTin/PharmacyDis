@@ -2,12 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from '../components/shared/Icon';
 import Logo from '../components/shared/Logo';
 import StatusBadge from '../components/shared/StatusBadge';
-import { assignedCompanies, quickActions } from '../data/mock/salesDashboard';
 import { salesNav } from '../data/navigation';
+import { useAuth } from '../services/auth.jsx';
+
+const quickActions = [
+    { label: 'New order', href: 'new-order', icon: 'plus' },
+    { label: 'Stock', href: 'stock', icon: 'box' },
+];
 
 export default function SalesRepLayout({ activePage, getPageUrl, officeUrl, onNavigate, onSwitchApp, children }) {
+    const { user } = useAuth();
     const [profileOpen, setProfileOpen] = useState(false);
     const profileMenuRef = useRef(null);
+    const representative = user?.sales_representative;
+    const profileName = user?.name || 'Sales Representative';
+    const initials = profileName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'SR';
+    const assignedCompany = representative?.company;
+    const region = representative?.region || 'Sales Representative';
 
     useEffect(() => {
         function closeProfileMenu(event) {
@@ -41,9 +52,9 @@ export default function SalesRepLayout({ activePage, getPageUrl, officeUrl, onNa
                             onClick={() => setProfileOpen((open) => !open)}
                             type="button"
                         >
-                            <span>MR</span>
+                            <span>{initials}</span>
                             <div>
-                                <strong>May Zin</strong>
+                                <strong>{profileName}</strong>
                                 <small>Sales Rep</small>
                             </div>
                         </button>
@@ -52,10 +63,10 @@ export default function SalesRepLayout({ activePage, getPageUrl, officeUrl, onNa
                                 <section>
                                     <p className="eyebrow">Profile</p>
                                     <div className="profile-menu-head">
-                                        <span>MR</span>
+                                        <span>{initials}</span>
                                         <div>
-                                            <strong>May Zin</strong>
-                                            <small>Yangon North / Sales Representative</small>
+                                            <strong>{profileName}</strong>
+                                            <small>{region} / Sales Representative</small>
                                         </div>
                                     </div>
                                 </section>
@@ -100,15 +111,15 @@ export default function SalesRepLayout({ activePage, getPageUrl, officeUrl, onNa
                                 <section>
                                     <p className="eyebrow">Assigned Company</p>
                                     <div className="profile-company-list">
-                                        {assignedCompanies.map((company) => (
-                                            <article key={company.id}>
+                                        {assignedCompany ? (
+                                            <article>
                                                 <div>
-                                                    <strong>{company.company}</strong>
-                                                    <small>{company.products} / {company.orders} orders</small>
+                                                    <strong>{assignedCompany.name}</strong>
+                                                    <small>Assigned product catalog</small>
                                                 </div>
-                                                <StatusBadge value={company.status} />
+                                                <StatusBadge value={representative?.status || 'Active'} />
                                             </article>
-                                        ))}
+                                        ) : <span className="muted">No assigned company.</span>}
                                     </div>
                                 </section>
                             </div>

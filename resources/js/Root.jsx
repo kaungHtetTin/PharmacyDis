@@ -14,17 +14,18 @@ import SalesPharmacyDetailPage from './pages/sales/SalesPharmacyDetailPage';
 import SalesProfilePage from './pages/sales/SalesProfilePage';
 import { useAuth } from './services/auth.jsx';
 
-const officePages = [...officeNav.map(([key]) => key), 'login', 'pharmacies-detail', 'representatives-detail'];
+const officePages = [...officeNav.map(([key]) => key), 'login', 'pharmacies-detail', 'representatives-detail', 'inventory-detail'];
 const salesPages = [...salesNav.map(([key]) => key), 'login', 'profile', 'pharmacies-detail'];
 
 const appConfig = window.appConfig || {};
 const baseUrl = String(appConfig.baseUrl || '').replace(/\/+$/g, '');
 
-function pageUrl(appMode, page) {
+function pageUrl(appMode, page, params = null) {
     const section = appMode === 'sales' ? 'sales' : 'office';
     const cleanPage = String(page || 'dashboard').replace(/^\/+|\/+$/g, '');
+    const query = params ? `?${new URLSearchParams(params).toString()}` : '';
 
-    return `${baseUrl}/${section}/${cleanPage}`;
+    return `${baseUrl}/${section}/${cleanPage}${query}`;
 }
 
 function getInitialRoute() {
@@ -48,8 +49,8 @@ export default function Root() {
         return () => window.removeEventListener('popstate', handlePopState);
     }, []);
 
-    function navigate(app, page) {
-        const nextUrl = pageUrl(app, page);
+    function navigate(app, page, params = null) {
+        const nextUrl = pageUrl(app, page, params);
 
         window.history.pushState({}, '', nextUrl);
         setRouteState({ appMode: app, page });
@@ -89,9 +90,9 @@ export default function Root() {
 
     return (
         <OfficeLayout
-            activePage={page === 'representatives-detail' || page === 'pharmacies-detail' ? page.replace('-detail', '') : page}
+            activePage={page === 'inventory-detail' ? 'inventory' : page === 'representatives-detail' || page === 'pharmacies-detail' ? page.replace('-detail', '') : page}
             getPageUrl={(page) => pageUrl('office', page)}
-            onNavigate={(page) => navigate('office', page)}
+            onNavigate={(page, params) => navigate('office', page, params)}
             onSwitchApp={() => navigate('sales', 'dashboard')}
             salesUrl={pageUrl('sales', 'dashboard')}
         >
@@ -99,7 +100,7 @@ export default function Root() {
             {page === 'pharmacies-detail' && <PharmacyDetailPage onNavigate={(page) => navigate('office', page)} />}
             {page === 'representatives-detail' && <RepresentativeDetailPage onNavigate={(page) => navigate('office', page)} />}
             {page !== 'dashboard' && page !== 'pharmacies-detail' && page !== 'representatives-detail' && (
-                <OfficeModulePage pageKey={page} onNavigate={(page) => navigate('office', page)} />
+                <OfficeModulePage pageKey={page} onNavigate={(page, params) => navigate('office', page, params)} />
             )}
         </OfficeLayout>
     );

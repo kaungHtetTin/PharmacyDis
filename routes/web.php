@@ -30,6 +30,7 @@ Route::view('/office/{page}', 'welcome')
         'representatives',
         'representatives-detail',
         'inventory',
+        'inventory-detail',
         'receiving',
         'orders',
         'invoices',

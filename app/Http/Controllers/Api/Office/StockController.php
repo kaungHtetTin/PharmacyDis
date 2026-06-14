@@ -3,29 +3,250 @@
 namespace App\Http\Controllers\Api\Office;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreStockAdjustmentRequest;
+use App\Models\Product;
+use App\Models\StockAdjustment;
 use App\Models\StockBatch;
+use App\Models\StockMovement;
+use App\Services\NumberGeneratorService;
+use App\Services\ProductUnitConversionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class StockController extends Controller
 {
     public function current(Request $request)
     {
-        return StockBatch::query()
+        $query = StockBatch::query()
             ->select([
                 'company_id',
-                'warehouse_id',
+                $request->filled('warehouse_id') ? 'warehouse_id' : DB::raw('NULL as warehouse_id'),
                 'product_id',
                 DB::raw('SUM(available_base_quantity) as available_base_quantity'),
                 DB::raw('SUM(reserved_base_quantity) as reserved_base_quantity'),
                 DB::raw('SUM(sold_base_quantity) as sold_base_quantity'),
                 DB::raw('MIN(expiry_date) as nearest_expiry_date'),
             ])
-            ->with(['product:id,name,sku,base_unit_id', 'product.baseUnit:id,name,abbreviation'])
+            ->with(['product:id,name,sku,base_unit_id,low_stock_threshold_base_units', 'product.baseUnit:id,name,abbreviation'])
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->warehouse_id))
             ->when($request->filled('product_id'), fn ($query) => $query->where('product_id', $request->product_id))
-            ->groupBy('company_id', 'warehouse_id', 'product_id')
-            ->paginate($request->integer('per_page', 15));
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = $request->search;
+
+                $query->whereHas('product', function ($productQuery) use ($search) {
+                    $productQuery->where('name', 'like', "%{$search}%")
+                        ->orWhere('sku', 'like', "%{$search}%");
+                });
+            })
+            ->groupBy(...array_filter([
+                'company_id',
+                $request->filled('warehouse_id') ? 'warehouse_id' : null,
+                'product_id',
+            ]));
+
+        match ($request->input('status')) {
+            'available' => $query->havingRaw('SUM(available_base_quantity) > 0'),
+            'low_stock' => $query->havingRaw('SUM(available_base_quantity) <= COALESCE((select low_stock_threshold_base_units from products where products.id = stock_batches.product_id), 0)'),
+            'near_expiry' => $query->havingRaw('MIN(expiry_date) between ? and ?', [now()->toDateString(), now()->addDays(90)->toDateString()]),
+            'expired' => $query->havingRaw('MIN(expiry_date) < ?', [now()->toDateString()]),
+            default => null,
+        };
+
+        return $query->paginate($request->integer('per_page', 15));
+    }
+
+    public function productBatches(Request $request, Product $product)
+    {
+        $query = StockBatch::query()
+            ->with(['warehouse:id,name,code'])
+            ->where('company_id', $product->company_id)
+            ->where('product_id', $product->id)
+            ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->warehouse_id))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = $request->search;
+
+                $query->where('batch_no', 'like', "%{$search}%");
+            })
+            ->when($request->filled('status'), function ($query) use ($request) {
+                match ($request->input('status')) {
+                    'available' => $query->where('available_base_quantity', '>', 0),
+                    'reserved' => $query->where('reserved_base_quantity', '>', 0),
+                    'sold' => $query->where('sold_base_quantity', '>', 0),
+                    'damaged' => $query->where('damaged_base_quantity', '>', 0),
+                    'expired' => $query->where(function ($query) {
+                        $query->where('expired_base_quantity', '>', 0)
+                            ->orWhere('expiry_date', '<', now()->toDateString());
+                    }),
+                    'near_expiry' => $query->whereBetween('expiry_date', [now()->toDateString(), now()->addDays(90)->toDateString()]),
+                    default => null,
+                };
+            })
+            ->orderByRaw('expiry_date is null')
+            ->orderBy('expiry_date')
+            ->orderBy('id');
+
+        $summaryQuery = StockBatch::query()
+            ->where('company_id', $product->company_id)
+            ->where('product_id', $product->id)
+            ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->warehouse_id));
+
+        $summary = (clone $summaryQuery)
+            ->selectRaw('
+                COALESCE(SUM(received_base_quantity), 0) as received_base_quantity,
+                COALESCE(SUM(available_base_quantity), 0) as available_base_quantity,
+                COALESCE(SUM(reserved_base_quantity), 0) as reserved_base_quantity,
+                COALESCE(SUM(sold_base_quantity), 0) as sold_base_quantity,
+                COALESCE(SUM(damaged_base_quantity), 0) as damaged_base_quantity,
+                COALESCE(SUM(expired_base_quantity), 0) as expired_base_quantity,
+                MIN(expiry_date) as nearest_expiry_date
+            ')
+            ->first();
+
+        $paginated = $query->paginate($request->integer('per_page', 15));
+        $paginated->getCollection()->load(['product:id,name,sku,base_unit_id', 'product.baseUnit:id,name,abbreviation']);
+
+        return response()->json(array_merge($paginated->toArray(), [
+            'product' => $product->load('baseUnit:id,name,abbreviation'),
+            'summary' => [
+                'batch_count' => (clone $summaryQuery)->count(),
+                'received_base_quantity' => (int) ($summary->received_base_quantity ?? 0),
+                'available_base_quantity' => (int) ($summary->available_base_quantity ?? 0),
+                'reserved_base_quantity' => (int) ($summary->reserved_base_quantity ?? 0),
+                'sold_base_quantity' => (int) ($summary->sold_base_quantity ?? 0),
+                'damaged_base_quantity' => (int) ($summary->damaged_base_quantity ?? 0),
+                'expired_base_quantity' => (int) ($summary->expired_base_quantity ?? 0),
+                'nearest_expiry_date' => $summary->nearest_expiry_date ?? null,
+            ],
+        ]));
+    }
+
+    public function adjust(
+        StoreStockAdjustmentRequest $request,
+        ProductUnitConversionService $conversionService,
+        NumberGeneratorService $numberGeneratorService
+    ) {
+        $data = $request->validated();
+
+        return DB::transaction(function () use ($data, $request, $conversionService, $numberGeneratorService) {
+            $product = Product::query()
+                ->where('company_id', $data['company_id'])
+                ->findOrFail($data['product_id']);
+            $baseQuantity = $conversionService->toBaseQuantity($product, (int) $data['unit_id'], (int) $data['quantity']);
+            $adjustment = StockAdjustment::create([
+                'adjustment_no' => $numberGeneratorService->next(StockAdjustment::class, 'adjustment_no', 'ADJ'),
+                'company_id' => $data['company_id'],
+                'warehouse_id' => $data['warehouse_id'],
+                'product_id' => $product->id,
+                'adjustment_type' => $data['adjustment_type'],
+                'base_unit_quantity' => $baseQuantity,
+                'reason' => $data['reason'] ?? null,
+                'created_by' => $request->user()?->id,
+            ]);
+
+            if ($data['adjustment_type'] === 'increase') {
+                $batchNo = ($data['batch_no'] ?? null) ?: $adjustment->adjustment_no;
+                $batch = StockBatch::query()->firstOrCreate([
+                    'company_id' => $data['company_id'],
+                    'warehouse_id' => $data['warehouse_id'],
+                    'product_id' => $product->id,
+                    'batch_no' => $batchNo,
+                    'expiry_date' => $data['expiry_date'] ?? null,
+                ], [
+                    'received_base_quantity' => 0,
+                    'available_base_quantity' => 0,
+                ]);
+
+                $batch->increment('received_base_quantity', $baseQuantity);
+                $batch->increment('available_base_quantity', $baseQuantity);
+                $adjustment->update(['stock_batch_id' => $batch->id]);
+
+                StockMovement::create([
+                    'company_id' => $data['company_id'],
+                    'warehouse_id' => $data['warehouse_id'],
+                    'product_id' => $product->id,
+                    'stock_batch_id' => $batch->id,
+                    'movement_type' => 'adjustment',
+                    'base_unit_quantity' => $baseQuantity,
+                    'reference_type' => StockAdjustment::class,
+                    'reference_id' => $adjustment->id,
+                    'note' => $data['reason'] ?? null,
+                    'created_by' => $request->user()?->id,
+                ]);
+
+                return $adjustment->load(['product.baseUnit', 'stockBatch']);
+            }
+
+            $this->consumeStockForAdjustment($adjustment, $data, $product, $baseQuantity, $request->user()?->id);
+
+            return $adjustment->load(['product.baseUnit', 'stockBatch']);
+        });
+    }
+
+    private function consumeStockForAdjustment(StockAdjustment $adjustment, array $data, Product $product, int $baseQuantity, ?int $userId): void
+    {
+        $available = StockBatch::query()
+            ->where('company_id', $data['company_id'])
+            ->where('warehouse_id', $data['warehouse_id'])
+            ->where('product_id', $product->id)
+            ->sum('available_base_quantity');
+
+        if ($available < $baseQuantity) {
+            throw ValidationException::withMessages([
+                'quantity' => 'Not enough available stock for this adjustment.',
+            ]);
+        }
+
+        $remaining = $baseQuantity;
+        $movementType = match ($data['adjustment_type']) {
+            'damage' => 'damage',
+            'expiry' => 'expiry',
+            default => 'adjustment',
+        };
+
+        StockBatch::query()
+            ->where('company_id', $data['company_id'])
+            ->where('warehouse_id', $data['warehouse_id'])
+            ->where('product_id', $product->id)
+            ->where('available_base_quantity', '>', 0)
+            ->orderBy('expiry_date')
+            ->orderBy('id')
+            ->get()
+            ->each(function (StockBatch $batch) use (&$remaining, $adjustment, $data, $product, $movementType, $userId) {
+                if ($remaining <= 0) {
+                    return false;
+                }
+
+                $deducted = min($remaining, $batch->available_base_quantity);
+                $batch->decrement('available_base_quantity', $deducted);
+
+                if ($data['adjustment_type'] === 'damage') {
+                    $batch->increment('damaged_base_quantity', $deducted);
+                }
+
+                if ($data['adjustment_type'] === 'expiry') {
+                    $batch->increment('expired_base_quantity', $deducted);
+                }
+
+                if (! $adjustment->stock_batch_id) {
+                    $adjustment->update(['stock_batch_id' => $batch->id]);
+                }
+
+                StockMovement::create([
+                    'company_id' => $data['company_id'],
+                    'warehouse_id' => $data['warehouse_id'],
+                    'product_id' => $product->id,
+                    'stock_batch_id' => $batch->id,
+                    'movement_type' => $movementType,
+                    'base_unit_quantity' => -$deducted,
+                    'reference_type' => StockAdjustment::class,
+                    'reference_id' => $adjustment->id,
+                    'note' => $data['reason'] ?? null,
+                    'created_by' => $userId,
+                ]);
+
+                $remaining -= $deducted;
+            });
     }
 }

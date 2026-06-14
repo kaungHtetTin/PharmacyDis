@@ -23,6 +23,10 @@ function storageUrl(path) {
     return `${baseUrl}/storage/${normalizedPath}`;
 }
 
+function dateOnly(value) {
+    return value ? String(value).slice(0, 10) : '';
+}
+
 export function unwrapCollection(response) {
     return Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
 }
@@ -79,17 +83,160 @@ export function mapPayments(response) {
     }));
 }
 
+export function mapStockReceipts(response) {
+    return unwrapCollection(response).map((receipt) => {
+        const items = receipt.items || [];
+        const baseQuantity = items.reduce((total, item) => total + Number(item.base_unit_quantity || 0), 0);
+        const receivedDate = dateOnly(receipt.received_date);
+        const payableDueDate = dateOnly(receipt.payable_due_date);
+
+        return {
+            id: receipt.id,
+            receipt: receipt.receipt_no,
+            invoice: receipt.supplier_invoice_no || '-',
+            company_id: receipt.company_id,
+            warehouse_id: receipt.warehouse_id || '',
+            supplier_invoice_no: receipt.supplier_invoice_no || '',
+            received_date: receivedDate,
+            payable_due_date: payableDueDate,
+            discount_amount: receipt.discount_amount || 0,
+            paid_amount: receipt.paid_amount || 0,
+            company: receipt.company?.name || `Company #${receipt.company_id}`,
+            warehouse: receipt.warehouse?.name || '-',
+            items: `${items.length} ${items.length === 1 ? 'item' : 'items'}`,
+            baseQuantity: `${money(baseQuantity)} base units`,
+            payable: money(receipt.total_amount),
+            paidAmount: money(receipt.paid_amount),
+            dueAmount: money(receipt.due_amount),
+            dueDate: payableDueDate || '-',
+            payment_status_value: receipt.payment_status || '',
+            paymentStatus: titleCase(receipt.payment_status),
+            receivedDate: receivedDate || '-',
+            status_value: receipt.status || '',
+            status: receipt.status === 'posted' ? 'Completed' : titleCase(receipt.status),
+            receivingItems: items.map((item) => ({
+                id: item.id,
+                product_id: item.product_id,
+                unit_id: item.unit_id,
+                foc_unit_id: item.foc_unit_id || '',
+                product: item.product?.name || `Product #${item.product_id}`,
+                batch: item.batch_no || '-',
+                batch_no: item.batch_no || '',
+                quantity: item.quantity,
+                focQuantity: item.foc_quantity || 0,
+                focUnit: item.foc_unit?.name || '-',
+                unit: item.unit?.name || `Unit #${item.unit_id}`,
+                baseQuantity: `${money(item.base_unit_quantity)} ${item.product?.base_unit?.name || 'base units'}`,
+                unitCost: money(item.unit_cost),
+                unit_cost: item.unit_cost || 0,
+                commission: `${item.commission_rate_percentage || 0}% / ${money(item.commission_amount)}`,
+                commission_amount: item.commission_amount || 0,
+                commission_rate_percentage: item.commission_rate_percentage || 0,
+                manufactured_date: dateOnly(item.manufactured_date),
+                expiry_date: dateOnly(item.expiry_date),
+            })),
+            receipt_items_raw: items.map((item) => ({
+                product_id: item.product_id,
+                unit_id: item.unit_id,
+                foc_unit_id: item.foc_unit_id || '',
+                quantity: item.quantity,
+                foc_quantity: item.foc_quantity || 0,
+                unit_cost: item.unit_cost,
+                batch_no: item.batch_no || '',
+                manufactured_date: dateOnly(item.manufactured_date),
+                expiry_date: dateOnly(item.expiry_date),
+            })),
+            payablePreview: {
+                total: money(receipt.total_amount),
+                paid: money(receipt.paid_amount),
+                due: money(receipt.due_amount),
+                dueDate: payableDueDate || '-',
+            },
+            printItems: [
+                { label: 'Receipt', value: receipt.receipt_no },
+                { label: 'Company', value: receipt.company?.name || `Company #${receipt.company_id}` },
+                { label: 'Invoice', value: receipt.supplier_invoice_no || '-' },
+                { label: 'Items', value: `${items.length} items / ${money(baseQuantity)} base units` },
+                { label: 'Payable due', value: money(receipt.due_amount) },
+            ],
+        };
+    });
+}
+
 export function mapStock(response) {
-    return unwrapCollection(response).map((stock) => ({
-        id: `${stock.company_id}-${stock.warehouse_id || 0}-${stock.product_id}`,
-        product: stock.product?.name || `Product #${stock.product_id}`,
-        sku: stock.product?.sku || '-',
-        available: stock.available_base_quantity,
-        reserved: stock.reserved_base_quantity,
-        sold: stock.sold_base_quantity,
-        expiry: stock.nearest_expiry_date || '-',
-        status: Number(stock.available_base_quantity || 0) > 0 ? 'Available' : 'Low Stock',
-    }));
+    return unwrapCollection(response).map((stock) => {
+        const available = Number(stock.available_base_quantity || 0);
+        const threshold = Number(stock.product?.low_stock_threshold_base_units || 0);
+        const expiry = dateOnly(stock.nearest_expiry_date);
+        const today = new Date().toISOString().slice(0, 10);
+        const nearExpiryLimit = new Date();
+        nearExpiryLimit.setDate(nearExpiryLimit.getDate() + 90);
+        const nearExpiryDate = nearExpiryLimit.toISOString().slice(0, 10);
+        const status = expiry && expiry < today
+            ? 'Expired'
+            : expiry && expiry <= nearExpiryDate
+                ? 'Near Expiry'
+                : available <= threshold
+                    ? 'Low Stock'
+                    : 'Available';
+        const unit = stock.product?.base_unit?.abbreviation || stock.product?.base_unit?.name || 'base units';
+
+        return {
+            id: `${stock.company_id}-${stock.warehouse_id || 0}-${stock.product_id}`,
+            company_id: stock.company_id,
+            product: stock.product?.name || `Product #${stock.product_id}`,
+            product_id: stock.product_id,
+            sku: stock.product?.sku || '-',
+            available: `${money(available)} ${unit}`,
+            expiry: expiry || '-',
+            status,
+            warehouse_id: stock.warehouse_id || '',
+        };
+    });
+}
+
+export function mapStockBatches(response) {
+    return unwrapCollection(response).map((batch) => {
+        const available = Number(batch.available_base_quantity || 0);
+        const reserved = Number(batch.reserved_base_quantity || 0);
+        const sold = Number(batch.sold_base_quantity || 0);
+        const damaged = Number(batch.damaged_base_quantity || 0);
+        const expiredQuantity = Number(batch.expired_base_quantity || 0);
+        const expiry = dateOnly(batch.expiry_date);
+        const today = new Date().toISOString().slice(0, 10);
+        const nearExpiryLimit = new Date();
+        nearExpiryLimit.setDate(nearExpiryLimit.getDate() + 90);
+        const nearExpiryDate = nearExpiryLimit.toISOString().slice(0, 10);
+        const unit = batch.product?.base_unit?.abbreviation || batch.product?.base_unit?.name || response?.product?.base_unit?.abbreviation || response?.product?.base_unit?.name || 'base units';
+        const status = expiredQuantity > 0 || (expiry && expiry < today)
+            ? 'Expired'
+            : expiry && expiry <= nearExpiryDate
+                ? 'Near Expiry'
+                : available > 0
+                    ? 'Available'
+                    : reserved > 0
+                        ? 'Reserved'
+                        : 'Completed';
+
+        return {
+            id: batch.id,
+            batch: batch.batch_no || `Batch #${batch.id}`,
+            batch_no: batch.batch_no || '',
+            company_id: batch.company_id || response?.product?.company_id || '',
+            product: batch.product?.name || response?.product?.name || `Product #${batch.product_id || response?.product?.id || '-'}`,
+            product_id: batch.product_id || response?.product?.id || '',
+            warehouse: batch.warehouse?.name || '-',
+            warehouse_id: batch.warehouse_id || '',
+            received: `${money(batch.received_base_quantity)} ${unit}`,
+            available: `${money(available)} ${unit}`,
+            reserved: `${money(reserved)} ${unit}`,
+            sold: `${money(sold)} ${unit}`,
+            damaged: `${money(damaged)} ${unit}`,
+            expiredQuantity: `${money(expiredQuantity)} ${unit}`,
+            expiry: expiry || '-',
+            status,
+        };
+    });
 }
 
 export function mapCompanies(response) {
@@ -183,6 +330,19 @@ export function mapUnits(response) {
     }));
 }
 
+export function mapWarehouses(response) {
+    return unwrapCollection(response).map((warehouse) => ({
+        id: warehouse.id,
+        name: warehouse.name,
+        code: warehouse.code || '',
+        address_value: warehouse.address || '',
+        address: warehouse.address || '-',
+        stockBatchCount: `${warehouse.stock_batches_count || 0} ${Number(warehouse.stock_batches_count || 0) === 1 ? 'batch' : 'batches'}`,
+        receiptCount: `${warehouse.stock_receipts_count || 0} ${Number(warehouse.stock_receipts_count || 0) === 1 ? 'receipt' : 'receipts'}`,
+        status: titleCase(warehouse.status),
+    }));
+}
+
 export function mapCustomers(response) {
     return unwrapCollection(response).map((customer) => ({
         id: customer.id,
@@ -214,24 +374,20 @@ export function mapCustomers(response) {
 export function mapSalesRepresentatives(response) {
     return unwrapCollection(response).map((rep) => ({
         id: rep.id,
-        employee: `${rep.employee_code} / ${rep.user?.name || 'Sales Rep'}`,
+        user_id: rep.user_id,
+        company_id: rep.company_id,
+        employee_code: rep.employee_code || '',
+        employee: `${rep.employee_code || 'Auto'} / ${rep.user?.name || 'Sales Rep'}`,
         name: rep.user?.name || 'Sales Rep',
+        email: rep.user?.email || '',
+        phone_value: rep.phone || rep.user?.phone || '',
         phone: rep.phone || rep.user?.phone || '-',
         region: rep.region || '-',
+        region_value: rep.region || '',
         companies: rep.company?.name || '-',
-        productAccess: 'Assigned company catalog',
-        monthlySales: '0',
-        orders: '0',
+        joined_at: rep.joined_at || '',
+        joined: rep.joined_at || '-',
         status: titleCase(rep.status),
-        repAssignments: [{
-            id: `rep-company-${rep.id}`,
-            company: rep.company?.name || '-',
-            region: rep.region || '-',
-            products: 'Assigned catalog',
-            access: 'Full assigned catalog',
-            todayOrders: 'Live API',
-            status: titleCase(rep.status),
-        }],
     }));
 }
 
@@ -241,9 +397,12 @@ export function getOfficeEndpoint(pageKey) {
         'product-categories': '/office/product-categories?per_page=25',
         products: '/office/products?per_page=25',
         units: '/office/units?per_page=25',
+        warehouses: '/office/warehouses?per_page=15',
         pharmacies: '/office/customers?per_page=25',
-        representatives: '/lookups/sales-representatives',
+        representatives: '/office/sales-representatives?per_page=15',
+        receiving: '/office/stock-receipts?per_page=15',
         inventory: '/office/stock/current',
+        'inventory-detail': '',
         orders: '/office/orders?per_page=25',
         invoices: '/office/invoices?per_page=25',
         payments: '/office/payments?per_page=25',
@@ -258,9 +417,12 @@ export function mapOfficeRows(pageKey, response) {
         'product-categories': mapProductCategories,
         products: mapProducts,
         units: mapUnits,
+        warehouses: mapWarehouses,
         pharmacies: mapCustomers,
         representatives: mapSalesRepresentatives,
+        receiving: mapStockReceipts,
         inventory: mapStock,
+        'inventory-detail': mapStockBatches,
         orders: mapOrders,
         invoices: mapInvoices,
         payments: mapPayments,
@@ -272,7 +434,8 @@ export function mapOfficeRows(pageKey, response) {
 export function getSalesEndpoint(pageKey) {
     const endpoints = {
         orders: '/sales/orders?per_page=25',
-        stock: '/lookups/products',
+        pharmacies: '/lookups/customers',
+        stock: '/sales/stock/current',
     };
 
     return endpoints[pageKey] || '';
@@ -283,12 +446,16 @@ export function mapSalesRows(pageKey, response) {
         return mapOrders(response);
     }
 
-    if (pageKey === 'stock') {
-        return mapProducts(response).map((product) => ({
-            ...product,
-            product: product.name,
-            available: product.baseStock,
+    if (pageKey === 'pharmacies') {
+        return mapCustomers(response).map((customer) => ({
+            ...customer,
+            balance: customer.outstanding,
+            companyCredit: customer.creditStatus,
         }));
+    }
+
+    if (pageKey === 'stock') {
+        return mapStock(response);
     }
 
     return [];

@@ -71,6 +71,62 @@ const blankUnitForm = {
     status: 'active',
 };
 
+const blankWarehouseForm = {
+    name: '',
+    code: '',
+    address: '',
+    status: 'active',
+};
+
+const blankStockReceiptItem = {
+    product_id: '',
+    unit_id: '',
+    foc_unit_id: '',
+    quantity: '1',
+    foc_quantity: '0',
+    unit_cost: '0',
+    batch_no: '',
+    manufactured_date: '',
+    expiry_date: '',
+};
+
+const blankStockReceiptForm = {
+    company_id: '',
+    warehouse_id: '',
+    supplier_invoice_no: '',
+    received_date: '',
+    payable_due_date: '',
+    paid_amount: '0',
+    items: [{ ...blankStockReceiptItem }],
+};
+
+const blankStockAdjustmentForm = {
+    company_id: '',
+    company_name: '',
+    warehouse_id: '',
+    product_id: '',
+    product_name: '',
+    product_locked: false,
+    unit_id: '',
+    adjustment_type: 'increase',
+    quantity: '1',
+    batch_no: '',
+    expiry_date: '',
+    reason: '',
+};
+
+const blankSalesRepresentativeForm = {
+    name: '',
+    email: '',
+    phone: '',
+    employee_code: '',
+    company_id: '',
+    region: '',
+    joined_at: '',
+    password: '',
+    status: 'active',
+};
+
 const blankProductForm = {
     company_id: '',
     product_category_id: '',
@@ -461,6 +517,320 @@ function UnitForm({ form, onChange }) {
     );
 }
 
+function WarehouseForm({ form, onChange }) {
+    return (
+        <div className="company-form-layout">
+            <div className="crud-grid">
+                <FormField label="Warehouse name" name="name" onChange={onChange} required value={form.name} />
+                <FormField label="Warehouse code" name="code" onChange={onChange} placeholder="Auto-generated if empty" value={form.code} />
+                <label className="form-field">
+                    <span>Status</span>
+                    <select name="status" onChange={onChange} value={form.status}>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </label>
+            </div>
+            <FormField label="Address" name="address" onChange={onChange} type="textarea" value={form.address} />
+        </div>
+    );
+}
+
+function formatAmount(value) {
+    return Number(value || 0).toLocaleString();
+}
+
+function findReceiptProduct(products, productId) {
+    return products.find((product) => String(product.id) === String(productId));
+}
+
+function findReceiptProductUnit(product, unitId) {
+    const units = product?.product_units || [];
+    return units.find((unit) => String(unit.unit_id) === String(unitId)) || units[0];
+}
+
+function makeReceiptBatchNumber(product, receivedDate = '', itemIndex = 0) {
+    const source = product?.sku || product?.name || 'MED';
+    const prefix = String(source).replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 12) || 'MED';
+    const date = String(receivedDate || new Date().toISOString().slice(0, 10)).replace(/-/g, '').slice(2, 8);
+    const sequence = String(itemIndex + 1).padStart(3, '0');
+
+    return `${prefix}-${date}-${sequence}`;
+}
+
+function StockReceiptForm({
+    companies = [],
+    form,
+    onAddItem,
+    onChange,
+    onItemChange,
+    onRemoveItem,
+    products = [],
+    productsLoading = false,
+    warehouses = [],
+}) {
+    const preparedItems = (form.items || []).map((item) => {
+        const product = findReceiptProduct(products, item.product_id);
+        const productUnit = findReceiptProductUnit(product, item.unit_id);
+        const quantity = Number(item.quantity || 0);
+        const focQuantity = Number(item.foc_quantity || 0);
+        const unitCost = Number(item.unit_cost || 0);
+        const conversionFactor = Number(productUnit?.conversion_factor_to_base || 1);
+        const focProductUnit = focQuantity > 0 ? findReceiptProductUnit(product, item.foc_unit_id || item.unit_id) : null;
+        const focConversionFactor = Number(focProductUnit?.conversion_factor_to_base || 1);
+        const grossLineTotal = quantity * unitCost;
+        const commissionRate = Number(product?.commission_rate_percentage || 0);
+        const commissionAmount = grossLineTotal * commissionRate / 100;
+
+        return {
+            ...item,
+            baseQuantity: (quantity * conversionFactor) + (focQuantity * focConversionFactor),
+            commissionAmount,
+            commissionRate,
+            conversionFactor,
+            focBaseQuantity: focQuantity * focConversionFactor,
+            focConversionFactor,
+            focProductUnit,
+            grossLineTotal,
+            lineTotal: Math.max(0, grossLineTotal - commissionAmount),
+            product,
+            productUnit,
+        };
+    });
+    const subtotal = preparedItems.reduce((sum, item) => sum + item.grossLineTotal, 0);
+    const commissionTotal = preparedItems.reduce((sum, item) => sum + item.commissionAmount, 0);
+    const total = Math.max(0, subtotal - commissionTotal);
+    const paid = Number(form.paid_amount || 0);
+    const due = Math.max(0, total - paid);
+
+    return (
+        <div className="receiving-form">
+            <div className="crud-grid">
+                <label className="form-field">
+                    <span>Company</span>
+                    <select name="company_id" onChange={onChange} required value={form.company_id}>
+                        <option value="" disabled>Select company</option>
+                        {companies.map((company) => (
+                            <option key={company.id} value={company.id}>{company.name}</option>
+                        ))}
+                    </select>
+                </label>
+                <label className="form-field">
+                    <span>Warehouse</span>
+                    <select name="warehouse_id" onChange={onChange} required value={form.warehouse_id}>
+                        <option value="" disabled>Select warehouse</option>
+                        {warehouses.map((warehouse) => (
+                            <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                        ))}
+                    </select>
+                </label>
+                <FormField label="Company invoice number" name="supplier_invoice_no" onChange={onChange} value={form.supplier_invoice_no} />
+                <FormField label="Received date" name="received_date" onChange={onChange} type="date" value={form.received_date} />
+                <FormField label="Payable due date" name="payable_due_date" onChange={onChange} type="date" value={form.payable_due_date} />
+                <FormField label="Paid amount" name="paid_amount" onChange={onChange} type="number" value={form.paid_amount} />
+            </div>
+
+            <section className="form-section">
+                <div className="section-heading">
+                    <div>
+                        <p className="eyebrow">Stock items</p>
+                        <h2>Products received into warehouse</h2>
+                    </div>
+                    <button className="btn secondary" disabled={!form.company_id || productsLoading} onClick={onAddItem} type="button">Add item</button>
+                </div>
+
+                <div className="receiving-items">
+                    {preparedItems.map((item, index) => {
+                        const units = item.product?.product_units || [];
+
+                        return (
+                            <article className="receiving-item" key={`receipt-item-${index}`}>
+                                <div className="receiving-item-head">
+                                    <strong>Item #{index + 1}</strong>
+                                    <button className="btn secondary" disabled={form.items.length === 1} onClick={() => onRemoveItem(index)} type="button">Remove</button>
+                                </div>
+
+                                <div className="receiving-item-grid">
+                                    <label className="form-field">
+                                        <span>Product</span>
+                                        <select disabled={!form.company_id || productsLoading} onChange={(event) => onItemChange(index, event)} name="product_id" required value={item.product_id}>
+                                            <option value="" disabled>{productsLoading ? 'Loading products' : 'Select product'}</option>
+                                            {products.map((product) => (
+                                                <option key={product.id} value={product.id}>{product.name}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className="form-field">
+                                        <span>Received unit</span>
+                                        <select disabled={!item.product_id} onChange={(event) => onItemChange(index, event)} name="unit_id" required value={item.unit_id}>
+                                            <option value="" disabled>Select unit</option>
+                                            {units.map((unit) => (
+                                                <option key={unit.unit_id} value={unit.unit_id}>{unit.unit?.name || `Unit #${unit.unit_id}`}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <FormField label="Received quantity" name="quantity" onChange={(event) => onItemChange(index, event)} required type="number" value={item.quantity} />
+                                    <FormField label="FOC quantity" name="foc_quantity" onChange={(event) => onItemChange(index, event)} type="number" value={item.foc_quantity} />
+                                    <label className="form-field">
+                                        <span>FOC unit</span>
+                                        <select disabled={!item.product_id || Number(item.foc_quantity || 0) <= 0} onChange={(event) => onItemChange(index, event)} name="foc_unit_id" value={item.foc_unit_id}>
+                                            <option value="">Same as received unit</option>
+                                            {units.map((unit) => (
+                                                <option key={unit.unit_id} value={unit.unit_id}>{unit.unit?.name || `Unit #${unit.unit_id}`}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <FormField label="Unit cost" name="unit_cost" onChange={(event) => onItemChange(index, event)} required type="number" value={item.unit_cost} />
+                                    <FormField label="Batch number" name="batch_no" onChange={(event) => onItemChange(index, event)} placeholder="Auto-generated, editable" value={item.batch_no} />
+                                    <FormField label="Manufacturing date" name="manufactured_date" onChange={(event) => onItemChange(index, event)} type="date" value={item.manufactured_date} />
+                                    <FormField label="Expiry date" name="expiry_date" onChange={(event) => onItemChange(index, event)} type="date" value={item.expiry_date} />
+                                </div>
+
+                                <div className="receiving-preview">
+                                    <span><strong>{formatAmount(item.conversionFactor)}</strong><small>Conversion factor</small></span>
+                                    <span><strong>{formatAmount(item.baseQuantity)}</strong><small>Base stock quantity</small></span>
+                                    <span><strong>{formatAmount(item.commissionAmount)}</strong><small>{formatAmount(item.commissionRate)}% commission</small></span>
+                                    <span><strong>{formatAmount(item.lineTotal)}</strong><small>Payable line total</small></span>
+                                </div>
+                            </article>
+                        );
+                    })}
+                </div>
+            </section>
+
+            <section className="receiving-summary">
+                <div><span>Subtotal</span><strong>{formatAmount(subtotal)}</strong></div>
+                <div><span>Commission deducted</span><strong>{formatAmount(commissionTotal)}</strong></div>
+                <div><span>Payable after commission</span><strong>{formatAmount(total)}</strong></div>
+                <div><span>Paid amount</span><strong>{formatAmount(paid)}</strong></div>
+                <div><span>Company payable due</span><strong>{formatAmount(due)}</strong></div>
+            </section>
+        </div>
+    );
+}
+
+function StockAdjustmentForm({
+    companies = [],
+    form,
+    onChange,
+    products = [],
+    productsLoading = false,
+    warehouses = [],
+}) {
+    const product = findReceiptProduct(products, form.product_id);
+    const productUnit = findReceiptProductUnit(product, form.unit_id);
+    const quantity = Number(form.quantity || 0);
+    const conversionFactor = Number(productUnit?.conversion_factor_to_base || 1);
+    const baseQuantity = quantity * conversionFactor;
+    const units = product?.product_units || [];
+    const showBatchFields = form.adjustment_type === 'increase';
+    const productName = product?.name || form.product_name || 'Selected product';
+
+    return (
+        <div className="company-form-layout">
+            <div className="crud-grid">
+                <label className="form-field">
+                    <span>Company</span>
+                    <select disabled={form.product_locked} name="company_id" onChange={onChange} required value={form.company_id}>
+                        <option value="" disabled>Select company</option>
+                        {companies.map((company) => (
+                            <option key={company.id} value={company.id}>{company.name}</option>
+                        ))}
+                    </select>
+                </label>
+                <label className="form-field">
+                    <span>Warehouse</span>
+                    <select name="warehouse_id" onChange={onChange} required value={form.warehouse_id}>
+                        <option value="" disabled>Select warehouse</option>
+                        {warehouses.map((warehouse) => (
+                            <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                        ))}
+                    </select>
+                </label>
+                {form.product_locked ? (
+                    <FormField label="Product" name="product_name" onChange={() => {}} readOnly value={productName} />
+                ) : (
+                    <label className="form-field">
+                        <span>Product</span>
+                        <select disabled={!form.company_id || productsLoading} name="product_id" onChange={onChange} required value={form.product_id}>
+                            <option value="" disabled>{productsLoading ? 'Loading products' : 'Select product'}</option>
+                            {products.map((item) => (
+                                <option key={item.id} value={item.id}>{item.name}</option>
+                            ))}
+                        </select>
+                    </label>
+                )}
+                <label className="form-field">
+                    <span>Unit</span>
+                    <select disabled={!form.product_id} name="unit_id" onChange={onChange} required value={form.unit_id}>
+                        <option value="" disabled>Select unit</option>
+                        {units.map((unit) => (
+                            <option key={unit.unit_id} value={unit.unit_id}>{unit.unit?.name || `Unit #${unit.unit_id}`}</option>
+                        ))}
+                    </select>
+                </label>
+                <label className="form-field">
+                    <span>Adjustment type</span>
+                    <select name="adjustment_type" onChange={onChange} value={form.adjustment_type}>
+                        <option value="increase">Increase stock</option>
+                        <option value="decrease">Decrease stock</option>
+                        <option value="damage">Mark damaged</option>
+                        <option value="expiry">Mark expired</option>
+                    </select>
+                </label>
+                <FormField label="Quantity" name="quantity" onChange={onChange} required type="number" value={form.quantity} />
+                {showBatchFields && (
+                    <>
+                        <FormField label="Batch number" name="batch_no" onChange={onChange} placeholder="Auto-generated if empty" value={form.batch_no} />
+                        <FormField label="Expiry date" name="expiry_date" onChange={onChange} type="date" value={form.expiry_date} />
+                    </>
+                )}
+            </div>
+
+            <div className="receiving-preview">
+                <span><strong>{formatAmount(conversionFactor)}</strong><small>Conversion factor</small></span>
+                <span><strong>{formatAmount(baseQuantity)}</strong><small>Base stock quantity</small></span>
+                <span><strong>{product?.base_unit?.name || product?.baseUnit?.name || 'Base unit'}</strong><small>Stored inventory unit</small></span>
+            </div>
+
+            <FormField label="Reason" name="reason" onChange={onChange} placeholder="Adjustment note" type="textarea" value={form.reason} />
+        </div>
+    );
+}
+
+function SalesRepresentativeForm({ companies = [], form, onChange }) {
+    return (
+        <div className="company-form-layout">
+            <div className="crud-grid">
+                <FormField label="Name" name="name" onChange={onChange} required value={form.name} />
+                <FormField label="Email" name="email" onChange={onChange} required type="email" value={form.email} />
+                <FormField label="Phone number" name="phone" onChange={onChange} value={form.phone} />
+                <FormField label="Employee code" name="employee_code" onChange={onChange} placeholder="Auto-generated if empty" value={form.employee_code} />
+                <label className="form-field">
+                    <span>Assigned company</span>
+                    <select name="company_id" onChange={onChange} required value={form.company_id}>
+                        <option value="" disabled>Select assigned company</option>
+                        {companies.map((company) => (
+                            <option key={company.id} value={company.id}>{company.name}</option>
+                        ))}
+                    </select>
+                </label>
+                <FormField label="Region" name="region" onChange={onChange} value={form.region} />
+                <FormField label="Joined date" name="joined_at" onChange={onChange} type="date" value={form.joined_at} />
+                <FormField label="Password" name="password" onChange={onChange} placeholder="Leave blank to keep current password" type="password" value={form.password} />
+                <label className="form-field">
+                    <span>Status</span>
+                    <select name="status" onChange={onChange} value={form.status}>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </label>
+            </div>
+            <p className="helper-copy">A sales rep can sell all active products from the assigned company.</p>
+        </div>
+    );
+}
+
 function ProductImagePicker({ imageName = '', onChange, preview = '' }) {
     return (
         <div className="product-image-picker">
@@ -666,7 +1036,47 @@ function WorkflowContext({ context, screenKey }) {
     );
 }
 
+function ReceivingDetailView({ record }) {
+    const facts = [
+        { label: 'Receipt', value: record?.receipt },
+        { label: 'Company invoice', value: record?.invoice },
+        { label: 'Company', value: record?.company },
+        { label: 'Warehouse', value: record?.warehouse },
+        { label: 'Received date', value: record?.receivedDate },
+        { label: 'Payment', value: record?.paymentStatus },
+        { label: 'Paid amount', value: record?.paidAmount },
+        { label: 'Due amount', value: record?.dueAmount },
+    ];
+
+    return (
+        <div className="detail-stack">
+            <section className="drawer-section">
+                <p className="eyebrow">Receiving detail</p>
+                <div className="fact-grid">
+                    {facts.map((fact) => (
+                        <div key={fact.label}>
+                            <span>{fact.label}</span>
+                            <strong>{fact.value || '-'}</strong>
+                        </div>
+                    ))}
+                </div>
+            </section>
+            <section className="drawer-section">
+                <p className="eyebrow">Received items</p>
+                <StockReceivingDetail
+                    items={record?.receivingItems || []}
+                    payable={record?.payablePreview}
+                />
+            </section>
+        </div>
+    );
+}
+
 function Details({ defaultUnitBusy = false, onDefaultSalesUnitChange, record, screen }) {
+    if (screen.stockReceivingForm) {
+        return <ReceivingDetailView record={record} />;
+    }
+
     const tabs = screen.tabs?.map((tab) => ({
         key: tab.key,
         label: tab.label,
@@ -894,6 +1304,43 @@ const blankPharmacyListFilters = {
     status: '',
 };
 
+const blankRepresentativeListFilters = {
+    company_id: '',
+    page: 1,
+    search: '',
+    status: '',
+};
+
+const blankWarehouseListFilters = {
+    page: 1,
+    search: '',
+    status: '',
+};
+
+const blankReceivingListFilters = {
+    company_id: '',
+    page: 1,
+    payment_status: '',
+    search: '',
+    status: '',
+    warehouse_id: '',
+};
+
+const blankInventoryListFilters = {
+    company_id: '',
+    page: 1,
+    search: '',
+    status: '',
+    warehouse_id: '',
+};
+
+const blankInventoryDetailFilters = {
+    page: 1,
+    search: '',
+    status: '',
+    warehouse_id: '',
+};
+
 function buildProductListEndpoint(filters) {
     const params = new URLSearchParams({
         page: String(filters.page || 1),
@@ -932,30 +1379,195 @@ function buildPharmacyListEndpoint(filters) {
     return `/office/customers?${params.toString()}`;
 }
 
+function buildRepresentativeListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    return `/office/sales-representatives?${params.toString()}`;
+}
+
+function buildWarehouseListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/warehouses?${params.toString()}`;
+}
+
+function buildReceivingListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    if (filters.warehouse_id) {
+        params.set('warehouse_id', filters.warehouse_id);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    if (filters.payment_status) {
+        params.set('payment_status', filters.payment_status);
+    }
+
+    return `/office/stock-receipts?${params.toString()}`;
+}
+
+function buildInventoryListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    if (filters.warehouse_id) {
+        params.set('warehouse_id', filters.warehouse_id);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/stock/current?${params.toString()}`;
+}
+
+function buildInventoryDetailEndpoint(productId, filters) {
+    if (!productId) {
+        return '';
+    }
+
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.warehouse_id) {
+        params.set('warehouse_id', filters.warehouse_id);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/stock/products/${productId}/batches?${params.toString()}`;
+}
+
 export default function OfficeModulePage({ onNavigate, pageKey }) {
     const isCompaniesPage = pageKey === 'companies';
+    const isInventoryPage = pageKey === 'inventory';
+    const isInventoryDetailPage = pageKey === 'inventory-detail';
+    const isStockWorkspacePage = isInventoryPage || isInventoryDetailPage;
     const isPharmaciesPage = pageKey === 'pharmacies';
     const isProductCategoriesPage = pageKey === 'product-categories';
     const isProductsPage = pageKey === 'products';
+    const isReceivingPage = pageKey === 'receiving';
+    const isRepresentativesPage = pageKey === 'representatives';
     const isUnitsPage = pageKey === 'units';
+    const isWarehousesPage = pageKey === 'warehouses';
     const [pharmacyListFilters, setPharmacyListFilters] = useState(blankPharmacyListFilters);
     const [productListFilters, setProductListFilters] = useState(blankProductListFilters);
+    const routeSearchParams = new URLSearchParams(window.location.search);
+    const inventoryDetailProductId = routeSearchParams.get('product_id') || '';
+    const inventoryDetailCompanyId = routeSearchParams.get('company_id') || '';
+    const inventoryDetailWarehouseId = routeSearchParams.get('warehouse_id') || '';
+    const [inventoryListFilters, setInventoryListFilters] = useState(blankInventoryListFilters);
+    const [inventoryDetailFilters, setInventoryDetailFilters] = useState({
+        ...blankInventoryDetailFilters,
+        warehouse_id: inventoryDetailWarehouseId,
+    });
+    const [receivingListFilters, setReceivingListFilters] = useState(blankReceivingListFilters);
+    const [representativeListFilters, setRepresentativeListFilters] = useState(blankRepresentativeListFilters);
+    const [warehouseListFilters, setWarehouseListFilters] = useState(blankWarehouseListFilters);
     const baseScreen = officeModules[pageKey] || officeModules.companies;
     const liveEndpoint = isProductsPage
         ? buildProductListEndpoint(productListFilters)
         : isPharmaciesPage
             ? buildPharmacyListEndpoint(pharmacyListFilters)
-            : getOfficeEndpoint(pageKey);
+            : isRepresentativesPage
+                ? buildRepresentativeListEndpoint(representativeListFilters)
+                : isWarehousesPage
+                    ? buildWarehouseListEndpoint(warehouseListFilters)
+                    : isReceivingPage
+                        ? buildReceivingListEndpoint(receivingListFilters)
+                        : isInventoryPage
+                            ? buildInventoryListEndpoint(inventoryListFilters)
+                            : isInventoryDetailPage
+                                ? buildInventoryDetailEndpoint(inventoryDetailProductId, inventoryDetailFilters)
+                                : getOfficeEndpoint(pageKey);
     const liveResource = useApiResource(liveEndpoint);
-    const productCompaniesResource = useApiResource(isProductsPage ? '/lookups/companies' : '');
+    const productCompaniesResource = useApiResource(isProductsPage || isReceivingPage || isStockWorkspacePage ? '/lookups/companies' : isRepresentativesPage ? '/office/companies?per_page=100' : '');
     const productCategoriesResource = useApiResource(isProductsPage ? '/lookups/product-categories' : '');
     const productUnitsResource = useApiResource(isProductsPage ? '/lookups/units' : '');
+    const receivingWarehousesResource = useApiResource(isReceivingPage || isStockWorkspacePage ? '/office/warehouses?per_page=100' : '');
     const liveRows = liveResource.data ? mapOfficeRows(pageKey, liveResource.data) : [];
-    const screen = liveEndpoint ? applyLiveRows(baseScreen, liveRows, Boolean(liveResource.data)) : baseScreen;
-    const showFilterToolbar = isProductsPage || isPharmaciesPage || screen.showFilterToolbar !== false;
-    const showViewAction = screen.showViewAction !== false;
-    const showEditAction = screen.showEditAction !== false;
-    const isManagedCrudPage = isCompaniesPage || isPharmaciesPage || isProductCategoriesPage || isProductsPage || isUnitsPage;
+    const liveScreen = liveEndpoint ? applyLiveRows(baseScreen, liveRows, Boolean(liveResource.data)) : baseScreen;
+    const inventoryDetailProduct = liveResource.data?.product;
+    const inventoryDetailProductName = inventoryDetailProduct?.name || routeSearchParams.get('product_name') || window.sessionStorage.getItem('selected_inventory_product_name') || '';
+    const inventoryDetailSummary = liveResource.data?.summary;
+    const inventoryDetailUnit = inventoryDetailProduct?.base_unit?.abbreviation || inventoryDetailProduct?.base_unit?.name || 'base units';
+    const screen = isReceivingPage || isStockWorkspacePage ? {
+        ...liveScreen,
+        ...(isInventoryDetailPage ? {
+            title: inventoryDetailProductName ? `Inventory Detail - ${inventoryDetailProductName}` : liveScreen.title,
+            description: inventoryDetailProduct?.sku
+                ? `Batch-level stock for SKU ${inventoryDetailProduct.sku}. Filter by warehouse to trace where each batch is stored.`
+                : liveScreen.description,
+        } : {}),
+        summaries: isInventoryDetailPage && inventoryDetailSummary ? [
+            { label: 'Batches', value: formatAmount(inventoryDetailSummary.batch_count), note: 'Received batch rows' },
+            { label: 'Available', value: `${formatAmount(inventoryDetailSummary.available_base_quantity)} ${inventoryDetailUnit}`, note: 'Ready to sell' },
+            { label: 'Reserved', value: `${formatAmount(inventoryDetailSummary.reserved_base_quantity)} ${inventoryDetailUnit}`, note: 'Held by orders' },
+            { label: 'Nearest expiry', value: inventoryDetailSummary.nearest_expiry_date || '-', note: 'Earliest batch date' },
+        ] : null,
+    } : liveScreen;
+    const showFilterToolbar = isStockWorkspacePage || isProductsPage || isPharmaciesPage || isReceivingPage || isRepresentativesPage || isWarehousesPage || screen.showFilterToolbar !== false;
+    const showViewAction = !isStockWorkspacePage && screen.showViewAction !== false;
+    const showEditAction = !isStockWorkspacePage && screen.showEditAction !== false;
+    const isManagedCrudPage = isCompaniesPage || isPharmaciesPage || isProductCategoriesPage || isProductsPage || isReceivingPage || isRepresentativesPage || isUnitsPage || isWarehousesPage;
     const recordLabel = getRecordLabel(screen);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
@@ -977,9 +1589,23 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [unitForm, setUnitForm] = useState(blankUnitForm);
     const [unitError, setUnitError] = useState('');
     const [unitSubmitting, setUnitSubmitting] = useState(false);
+    const [warehouseForm, setWarehouseForm] = useState(blankWarehouseForm);
+    const [warehouseError, setWarehouseError] = useState('');
+    const [warehouseSubmitting, setWarehouseSubmitting] = useState(false);
+    const [salesRepresentativeForm, setSalesRepresentativeForm] = useState(blankSalesRepresentativeForm);
+    const [salesRepresentativeError, setSalesRepresentativeError] = useState('');
+    const [salesRepresentativeSubmitting, setSalesRepresentativeSubmitting] = useState(false);
     const [productForm, setProductForm] = useState(blankProductForm);
     const [productError, setProductError] = useState('');
     const [productSubmitting, setProductSubmitting] = useState(false);
+    const [stockReceiptForm, setStockReceiptForm] = useState(blankStockReceiptForm);
+    const [stockReceiptError, setStockReceiptError] = useState('');
+    const [stockReceiptSubmitting, setStockReceiptSubmitting] = useState(false);
+    const [stockAdjustmentForm, setStockAdjustmentForm] = useState(blankStockAdjustmentForm);
+    const [stockAdjustmentError, setStockAdjustmentError] = useState('');
+    const [stockAdjustmentSubmitting, setStockAdjustmentSubmitting] = useState(false);
+    const receivingProductsResource = useApiResource(isReceivingPage && modalOpen && stockReceiptForm.company_id ? `/lookups/products?company_id=${stockReceiptForm.company_id}` : '');
+    const stockAdjustmentProductsResource = useApiResource(isStockWorkspacePage && modalOpen && stockAdjustmentForm.company_id ? `/lookups/products?company_id=${stockAdjustmentForm.company_id}` : '');
     const modalScreen = modalScreenKey ? officeModules[modalScreenKey] : screen;
     const modalContext = (modalScreenKey || modalTitleOverride) ? getRecordTitle(selectedRecord, '') : '';
     const modalTitle = `${modalTitleOverride || `${modalScreen.primaryAction} Form`}${modalContext ? ` - ${modalContext}` : ''}`;
@@ -990,10 +1616,20 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         || productCategoriesResource.loading
         || productUnitsResource.loading
     );
-    const modalBusy = companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || unitSubmitting;
+    const modalBusy = companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting;
     const orderCreditStatuses = normalizeCreditStatuses(selectedRecord?.creditStatuses || modalScreen.creditStatuses || []);
     const selectedCreditStatus = getCompanyCreditStatus(orderCreditStatuses, selectedOrderCompany);
     const orderCreateBlocked = isOrderCreateModal && isBlockedCredit(selectedCreditStatus?.status);
+    useEffect(() => {
+        if (!isInventoryDetailPage) {
+            return;
+        }
+
+        setInventoryDetailFilters({
+            ...blankInventoryDetailFilters,
+            warehouse_id: inventoryDetailWarehouseId,
+        });
+    }, [inventoryDetailProductId, inventoryDetailWarehouseId, isInventoryDetailPage]);
     const primaryAction = {
         label: screen.primaryAction,
         target: screen.primaryActionTarget,
@@ -1031,6 +1667,229 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setPharmacyListFilters((current) => ({ ...current, page: Math.max(1, page) }));
     };
     const productCompanies = unwrapCollection(productCompaniesResource.data);
+    const receivingWarehouses = unwrapCollection(receivingWarehousesResource.data);
+    const receivingProducts = unwrapCollection(receivingProductsResource.data);
+    const stockAdjustmentProducts = unwrapCollection(stockAdjustmentProductsResource.data);
+    const receivingPagination = isReceivingPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const inventoryPagination = isInventoryPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const inventoryDetailPagination = isInventoryDetailPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const receivingListFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: receivingListFilters.company_id,
+        },
+        {
+            key: 'warehouse_id',
+            label: 'Warehouse',
+            options: receivingWarehouses.map((warehouse) => ({ label: warehouse.name, value: String(warehouse.id) })),
+            placeholder: receivingWarehousesResource.loading ? 'Loading warehouses' : 'All warehouses',
+            value: receivingListFilters.warehouse_id,
+        },
+        {
+            key: 'payment_status',
+            label: 'Payment',
+            options: [
+                { label: 'Paid', value: 'paid' },
+                { label: 'Partial', value: 'partial' },
+                { label: 'Unpaid', value: 'unpaid' },
+            ],
+            placeholder: 'All payments',
+            value: receivingListFilters.payment_status,
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Posted', value: 'posted' },
+                { label: 'Draft', value: 'draft' },
+                { label: 'Cancelled', value: 'cancelled' },
+            ],
+            placeholder: 'All statuses',
+            value: receivingListFilters.status,
+        },
+    ];
+    const updateReceivingListSearch = (value) => {
+        setReceivingListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateReceivingListFilter = (key, value) => {
+        setReceivingListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetReceivingListFilters = () => {
+        setReceivingListFilters(blankReceivingListFilters);
+    };
+    const goToReceivingPage = (page) => {
+        setReceivingListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const inventoryListFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: inventoryListFilters.company_id,
+        },
+        {
+            key: 'warehouse_id',
+            label: 'Warehouse',
+            options: receivingWarehouses.map((warehouse) => ({ label: warehouse.name, value: String(warehouse.id) })),
+            placeholder: receivingWarehousesResource.loading ? 'Loading warehouses' : 'All warehouses',
+            value: inventoryListFilters.warehouse_id,
+        },
+        {
+            key: 'status',
+            label: 'Stock status',
+            options: [
+                { label: 'Available', value: 'available' },
+                { label: 'Low stock', value: 'low_stock' },
+                { label: 'Near expiry', value: 'near_expiry' },
+                { label: 'Expired', value: 'expired' },
+            ],
+            placeholder: 'All stock statuses',
+            value: inventoryListFilters.status,
+        },
+    ];
+    const updateInventoryListSearch = (value) => {
+        setInventoryListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateInventoryListFilter = (key, value) => {
+        setInventoryListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetInventoryListFilters = () => {
+        setInventoryListFilters(blankInventoryListFilters);
+    };
+    const goToInventoryPage = (page) => {
+        setInventoryListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const inventoryDetailFilterControls = [
+        {
+            key: 'warehouse_id',
+            label: 'Warehouse',
+            options: receivingWarehouses.map((warehouse) => ({ label: warehouse.name, value: String(warehouse.id) })),
+            placeholder: receivingWarehousesResource.loading ? 'Loading warehouses' : 'All warehouses',
+            value: inventoryDetailFilters.warehouse_id,
+        },
+        {
+            key: 'status',
+            label: 'Batch status',
+            options: [
+                { label: 'Available', value: 'available' },
+                { label: 'Reserved', value: 'reserved' },
+                { label: 'Sold', value: 'sold' },
+                { label: 'Damaged', value: 'damaged' },
+                { label: 'Near expiry', value: 'near_expiry' },
+                { label: 'Expired', value: 'expired' },
+            ],
+            placeholder: 'All batch statuses',
+            value: inventoryDetailFilters.status,
+        },
+    ];
+    const updateInventoryDetailSearch = (value) => {
+        setInventoryDetailFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateInventoryDetailFilter = (key, value) => {
+        setInventoryDetailFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetInventoryDetailFilters = () => {
+        setInventoryDetailFilters(blankInventoryDetailFilters);
+    };
+    const goToInventoryDetailPage = (page) => {
+        setInventoryDetailFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const representativePagination = isRepresentativesPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const representativeListFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Assigned company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: representativeListFilters.company_id,
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Active', value: 'active' },
+                { label: 'Inactive', value: 'inactive' },
+            ],
+            placeholder: 'All statuses',
+            value: representativeListFilters.status,
+        },
+    ];
+    const updateRepresentativeListSearch = (value) => {
+        setRepresentativeListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateRepresentativeListFilter = (key, value) => {
+        setRepresentativeListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetRepresentativeListFilters = () => {
+        setRepresentativeListFilters(blankRepresentativeListFilters);
+    };
+    const goToRepresentativePage = (page) => {
+        setRepresentativeListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const warehousePagination = isWarehousesPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const warehouseListFilterControls = [
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Active', value: 'active' },
+                { label: 'Inactive', value: 'inactive' },
+            ],
+            placeholder: 'All statuses',
+            value: warehouseListFilters.status,
+        },
+    ];
+    const updateWarehouseListSearch = (value) => {
+        setWarehouseListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateWarehouseListFilter = (key, value) => {
+        setWarehouseListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetWarehouseListFilters = () => {
+        setWarehouseListFilters(blankWarehouseListFilters);
+    };
+    const goToWarehousePage = (page) => {
+        setWarehouseListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
     const productPagination = isProductsPage && liveResource.data ? {
         currentPage: Number(liveResource.data.current_page || 1),
         from: Number(liveResource.data.from || 0),
@@ -1082,6 +1941,24 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     }, [modalOpen, modalScreenKey, selectedRecord]);
 
     useEffect(() => {
+        if (!isStockWorkspacePage || !modalOpen || !stockAdjustmentForm.product_id || stockAdjustmentForm.unit_id) {
+            return;
+        }
+
+        const product = findReceiptProduct(stockAdjustmentProducts, stockAdjustmentForm.product_id);
+        const defaultUnit = product?.product_units?.find((unit) => unit.is_default_sales_unit)
+            || product?.product_units?.find((unit) => unit.is_base_unit)
+            || product?.product_units?.[0];
+
+        if (defaultUnit?.unit_id) {
+            setStockAdjustmentForm((current) => ({
+                ...current,
+                unit_id: defaultUnit.unit_id,
+            }));
+        }
+    }, [isStockWorkspacePage, modalOpen, stockAdjustmentForm.product_id, stockAdjustmentForm.unit_id, stockAdjustmentProducts]);
+
+    useEffect(() => {
         if (!modalOpen && !drawerOpen && screen.rows.length > 0 && !screen.rows.some((row) => row.id === selectedRecord?.id)) {
             setSelectedRecord(screen.rows[0]);
         }
@@ -1096,7 +1973,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setPharmacyError('');
         setProductCategoryError('');
         setProductError('');
+        setSalesRepresentativeError('');
+        setStockAdjustmentError('');
+        setStockReceiptError('');
         setUnitError('');
+        setWarehouseError('');
     };
     const openWorkflowModal = (targetScreenKey, record, options = {}) => {
         setSelectedRecord(record);
@@ -1325,6 +2206,127 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             setUnitSubmitting(false);
         }
     };
+    const openWarehouseForm = (record = null) => {
+        const nextForm = record ? {
+            name: record.name || '',
+            code: record.code || '',
+            address: record.address_value || (record.address === '-' ? '' : record.address) || '',
+            status: String(record.status || 'active').toLowerCase(),
+        } : blankWarehouseForm;
+
+        setSelectedRecord(record || {});
+        setWarehouseForm(nextForm);
+        setModalScreenKey(null);
+        setModalTitleOverride(record ? 'Edit warehouse' : 'Add warehouse');
+        setModalSubmitLabelOverride(record ? 'Save warehouse' : 'Add warehouse');
+        setWarehouseError('');
+        setModalOpen(true);
+    };
+    const updateWarehouseForm = (event) => {
+        setWarehouseForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+        setWarehouseError('');
+    };
+    const submitWarehouseForm = async () => {
+        setWarehouseSubmitting(true);
+        setWarehouseError('');
+
+        try {
+            if (selectedRecord?.id) {
+                await api.put(`/office/warehouses/${selectedRecord.id}`, warehouseForm);
+            } else {
+                await api.post('/office/warehouses', warehouseForm);
+            }
+
+            liveResource.refresh();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setWarehouseError(requestError.message);
+        } finally {
+            setWarehouseSubmitting(false);
+        }
+    };
+    const deleteWarehouse = async (record) => {
+        setWarehouseSubmitting(true);
+        setWarehouseError('');
+
+        try {
+            await api.delete(`/office/warehouses/${record.id}`);
+            liveResource.refresh();
+            closeConfirmAction();
+        } catch (requestError) {
+            setWarehouseError(requestError.message);
+        } finally {
+            setWarehouseSubmitting(false);
+        }
+    };
+    const openSalesRepresentativeForm = (record = null) => {
+        const nextForm = record ? {
+            name: record.name || '',
+            email: record.email || '',
+            phone: record.phone_value || (record.phone === '-' ? '' : record.phone) || '',
+            employee_code: record.employee_code || '',
+            company_id: record.company_id || '',
+            region: record.region_value || (record.region === '-' ? '' : record.region) || '',
+            joined_at: record.joined_at || '',
+            password: '',
+            status: String(record.status || 'active').toLowerCase(),
+        } : blankSalesRepresentativeForm;
+
+        setSelectedRecord(record || {});
+        setSalesRepresentativeForm(nextForm);
+        setModalScreenKey(null);
+        setModalTitleOverride(record ? 'Edit sales rep' : 'Add sales rep');
+        setModalSubmitLabelOverride(record ? 'Save sales rep' : 'Add sales rep');
+        setSalesRepresentativeError('');
+        setModalOpen(true);
+    };
+    const updateSalesRepresentativeForm = (event) => {
+        setSalesRepresentativeForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+        setSalesRepresentativeError('');
+    };
+    const salesRepresentativePayload = () => Object.entries(salesRepresentativeForm).reduce((payload, [key, value]) => {
+        if (key === 'password' && selectedRecord?.id && !value) {
+            return payload;
+        }
+
+        return {
+            ...payload,
+            [key]: value,
+        };
+    }, {});
+    const submitSalesRepresentativeForm = async () => {
+        setSalesRepresentativeSubmitting(true);
+        setSalesRepresentativeError('');
+
+        try {
+            if (selectedRecord?.id) {
+                await api.put(`/office/sales-representatives/${selectedRecord.id}`, salesRepresentativePayload());
+            } else {
+                await api.post('/office/sales-representatives', salesRepresentativePayload());
+            }
+
+            liveResource.refresh();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setSalesRepresentativeError(requestError.message);
+        } finally {
+            setSalesRepresentativeSubmitting(false);
+        }
+    };
+    const deleteSalesRepresentative = async (record) => {
+        setSalesRepresentativeSubmitting(true);
+        setSalesRepresentativeError('');
+
+        try {
+            await api.delete(`/office/sales-representatives/${record.id}`);
+            liveResource.refresh();
+            closeConfirmAction();
+        } catch (requestError) {
+            setSalesRepresentativeError(requestError.message);
+        } finally {
+            setSalesRepresentativeSubmitting(false);
+        }
+    };
     const openProductForm = (record = null) => {
         const recordProductUnits = record?.product_units_raw?.length
             ? record.product_units_raw
@@ -1536,6 +2538,250 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             setProductSubmitting(false);
         }
     };
+    const openStockReceiptForm = (record = null) => {
+        const nextForm = record ? {
+            company_id: record.company_id || '',
+            warehouse_id: record.warehouse_id || '',
+            supplier_invoice_no: record.supplier_invoice_no || '',
+            received_date: record.received_date || '',
+            payable_due_date: record.payable_due_date || '',
+            paid_amount: String(record.paid_amount ?? 0),
+            items: (record.receipt_items_raw?.length ? record.receipt_items_raw : [{ ...blankStockReceiptItem }]).map((item) => ({
+                product_id: item.product_id || '',
+                unit_id: item.unit_id || '',
+                foc_unit_id: item.foc_unit_id || '',
+                quantity: String(item.quantity || 1),
+                foc_quantity: String(item.foc_quantity || 0),
+                unit_cost: String(item.unit_cost ?? 0),
+                batch_no: item.batch_no || '',
+                manufactured_date: item.manufactured_date || '',
+                expiry_date: item.expiry_date || '',
+            })),
+        } : { ...blankStockReceiptForm, items: [{ ...blankStockReceiptItem }] };
+
+        setSelectedRecord(record || {});
+        setStockReceiptForm(nextForm);
+        setModalScreenKey(null);
+        setModalTitleOverride(record ? 'Edit receiving' : 'Receive stock');
+        setModalSubmitLabelOverride(record ? 'Save receiving' : 'Save receiving');
+        setStockReceiptError('');
+        setModalOpen(true);
+    };
+    const updateStockReceiptForm = (event) => {
+        const { name, value } = event.target;
+        setStockReceiptForm((current) => ({
+            ...current,
+            [name]: value,
+            items: name === 'company_id'
+                ? [{ ...blankStockReceiptItem }]
+                : name === 'received_date'
+                    ? current.items.map((item, itemIndex) => {
+                        if (!item.product_id || item.batch_no) {
+                            return item;
+                        }
+
+                        return {
+                            ...item,
+                            batch_no: makeReceiptBatchNumber(findReceiptProduct(receivingProducts, item.product_id), value, itemIndex),
+                        };
+                    })
+                    : current.items,
+        }));
+        setStockReceiptError('');
+    };
+    const updateStockReceiptItem = (index, event) => {
+        const { name, value } = event.target;
+
+        setStockReceiptForm((current) => ({
+            ...current,
+            items: current.items.map((item, itemIndex) => {
+                if (itemIndex !== index) {
+                    return item;
+                }
+
+                if (name !== 'product_id') {
+                    return { ...item, [name]: value };
+                }
+
+                const product = findReceiptProduct(receivingProducts, value);
+                const defaultUnit = product?.product_units?.find((unit) => unit.is_default_sales_unit)
+                    || product?.product_units?.find((unit) => unit.is_base_unit)
+                    || product?.product_units?.[0];
+
+                return {
+                    ...item,
+                    batch_no: item.batch_no || makeReceiptBatchNumber(product, current.received_date, index),
+                    product_id: value,
+                    unit_id: defaultUnit?.unit_id || '',
+                    foc_unit_id: '',
+                };
+            }),
+        }));
+        setStockReceiptError('');
+    };
+    const addStockReceiptItem = () => {
+        setStockReceiptForm((current) => ({
+            ...current,
+            items: [...(current.items || []), { ...blankStockReceiptItem }],
+        }));
+        setStockReceiptError('');
+    };
+    const removeStockReceiptItem = (index) => {
+        setStockReceiptForm((current) => ({
+            ...current,
+            items: current.items.length === 1 ? current.items : current.items.filter((_, itemIndex) => itemIndex !== index),
+        }));
+        setStockReceiptError('');
+    };
+    const stockReceiptPayload = () => ({
+        ...stockReceiptForm,
+        warehouse_id: stockReceiptForm.warehouse_id || null,
+        items: (stockReceiptForm.items || []).map((item) => ({
+            product_id: item.product_id,
+            unit_id: item.unit_id,
+            quantity: item.quantity || 1,
+            foc_quantity: item.foc_quantity || 0,
+            foc_unit_id: Number(item.foc_quantity || 0) > 0 ? item.foc_unit_id || item.unit_id || null : null,
+            unit_cost: item.unit_cost || 0,
+            batch_no: item.batch_no || null,
+            manufactured_date: item.manufactured_date || null,
+            expiry_date: item.expiry_date || null,
+        })),
+    });
+    const submitStockReceiptForm = async () => {
+        setStockReceiptSubmitting(true);
+        setStockReceiptError('');
+
+        try {
+            if (selectedRecord?.id) {
+                await api.put(`/office/stock-receipts/${selectedRecord.id}`, stockReceiptPayload());
+            } else {
+                await api.post('/office/stock-receipts', stockReceiptPayload());
+            }
+
+            liveResource.refresh();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setStockReceiptError(requestError.message);
+        } finally {
+            setStockReceiptSubmitting(false);
+        }
+    };
+    const deleteStockReceipt = async (record) => {
+        setStockReceiptSubmitting(true);
+        setStockReceiptError('');
+
+        try {
+            await api.delete(`/office/stock-receipts/${record.id}`);
+            liveResource.refresh();
+            closeConfirmAction();
+        } catch (requestError) {
+            setStockReceiptError(requestError.message);
+        } finally {
+            setStockReceiptSubmitting(false);
+        }
+    };
+    const openStockAdjustmentForm = (record = null) => {
+        const defaultWarehouseId = record?.warehouse_id
+            || (isInventoryDetailPage ? inventoryDetailFilters.warehouse_id : inventoryListFilters.warehouse_id)
+            || '';
+        const defaultCompanyId = record?.company_id
+            || inventoryDetailCompanyId
+            || inventoryDetailProduct?.company_id
+            || inventoryListFilters.company_id
+            || '';
+        const defaultProductId = record?.product_id || inventoryDetailProductId || '';
+        const defaultProductName = record?.product || inventoryDetailProductName || '';
+        const nextForm = {
+            ...blankStockAdjustmentForm,
+            company_id: defaultCompanyId,
+            company_name: record?.company || '',
+            warehouse_id: defaultWarehouseId,
+            product_id: defaultProductId,
+            product_name: defaultProductName,
+            product_locked: Boolean(defaultProductId),
+        };
+
+        setSelectedRecord(record || {});
+        setStockAdjustmentForm(nextForm);
+        setModalScreenKey(null);
+        setModalTitleOverride('Adjust stock');
+        setModalSubmitLabelOverride('Save adjustment');
+        setStockAdjustmentError('');
+        setModalOpen(true);
+    };
+    const openInventoryDetail = (record) => {
+        if (!record?.product_id) {
+            return;
+        }
+
+        window.sessionStorage.setItem('selected_inventory_product_name', record.product || '');
+        onNavigate?.('inventory-detail', {
+            company_id: record.company_id || '',
+            product_id: record.product_id,
+            product_name: record.product || '',
+            ...(inventoryListFilters.warehouse_id ? { warehouse_id: inventoryListFilters.warehouse_id } : {}),
+        });
+    };
+    const updateStockAdjustmentForm = (event) => {
+        const { name, value } = event.target;
+
+        setStockAdjustmentForm((current) => {
+            if (name === 'company_id') {
+                return {
+                    ...current,
+                    company_id: value,
+                    product_id: '',
+                    unit_id: '',
+                };
+            }
+
+            if (name === 'product_id') {
+                const product = findReceiptProduct(stockAdjustmentProducts, value);
+                const defaultUnit = product?.product_units?.find((unit) => unit.is_default_sales_unit)
+                    || product?.product_units?.find((unit) => unit.is_base_unit)
+                    || product?.product_units?.[0];
+
+                return {
+                    ...current,
+                    product_id: value,
+                    unit_id: defaultUnit?.unit_id || '',
+                };
+            }
+
+            if (name === 'adjustment_type' && value !== 'increase') {
+                return {
+                    ...current,
+                    adjustment_type: value,
+                    batch_no: '',
+                    expiry_date: '',
+                };
+            }
+
+            return { ...current, [name]: value };
+        });
+        setStockAdjustmentError('');
+    };
+    const stockAdjustmentPayload = () => ({
+        ...stockAdjustmentForm,
+        batch_no: stockAdjustmentForm.adjustment_type === 'increase' ? stockAdjustmentForm.batch_no || null : null,
+        expiry_date: stockAdjustmentForm.adjustment_type === 'increase' ? stockAdjustmentForm.expiry_date || null : null,
+        reason: stockAdjustmentForm.reason || null,
+    });
+    const submitStockAdjustmentForm = async () => {
+        setStockAdjustmentSubmitting(true);
+        setStockAdjustmentError('');
+
+        try {
+            await api.post('/office/stock/adjustments', stockAdjustmentPayload());
+            liveResource.refresh();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setStockAdjustmentError(requestError.message);
+        } finally {
+            setStockAdjustmentSubmitting(false);
+        }
+    };
     const changeProductDefaultSalesUnit = async (unit) => {
         if (!isProductsPage || !selectedRecord?.id || !unit?.unitId) {
             return;
@@ -1584,46 +2830,68 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         }
     };
     const closeConfirmAction = () => setConfirmAction(null);
-    const rowActions = (screen.rowActions || []).map((action) => ({
-        ...action,
-        onClick: (record) => {
-            if (action.openDrawer) {
-                setSelectedRecord(record);
-                setDrawerOpen(true);
-                return;
-            }
+    const inventoryRowActions = isStockWorkspacePage ? [
+        ...(isInventoryPage ? [
+            {
+                label: 'View batches',
+                onClick: (record) => openInventoryDetail(record),
+            },
+        ] : []),
+        {
+            label: 'Adjust stock',
+            onClick: (record) => openStockAdjustmentForm(record),
+        },
+    ] : [];
+    const rowActions = [
+        ...inventoryRowActions,
+        ...(screen.rowActions || []).map((action) => ({
+            ...action,
+            onClick: (record) => {
+                if (action.openDrawer) {
+                    setSelectedRecord(record);
+                    setDrawerOpen(true);
+                    return;
+                }
 
-            if (action.confirm) {
-                setSelectedRecord(record);
-                setConfirmAction({ action, record });
-                return;
-            }
+                if (action.confirm) {
+                    setSelectedRecord(record);
+                    setConfirmAction({ action, record });
+                    return;
+                }
 
-            if (action.modalScreenKey) {
-                openWorkflowModal(action.modalScreenKey, record, {
-                    submitLabel: action.submitLabel || action.label,
+                if (action.modalScreenKey) {
+                    openWorkflowModal(action.modalScreenKey, record, {
+                        submitLabel: action.submitLabel || action.label,
+                        title: action.modalTitle || action.label,
+                    });
+                    return;
+                }
+
+                if (action.target) {
+                    setSelectedRecord(record);
+                    onNavigate?.(action.target);
+                    return;
+                }
+
+                openWorkflowModal(null, record, {
+                    submitLabel: action.submitLabel || `Save ${recordLabel}`,
                     title: action.modalTitle || action.label,
                 });
-                return;
-            }
-
-            if (action.target) {
-                setSelectedRecord(record);
-                onNavigate?.(action.target);
-                return;
-            }
-
-            openWorkflowModal(null, record, {
-                submitLabel: action.submitLabel || `Save ${recordLabel}`,
-                title: action.modalTitle || action.label,
-            });
-        },
-    }));
+            },
+        })),
+    ];
 
     return (
         <div className="page-stack">
             <PageHeader
-                action={<button className="btn primary" onClick={isCompaniesPage ? () => openCompanyForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isProductsPage ? () => openProductForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{screen.primaryAction}</button>}
+                action={isInventoryDetailPage ? (
+                    <div className="page-heading-actions">
+                        <button className="btn secondary" onClick={() => onNavigate?.('inventory')} type="button">Back to inventory</button>
+                        <button className="btn primary" onClick={() => openStockAdjustmentForm(null)} type="button">{screen.primaryAction}</button>
+                    </div>
+                ) : (
+                    <button className="btn primary" onClick={isCompaniesPage ? () => openCompanyForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isWarehousesPage ? () => openWarehouseForm() : isProductsPage ? () => openProductForm() : isReceivingPage ? () => openStockReceiptForm() : isInventoryPage ? () => openStockAdjustmentForm(selectedRecord) : isRepresentativesPage ? () => openSalesRepresentativeForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{screen.primaryAction}</button>
+                )}
                 description={screen.description}
                 eyebrow={screen.eyebrow}
                 title={screen.title}
@@ -1665,6 +2933,51 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         searchPlaceholder="Search pharmacy, code, owner, or phone"
                         searchValue={pharmacyListFilters.search}
                     />
+                ) : isRepresentativesPage ? (
+                    <FilterToolbar
+                        filters={representativeListFilterControls}
+                        onFilterChange={updateRepresentativeListFilter}
+                        onReset={resetRepresentativeListFilters}
+                        onSearch={updateRepresentativeListSearch}
+                        searchPlaceholder="Search sales rep name or phone"
+                        searchValue={representativeListFilters.search}
+                    />
+                ) : isWarehousesPage ? (
+                    <FilterToolbar
+                        filters={warehouseListFilterControls}
+                        onFilterChange={updateWarehouseListFilter}
+                        onReset={resetWarehouseListFilters}
+                        onSearch={updateWarehouseListSearch}
+                        searchPlaceholder="Search warehouse name or code"
+                        searchValue={warehouseListFilters.search}
+                    />
+                ) : isReceivingPage ? (
+                    <FilterToolbar
+                        filters={receivingListFilterControls}
+                        onFilterChange={updateReceivingListFilter}
+                        onReset={resetReceivingListFilters}
+                        onSearch={updateReceivingListSearch}
+                        searchPlaceholder="Search receipt, invoice, company, or warehouse"
+                        searchValue={receivingListFilters.search}
+                    />
+                ) : isInventoryPage ? (
+                    <FilterToolbar
+                        filters={inventoryListFilterControls}
+                        onFilterChange={updateInventoryListFilter}
+                        onReset={resetInventoryListFilters}
+                        onSearch={updateInventoryListSearch}
+                        searchPlaceholder="Search product name or SKU"
+                        searchValue={inventoryListFilters.search}
+                    />
+                ) : isInventoryDetailPage ? (
+                    <FilterToolbar
+                        filters={inventoryDetailFilterControls}
+                        onFilterChange={updateInventoryDetailFilter}
+                        onReset={resetInventoryDetailFilters}
+                        onSearch={updateInventoryDetailSearch}
+                        searchPlaceholder="Search batch number"
+                        searchValue={inventoryDetailFilters.search}
+                    />
                 ) : <FilterToolbar filters={screen.filters} showDate />)}
                 <DataTable
                     actions={[
@@ -1678,7 +2991,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         ...(showEditAction ? [
                             {
                                 label: screen.editActionLabel || `Edit ${recordLabel}`,
-                                onClick: (record) => isCompaniesPage ? openCompanyForm(record) : isPharmaciesPage ? openPharmacyForm(record) : isProductCategoriesPage ? openProductCategoryForm(record) : isUnitsPage ? openUnitForm(record) : isProductsPage ? openProductForm(record) : openWorkflowModal(null, record, {
+                                onClick: (record) => isCompaniesPage ? openCompanyForm(record) : isPharmaciesPage ? openPharmacyForm(record) : isProductCategoriesPage ? openProductCategoryForm(record) : isUnitsPage ? openUnitForm(record) : isWarehousesPage ? openWarehouseForm(record) : isProductsPage ? openProductForm(record) : isReceivingPage ? openStockReceiptForm(record) : isRepresentativesPage ? openSalesRepresentativeForm(record) : openWorkflowModal(null, record, {
                                     submitLabel: screen.editSubmitLabel || `Save ${recordLabel}`,
                                     title: screen.editActionLabel || `Edit ${recordLabel}`,
                                 }),
@@ -1686,11 +2999,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         ] : []),
                         ...(isManagedCrudPage ? [
                             {
-                                label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isPharmaciesPage ? 'Delete pharmacy' : 'Delete company',
+                                label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isWarehousesPage ? 'Delete warehouse' : isReceivingPage ? 'Delete receiving' : isPharmaciesPage ? 'Delete pharmacy' : isRepresentativesPage ? 'Delete sales rep' : 'Delete company',
                                 variant: 'danger',
                                 onClick: (record) => {
                                     setSelectedRecord(record);
-                                    setConfirmAction({ action: { label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isPharmaciesPage ? 'Delete pharmacy' : 'Delete company', categoryDelete: isProductCategoriesPage, companyDelete: isCompaniesPage, pharmacyDelete: isPharmaciesPage, productDelete: isProductsPage, unitDelete: isUnitsPage }, record });
+                                    setConfirmAction({ action: { label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isWarehousesPage ? 'Delete warehouse' : isReceivingPage ? 'Delete receiving' : isPharmaciesPage ? 'Delete pharmacy' : isRepresentativesPage ? 'Delete sales rep' : 'Delete company', categoryDelete: isProductCategoriesPage, companyDelete: isCompaniesPage, pharmacyDelete: isPharmaciesPage, productDelete: isProductsPage, receiptDelete: isReceivingPage, representativeDelete: isRepresentativesPage, unitDelete: isUnitsPage, warehouseDelete: isWarehousesPage }, record });
                                 },
                             },
                         ] : []),
@@ -1698,8 +3011,12 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     columns={screen.columns}
                     error={liveResource.error}
                     loading={liveResource.loading}
-                    onRowClick={(record) => {
+                    onRowClick={isRepresentativesPage || isInventoryDetailPage ? undefined : (record) => {
                         setSelectedRecord(record);
+                        if (isInventoryPage) {
+                            openInventoryDetail(record);
+                            return;
+                        }
                         if (screen.detailPageKey) {
                             onNavigate?.(screen.detailPageKey);
                             return;
@@ -1708,6 +3025,12 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     }}
                     rows={screen.rows}
                 />
+                {isReceivingPage && liveResource.data?.summary && (
+                    <div className="table-total-summary">
+                        <span>Total payable due</span>
+                        <strong>{formatAmount(liveResource.data.summary.due_amount)}</strong>
+                    </div>
+                )}
                 {isProductsPage && productPagination && (
                     <PaginationBar
                         currentPage={productPagination.currentPage}
@@ -1734,9 +3057,74 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         total={pharmacyPagination.total}
                     />
                 )}
+                {isRepresentativesPage && representativePagination && (
+                    <PaginationBar
+                        currentPage={representativePagination.currentPage}
+                        emptyLabel="No sales reps to show"
+                        from={representativePagination.from}
+                        lastPage={representativePagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToRepresentativePage(representativePagination.currentPage + 1)}
+                        onPrevious={() => goToRepresentativePage(representativePagination.currentPage - 1)}
+                        to={representativePagination.to}
+                        total={representativePagination.total}
+                    />
+                )}
+                {isWarehousesPage && warehousePagination && (
+                    <PaginationBar
+                        currentPage={warehousePagination.currentPage}
+                        emptyLabel="No warehouses to show"
+                        from={warehousePagination.from}
+                        lastPage={warehousePagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToWarehousePage(warehousePagination.currentPage + 1)}
+                        onPrevious={() => goToWarehousePage(warehousePagination.currentPage - 1)}
+                        to={warehousePagination.to}
+                        total={warehousePagination.total}
+                    />
+                )}
+                {isReceivingPage && receivingPagination && (
+                    <PaginationBar
+                        currentPage={receivingPagination.currentPage}
+                        emptyLabel="No receiving records to show"
+                        from={receivingPagination.from}
+                        lastPage={receivingPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToReceivingPage(receivingPagination.currentPage + 1)}
+                        onPrevious={() => goToReceivingPage(receivingPagination.currentPage - 1)}
+                        to={receivingPagination.to}
+                        total={receivingPagination.total}
+                    />
+                )}
+                {isInventoryPage && inventoryPagination && (
+                    <PaginationBar
+                        currentPage={inventoryPagination.currentPage}
+                        emptyLabel="No inventory to show"
+                        from={inventoryPagination.from}
+                        lastPage={inventoryPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToInventoryPage(inventoryPagination.currentPage + 1)}
+                        onPrevious={() => goToInventoryPage(inventoryPagination.currentPage - 1)}
+                        to={inventoryPagination.to}
+                        total={inventoryPagination.total}
+                    />
+                )}
+                {isInventoryDetailPage && inventoryDetailPagination && (
+                    <PaginationBar
+                        currentPage={inventoryDetailPagination.currentPage}
+                        emptyLabel="No batches to show"
+                        from={inventoryDetailPagination.from}
+                        lastPage={inventoryDetailPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToInventoryDetailPage(inventoryDetailPagination.currentPage + 1)}
+                        onPrevious={() => goToInventoryDetailPage(inventoryDetailPagination.currentPage - 1)}
+                        to={inventoryDetailPagination.to}
+                        total={inventoryDetailPagination.total}
+                    />
+                )}
             </Panel>
 
-            {!isManagedCrudPage && (
+            {!isManagedCrudPage && !isStockWorkspacePage && (
                 <div className="state-grid">
                     <article><strong>Empty state</strong><small>Tables show a no-record message</small></article>
                     <article><strong>Loading state</strong><small>Shared table supports loading rows</small></article>
@@ -1745,7 +3133,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             )}
 
             <Modal
-                actions={modalScreen.stockReceivingForm ? (
+                actions={modalScreen.stockReceivingForm && !isReceivingPage ? (
                     <>
                         <button className="btn secondary" onClick={closeWorkflowModal} type="button">Cancel</button>
                         <button className="btn primary" onClick={closeWorkflowModal} type="button">Save receiving and update stock</button>
@@ -1754,13 +3142,13 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 busy={modalBusy}
                 open={modalOpen}
                 onClose={closeWorkflowModal}
-                onSubmit={isCompaniesPage && !modalScreenKey ? submitCompanyForm : isPharmaciesPage && !modalScreenKey ? submitPharmacyForm : isProductCategoriesPage && !modalScreenKey ? submitProductCategoryForm : isUnitsPage && !modalScreenKey ? submitUnitForm : isProductsPage && !modalScreenKey ? submitProductForm : closeWorkflowModal}
-                submitDisabled={orderCreateBlocked || companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || unitSubmitting}
-                submitDisabledReason={companyError || pharmacyError || productCategoryError || productError || unitError || (orderCreateBlocked ? 'Company credit is blocked. Order creation is not allowed.' : '')}
+                onSubmit={isCompaniesPage && !modalScreenKey ? submitCompanyForm : isPharmaciesPage && !modalScreenKey ? submitPharmacyForm : isProductCategoriesPage && !modalScreenKey ? submitProductCategoryForm : isUnitsPage && !modalScreenKey ? submitUnitForm : isWarehousesPage && !modalScreenKey ? submitWarehouseForm : isProductsPage && !modalScreenKey ? submitProductForm : isReceivingPage && !modalScreenKey ? submitStockReceiptForm : isStockWorkspacePage && !modalScreenKey ? submitStockAdjustmentForm : isRepresentativesPage && !modalScreenKey ? submitSalesRepresentativeForm : closeWorkflowModal}
+                submitDisabled={orderCreateBlocked || companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting}
+                submitDisabledReason={companyError || pharmacyError || productCategoryError || productError || salesRepresentativeError || stockAdjustmentError || stockReceiptError || unitError || warehouseError || (orderCreateBlocked ? 'Company credit is blocked. Order creation is not allowed.' : '')}
                 submitLabel={modalSubmitLabel}
                 title={modalTitle}
             >
-                {!isManagedCrudPage && <WorkflowContext context={modalContext} screenKey={modalScreenKey} />}
+                {!isManagedCrudPage && !isStockWorkspacePage && <WorkflowContext context={modalContext} screenKey={modalScreenKey} />}
                 {isCompaniesPage && !modalScreenKey
                     ? <CompanyForm form={companyForm} onChange={updateCompanyForm} />
                     : isPharmaciesPage && !modalScreenKey
@@ -1776,6 +3164,33 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         )
                     : isUnitsPage && !modalScreenKey
                         ? <UnitForm form={unitForm} onChange={updateUnitForm} />
+                    : isWarehousesPage && !modalScreenKey
+                        ? <WarehouseForm form={warehouseForm} onChange={updateWarehouseForm} />
+                    : isReceivingPage && !modalScreenKey
+                        ? (
+                            <StockReceiptForm
+                                companies={productCompanies}
+                                form={stockReceiptForm}
+                                onAddItem={addStockReceiptItem}
+                                onChange={updateStockReceiptForm}
+                                onItemChange={updateStockReceiptItem}
+                                onRemoveItem={removeStockReceiptItem}
+                                products={receivingProducts}
+                                productsLoading={receivingProductsResource.loading}
+                                warehouses={receivingWarehouses}
+                            />
+                        )
+                    : isStockWorkspacePage && !modalScreenKey
+                        ? (
+                            <StockAdjustmentForm
+                                companies={productCompanies}
+                                form={stockAdjustmentForm}
+                                onChange={updateStockAdjustmentForm}
+                                products={stockAdjustmentProducts}
+                                productsLoading={stockAdjustmentProductsResource.loading}
+                                warehouses={receivingWarehouses}
+                            />
+                        )
                     : isProductsPage && !modalScreenKey
                         ? productLookupsLoading ? <ProductFormSkeleton /> : (
                             <ProductForm
@@ -1788,6 +3203,14 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                 onRemoveUnit={removeProductUnit}
                                 onUnitChange={updateProductUnit}
                                 units={unwrapCollection(productUnitsResource.data)}
+                            />
+                        )
+                    : isRepresentativesPage && !modalScreenKey
+                        ? (
+                            <SalesRepresentativeForm
+                                companies={productCompanies}
+                                form={salesRepresentativeForm}
+                                onChange={updateSalesRepresentativeForm}
                             />
                         )
                     : (
@@ -1808,7 +3231,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     actions={(
                         <>
                             <button className="btn secondary" disabled={modalBusy} onClick={closeConfirmAction} type="button">Cancel</button>
-                            <button className="btn primary" disabled={companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || unitSubmitting} onClick={() => confirmAction.action.companyDelete ? deleteCompany(confirmAction.record) : confirmAction.action.pharmacyDelete ? deletePharmacy(confirmAction.record) : confirmAction.action.categoryDelete ? deleteProductCategory(confirmAction.record) : confirmAction.action.unitDelete ? deleteUnit(confirmAction.record) : confirmAction.action.productDelete ? deleteProduct(confirmAction.record) : closeConfirmAction()} type="button">{confirmAction.action.label}</button>
+                            <button className="btn primary" disabled={companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting} onClick={() => confirmAction.action.companyDelete ? deleteCompany(confirmAction.record) : confirmAction.action.pharmacyDelete ? deletePharmacy(confirmAction.record) : confirmAction.action.categoryDelete ? deleteProductCategory(confirmAction.record) : confirmAction.action.unitDelete ? deleteUnit(confirmAction.record) : confirmAction.action.warehouseDelete ? deleteWarehouse(confirmAction.record) : confirmAction.action.receiptDelete ? deleteStockReceipt(confirmAction.record) : confirmAction.action.productDelete ? deleteProduct(confirmAction.record) : confirmAction.action.representativeDelete ? deleteSalesRepresentative(confirmAction.record) : closeConfirmAction()} type="button">{confirmAction.action.label}</button>
                         </>
                     )}
                     open
@@ -1870,7 +3293,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                     Open detail
                                 </button>
                             )}
-                            <button className="btn secondary" onClick={() => isCompaniesPage ? openCompanyForm(selectedRecord) : isPharmaciesPage ? openPharmacyForm(selectedRecord) : isProductCategoriesPage ? openProductCategoryForm(selectedRecord) : isUnitsPage ? openUnitForm(selectedRecord) : isProductsPage ? openProductForm(selectedRecord) : openWorkflowModal(null, selectedRecord, { submitLabel: `Save ${recordLabel}`, title: `Edit ${recordLabel}` })} type="button">Edit {recordLabel}</button>
+                            <button className="btn secondary" onClick={() => isCompaniesPage ? openCompanyForm(selectedRecord) : isPharmaciesPage ? openPharmacyForm(selectedRecord) : isProductCategoriesPage ? openProductCategoryForm(selectedRecord) : isUnitsPage ? openUnitForm(selectedRecord) : isWarehousesPage ? openWarehouseForm(selectedRecord) : isProductsPage ? openProductForm(selectedRecord) : isReceivingPage ? openStockReceiptForm(selectedRecord) : isRepresentativesPage ? openSalesRepresentativeForm(selectedRecord) : openWorkflowModal(null, selectedRecord, { submitLabel: `Save ${recordLabel}`, title: `Edit ${recordLabel}` })} type="button">Edit {recordLabel}</button>
                             <button className="btn primary" onClick={() => setDrawerOpen(false)} type="button">Done</button>
                         </>
                     )}

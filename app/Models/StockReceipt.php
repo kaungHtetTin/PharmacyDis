@@ -32,6 +32,11 @@ class StockReceipt extends Model
         return $this->hasMany(StockReceiptItem::class);
     }
 
+    public function payable()
+    {
+        return $this->hasOne(CompanyPayable::class);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

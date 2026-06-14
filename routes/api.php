@@ -13,12 +13,15 @@ use App\Http\Controllers\Api\Office\InvoiceController as OfficeInvoiceController
 use App\Http\Controllers\Api\Office\PaymentController as OfficePaymentController;
 use App\Http\Controllers\Api\Office\ProductCategoryController as OfficeProductCategoryController;
 use App\Http\Controllers\Api\Office\ProductController as OfficeProductController;
+use App\Http\Controllers\Api\Office\SalesRepresentativeController as OfficeSalesRepresentativeController;
 use App\Http\Controllers\Api\Office\SalesOrderController as OfficeSalesOrderController;
 use App\Http\Controllers\Api\Office\StockController as OfficeStockController;
 use App\Http\Controllers\Api\Office\StockReceiptController as OfficeStockReceiptController;
 use App\Http\Controllers\Api\Office\UnitController as OfficeUnitController;
+use App\Http\Controllers\Api\Office\WarehouseController as OfficeWarehouseController;
 use App\Http\Controllers\Api\Sales\DashboardController as SalesDashboardController;
 use App\Http\Controllers\Api\Sales\SalesOrderController as SalesSalesOrderController;
+use App\Http\Controllers\Api\Sales\StockController as SalesStockController;
 
 /*
 |--------------------------------------------------------------------------
@@ -58,7 +61,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::apiResource('customers', OfficeCustomerController::class)->except(['show']);
         Route::apiResource('product-categories', OfficeProductCategoryController::class)->except(['show']);
         Route::apiResource('products', OfficeProductController::class)->except(['show']);
+        Route::apiResource('sales-representatives', OfficeSalesRepresentativeController::class)->except(['show']);
         Route::apiResource('units', OfficeUnitController::class)->except(['show']);
+        Route::apiResource('warehouses', OfficeWarehouseController::class)->except(['show']);
 
         Route::get('orders', [OfficeSalesOrderController::class, 'index']);
         Route::post('orders', [OfficeSalesOrderController::class, 'store']);
@@ -73,13 +78,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('stock-receipts', [OfficeStockReceiptController::class, 'index']);
         Route::post('stock-receipts', [OfficeStockReceiptController::class, 'store']);
+        Route::put('stock-receipts/{stockReceipt}', [OfficeStockReceiptController::class, 'update']);
+        Route::delete('stock-receipts/{stockReceipt}', [OfficeStockReceiptController::class, 'destroy']);
         Route::get('stock/current', [OfficeStockController::class, 'current']);
+        Route::get('stock/products/{product}/batches', [OfficeStockController::class, 'productBatches']);
+        Route::post('stock/adjustments', [OfficeStockController::class, 'adjust']);
 
         Route::apiResource('foc-rules', OfficeFocRuleController::class)->except(['show']);
     });
 
     Route::prefix('sales')->middleware('user.type:sales')->group(function () {
         Route::get('dashboard', SalesDashboardController::class);
+        Route::get('stock/current', [SalesStockController::class, 'current']);
         Route::get('orders', [SalesSalesOrderController::class, 'index']);
         Route::post('orders', [SalesSalesOrderController::class, 'store']);
     });

@@ -1320,6 +1320,26 @@ tbody tr:hover {
     background: color-mix(in srgb, var(--color-muted) 5%, transparent);
 }
 
+.table-total-summary {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 9px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-muted);
+    font-size: 12px;
+    font-weight: 800;
+    background: rgb(255 255 255 / 62%);
+}
+
+.table-total-summary strong {
+    color: var(--color-text);
+    font-size: 16px;
+}
+
 .performance-chart {
     display: grid;
     gap: 12px;
@@ -2277,7 +2297,7 @@ tbody tr:hover {
 .receiving-detail-head,
 .receiving-detail-row {
     display: grid;
-    grid-template-columns: 1.35fr .8fr .55fr .7fr 1fr .75fr;
+    grid-template-columns: minmax(130px, 1.35fr) minmax(80px, .8fr) minmax(54px, .55fr) minmax(70px, .7fr) minmax(76px, .7fr) minmax(100px, 1fr) minmax(80px, .75fr) minmax(90px, .8fr);
     gap: 8px;
     align-items: center;
 }
@@ -2297,6 +2317,21 @@ tbody tr:hover {
     padding: 10px;
     border-top: 1px solid var(--color-border);
     font-size: 12px;
+}
+
+.receiving-product-cell {
+    display: grid;
+    gap: 3px;
+}
+
+.receiving-product-cell small {
+    width: fit-content;
+    padding: 2px 7px;
+    border-radius: 999px;
+    color: var(--color-primary);
+    font-size: 10px;
+    font-weight: 800;
+    background: var(--color-primary-soft);
 }
 
 .payable-preview {
@@ -2338,8 +2373,9 @@ tbody tr:hover {
 
 .receiving-item {
     display: grid;
-    gap: 10px;
-    padding: 12px;
+    gap: 12px;
+    min-width: 0;
+    padding: 14px;
     border: 1px solid var(--color-border);
     border-radius: 8px;
     background: rgb(255 255 255 / 58%);
@@ -2354,8 +2390,19 @@ tbody tr:hover {
 
 .receiving-item-grid {
     display: grid;
-    grid-template-columns: 1.4fr .8fr .7fr .8fr 1fr 1fr 1fr;
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    gap: 10px;
+    min-width: 0;
+}
+
+.receiving-item-grid .form-field {
+    min-width: 0;
+}
+
+.receiving-item-grid .form-field input,
+.receiving-item-grid .form-field select {
+    width: 100%;
+    min-width: 0;
 }
 
 .receiving-preview,
@@ -2365,11 +2412,11 @@ tbody tr:hover {
 }
 
 .receiving-preview {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .receiving-summary {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     padding: 12px;
     border: 1px solid var(--color-border);
     border-radius: 8px;
@@ -3762,6 +3809,10 @@ tbody tr:last-child .row-more-list {
     padding: 16px;
 }
 
+.operation-modal:has(.receiving-form) {
+    width: min(1040px, 96vw);
+}
+
 .modal-progress {
     position: sticky;
     top: -16px;
@@ -3806,6 +3857,8 @@ tbody tr:last-child .row-more-list {
 }
 
 .modal-body {
+    min-width: 0;
+    overflow-x: hidden;
     padding-bottom: 12px;
 }
 
