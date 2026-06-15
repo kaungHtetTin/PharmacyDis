@@ -24,6 +24,18 @@ class InvoiceResource extends JsonResource
             'paid_amount' => $this->paid_amount,
             'balance_amount' => $this->balance_amount,
             'items' => $this->whenLoaded('items'),
+            'allocations' => $this->whenLoaded('allocations', fn () => $this->allocations->map(fn ($allocation) => [
+                'id' => $allocation->id,
+                'allocated_amount' => $allocation->allocated_amount,
+                'payment' => $allocation->relationLoaded('payment') && $allocation->payment ? [
+                    'id' => $allocation->payment->id,
+                    'payment_no' => $allocation->payment->payment_no,
+                    'payment_date' => optional($allocation->payment->payment_date)->toDateString(),
+                    'amount' => $allocation->payment->amount,
+                    'payment_method' => $allocation->payment->payment_method,
+                    'reference_no' => $allocation->payment->reference_no,
+                ] : null,
+            ])),
         ];
     }
 }

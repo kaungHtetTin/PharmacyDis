@@ -97,7 +97,7 @@ export default function Root() {
             salesUrl={pageUrl('sales', 'dashboard')}
         >
             {page === 'dashboard' && <DashboardPage activePage={page} />}
-            {page === 'pharmacies-detail' && <PharmacyDetailPage onNavigate={(page) => navigate('office', page)} />}
+            {page === 'pharmacies-detail' && <PharmacyDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {page === 'representatives-detail' && <RepresentativeDetailPage onNavigate={(page) => navigate('office', page)} />}
             {page !== 'dashboard' && page !== 'pharmacies-detail' && page !== 'representatives-detail' && (
                 <OfficeModulePage pageKey={page} onNavigate={(page, params) => navigate('office', page, params)} />

@@ -115,11 +115,6 @@ export default function DashboardPage({ activePage }) {
                 </Panel>
             </div>
 
-            <div className="state-grid">
-                <article><strong>Empty state</strong><small>Tables show a no-record message</small></article>
-                <article><strong>Loading state</strong><small>Shared table supports loading rows</small></article>
-                <article><strong>Error state</strong><small>Shared table supports inline API errors</small></article>
-            </div>
         </div>
     );
 }

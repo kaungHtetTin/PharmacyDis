@@ -1,5 +1,6 @@
 import FormField from './FormField';
 import OrderLineBuilder from './OrderLineBuilder';
+import PharmacyStorePicker from './PharmacyStorePicker';
 import StatusBadge from './StatusBadge';
 import { isBlockedCredit } from './OrderCreditGate';
 
@@ -17,7 +18,10 @@ export default function SalesOrderCreateForm({
     lines = [],
     onChange,
     onLineChange,
+    onPharmacySearchChange,
     onSubmit,
+    pharmacyLoading = false,
+    pharmacySearch = '',
     productOptions = [],
     submitting = false,
     success = '',
@@ -57,13 +61,15 @@ export default function SalesOrderCreateForm({
                         <small>{selectedCredit?.reason || context?.creditReason || 'No overdue balance for this company.'}</small>
                         <small>Outstanding: {Number(selectedCredit?.outstanding_balance || 0).toLocaleString()}</small>
                     </article>
-                    <label className="form-field">
-                        <span>Pharmacy</span>
-                        <select disabled={submitting} name="customer_id" onChange={onChange} required value={form?.customer_id || ''}>
-                            <option value="" disabled>Select pharmacy</option>
-                            {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
-                        </select>
-                    </label>
+                    <PharmacyStorePicker
+                        customers={customers}
+                        disabled={submitting}
+                        loading={pharmacyLoading}
+                        onChange={onChange}
+                        onSearchChange={onPharmacySearchChange}
+                        searchValue={pharmacySearch}
+                        value={form?.customer_id || ''}
+                    />
                     <FormField
                         label="Requested delivery date"
                         name="requested_delivery_date"
@@ -79,6 +85,7 @@ export default function SalesOrderCreateForm({
             </section>
 
             <OrderLineBuilder
+                allowFallback={false}
                 disabled={blocked || submitting}
                 lines={lines}
                 onChange={onLineChange}

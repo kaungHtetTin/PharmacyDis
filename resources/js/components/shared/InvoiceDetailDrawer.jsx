@@ -1,21 +1,69 @@
-import DocumentPreviewSet from './DocumentPreviewSet';
 import Drawer from './Drawer';
+import StatusBadge from './StatusBadge';
 
-function normalizeDocuments(documents = [], invoice = {}) {
-    return documents.map((document) => ({
-        ...document,
-        items: (document.items || []).map((item) => {
-            const replacements = {
-                Invoice: invoice.invoice,
-                Order: invoice.order,
-                Customer: invoice.pharmacy || invoice.customer,
-                'Amount due': invoice.amount ? `${invoice.amount} MMK` : item.value,
-                'Paid amount': invoice.paid ? `${invoice.paid} MMK` : item.value,
-            };
+function SourceOrderPreview({ order }) {
+    if (!order) {
+        return null;
+    }
 
-            return replacements[item.label] ? { ...item, value: replacements[item.label] } : item;
-        }),
-    }));
+    return (
+        <section className="drawer-section">
+            <div className="section-heading compact">
+                <div>
+                    <p className="eyebrow">Source order</p>
+                    <h2>{order.order}</h2>
+                </div>
+                <StatusBadge value={order.status} />
+            </div>
+            <div className="fact-grid">
+                <div>
+                    <span>Pharmacy</span>
+                    <strong>{order.pharmacy || '-'}</strong>
+                </div>
+                <div>
+                    <span>Sales rep</span>
+                    <strong>{order.rep || '-'}</strong>
+                </div>
+                <div>
+                    <span>Base quantity</span>
+                    <strong>{order.baseQuantity || '-'}</strong>
+                </div>
+                <div>
+                    <span>Total</span>
+                    <strong>{order.total || '-'}</strong>
+                </div>
+            </div>
+            {order.orderItems?.length > 0 && (
+                <div className="order-line-table compact">
+                    <div className="order-line-head">
+                        <span>Product</span>
+                        <span>Qty</span>
+                        <span>Base qty</span>
+                        <span>Total</span>
+                    </div>
+                    {order.orderItems.map((item) => (
+                        <div className="order-line-row" key={item.id}>
+                            <strong>{item.product}</strong>
+                            <span>{item.orderedQuantity} {item.selectedUnit}</span>
+                            <span>{item.baseQuantity}</span>
+                            <strong>{item.lineTotal}</strong>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {order.focItems?.length > 0 && (
+                <div className="foc-list">
+                    {order.focItems.map((item) => (
+                        <article key={item.id}>
+                            <strong>{item.product}</strong>
+                            <span>{item.quantity}</span>
+                            <small>{item.rule}</small>
+                        </article>
+                    ))}
+                </div>
+            )}
+        </section>
+    );
 }
 
 export default function InvoiceDetailDrawer({
@@ -34,9 +82,8 @@ export default function InvoiceDetailDrawer({
         ...fallbackInvoice,
         ...invoice,
         pharmacy: customerName || invoice.pharmacy || fallbackInvoice.pharmacy,
-        invoiceItems: invoice.invoiceItems || fallbackInvoice.invoiceItems || [],
+        paymentRecords: invoice.paymentRecords || fallbackInvoice.paymentRecords || [],
     };
-    const documents = normalizeDocuments(invoice.documents || fallbackInvoice.documents || [], invoiceDetail);
 
     return (
         <Drawer
@@ -57,7 +104,8 @@ export default function InvoiceDetailDrawer({
                             ['Company', invoiceDetail.company || '-'],
                             ['Due date', invoiceDetail.dueDate],
                             ['Amount', invoiceDetail.amount],
-                            ['Paid', invoiceDetail.paid || '-'],
+                            ['Paid', invoiceDetail.paid || invoiceDetail.paidAmount || '-'],
+                            ['Balance', invoiceDetail.balanceAmount || '-'],
                             ['Status', invoiceDetail.status],
                         ].map(([label, value]) => (
                             <div key={label}>
@@ -67,7 +115,35 @@ export default function InvoiceDetailDrawer({
                         ))}
                     </div>
                 </section>
-                <DocumentPreviewSet documents={documents} invoiceItems={invoiceDetail.invoiceItems} />
+                <SourceOrderPreview order={invoiceDetail.sourceOrder} />
+                <section className="drawer-section">
+                    <p className="eyebrow">Payment records</p>
+                    {invoiceDetail.paymentRecords.length > 0 ? (
+                        <div className="finance-allocation-table">
+                            <div className="finance-allocation-head">
+                                <span>Payment</span>
+                                <span>Date</span>
+                                <span>Method</span>
+                                <span>Allocated</span>
+                                <span>Status</span>
+                            </div>
+                            {invoiceDetail.paymentRecords.map((payment) => (
+                                <div className="finance-allocation-row" key={payment.id}>
+                                    <div>
+                                        <strong>{payment.payment}</strong>
+                                        <small>{payment.reference}</small>
+                                    </div>
+                                    <span>{payment.date}</span>
+                                    <span>{payment.method}</span>
+                                    <strong>{payment.allocatedAmount}</strong>
+                                    <StatusBadge value={payment.status} />
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <span className="muted">No payment has been recorded for this invoice.</span>
+                    )}
+                </section>
             </div>
         </Drawer>
     );

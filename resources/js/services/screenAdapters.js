@@ -27,6 +27,35 @@ function dateOnly(value) {
     return value ? String(value).slice(0, 10) : '';
 }
 
+function mapInvoiceItems(items = []) {
+    return items.map((item) => ({
+        id: item.id,
+        product: item.product?.name || `Product #${item.product_id}`,
+        unit: item.unit?.name || `Unit #${item.unit_id}`,
+        quantity: item.quantity,
+        foc: item.foc_base_unit_quantity || 0,
+        total: money(item.line_total),
+        status: 'Issued',
+    }));
+}
+
+function mapInvoicePayments(invoice) {
+    return (invoice.payment_records || invoice.allocations || []).map((allocation) => {
+        const payment = allocation.payment || {};
+
+        return {
+            id: allocation.id,
+            payment: payment.payment_no || `Payment #${payment.id || '-'}`,
+            date: dateOnly(payment.payment_date) || '-',
+            method: titleCase(payment.payment_method || '-'),
+            reference: payment.reference_no || '-',
+            paymentAmount: money(payment.amount),
+            allocatedAmount: money(allocation.allocated_amount),
+            status: 'Allocated',
+        };
+    });
+}
+
 export function unwrapCollection(response) {
     return Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
 }
@@ -34,6 +63,12 @@ export function unwrapCollection(response) {
 export function mapOrders(response) {
     return unwrapCollection(response).map((order) => ({
         id: order.id,
+        company_id: order.company_id,
+        customer_id: order.customer_id,
+        sales_representative_id: order.sales_representative_id || '',
+        status_value: order.status,
+        requested_delivery_date: order.requested_delivery_date || '',
+        note: order.note || '',
         order: order.order_no,
         pharmacy: order.customer?.name || `Customer #${order.customer_id}`,
         rep: order.sales_representative?.user?.name || `Rep #${order.sales_representative_id || '-'}`,
@@ -41,12 +76,13 @@ export function mapOrders(response) {
         submittedDate: order.order_date,
         baseQuantity: `${(order.items || []).reduce((total, item) => total + Number(item.base_unit_quantity || 0), 0)} units`,
         creditStatus: 'Ready',
-        stockStatus: order.status === 'approved' ? 'Reserved' : 'Ready',
+        stockStatus: ['approved', 'invoiced'].includes(order.status) ? 'Reserved' : 'Ready',
         total: money(order.total_amount),
         status: titleCase(order.status),
         orderItems: (order.items || []).map((item) => ({
             id: item.id,
             product: item.product?.name || `Product #${item.product_id}`,
+            company: order.company?.name || `Company #${order.company_id}`,
             orderedQuantity: item.quantity,
             selectedUnit: item.unit?.name || `Unit #${item.unit_id}`,
             conversion: `1 selected unit = ${item.conversion_factor_to_base} base units`,
@@ -55,32 +91,158 @@ export function mapOrders(response) {
             lineTotal: money(item.line_total),
             stockStatus: 'Ready',
         })),
+        focItems: (order.foc_items || []).map((item) => ({
+            id: item.id,
+            product: item.product?.name || `Product #${item.product_id}`,
+            quantity: `${money(item.reward_base_unit_quantity)} base units`,
+            baseQuantity: `${money(item.reward_base_unit_quantity)} base units`,
+            rule: item.foc_rule?.rule_type === 'value'
+                ? `Minimum order value ${money(item.foc_rule?.minimum_order_value || 0)}`
+                : `Minimum ${money(item.foc_rule?.minimum_quantity_base_units || 0)} base units`,
+        })),
+        totals: [
+            { label: 'Subtotal', value: money(order.subtotal_amount) },
+            { label: 'Discount', value: money(order.discount_amount) },
+            { label: 'FOC value', value: money(order.foc_value_amount) },
+            { label: 'Total', value: money(order.total_amount) },
+        ],
     }));
 }
 
 export function mapInvoices(response) {
-    return unwrapCollection(response).map((invoice) => ({
-        id: invoice.id,
-        invoice: invoice.invoice_no,
-        order: invoice.sales_order?.order_no || `SO #${invoice.sales_order_id || '-'}`,
-        pharmacy: invoice.customer?.name || `Customer #${invoice.customer_id}`,
-        dueDate: invoice.due_date,
-        amount: money(invoice.total_amount),
-        status: titleCase(invoice.status),
-        invoiceItems: invoice.items || [],
-    }));
+    return unwrapCollection(response).map((invoice) => {
+        const paymentRecords = mapInvoicePayments(invoice);
+        const [sourceOrder] = invoice.sales_order ? mapOrders({ data: [invoice.sales_order] }) : [];
+
+        return {
+            id: invoice.id,
+            sales_order_id: invoice.sales_order_id || '',
+            company_id: invoice.company_id,
+            customer_id: invoice.customer_id,
+            balance_amount: invoice.balance_amount || 0,
+            invoice: invoice.invoice_no,
+            order: invoice.sales_order?.order_no || `SO #${invoice.sales_order_id || '-'}`,
+            pharmacy: invoice.customer?.name || `Customer #${invoice.customer_id}`,
+            company: invoice.company?.name || `Company #${invoice.company_id}`,
+            dueDate: dateOnly(invoice.due_date) || '-',
+            amount: money(invoice.total_amount),
+            paid: money(invoice.paid_amount),
+            paidAmount: money(invoice.paid_amount),
+            balanceAmount: money(invoice.balance_amount),
+            status: titleCase(invoice.status),
+            invoiceItems: mapInvoiceItems(invoice.items || []),
+            paymentRecords,
+            sourceOrder,
+        };
+    });
 }
 
 export function mapPayments(response) {
-    return unwrapCollection(response).map((payment) => ({
-        id: payment.id,
-        payment: payment.payment_no,
-        pharmacy: payment.customer?.name || `Customer #${payment.customer_id}`,
-        date: payment.payment_date,
-        amount: money(payment.amount),
-        method: titleCase(payment.payment_method),
-        status: 'Recorded',
-    }));
+    return unwrapCollection(response).map((payment) => {
+        const allocations = (payment.allocations || []).map((allocation) => {
+            const invoice = allocation.invoice || {};
+
+            return {
+                id: allocation.id,
+                reference: invoice.invoice_no || `Invoice #${allocation.invoice_id || '-'}`,
+                amount: money(invoice.total_amount),
+                allocated: money(allocation.allocated_amount),
+                balance: money(invoice.balance_amount),
+                status: titleCase(invoice.status || 'allocated'),
+            };
+        });
+
+        return {
+            id: payment.id,
+            payment: payment.payment_no,
+            company: payment.company?.name || `Company #${payment.company_id}`,
+            company_id: payment.company_id,
+            customer_id: payment.customer_id,
+            pharmacy: payment.customer?.name || `Customer #${payment.customer_id}`,
+            date: dateOnly(payment.payment_date) || '-',
+            amount: money(payment.amount),
+            method: titleCase(payment.payment_method),
+            referenceNo: payment.reference_no || '-',
+            note: payment.note || '',
+            status: 'Recorded',
+            allocations,
+        };
+    });
+}
+
+export function mapReceivables(response) {
+    return unwrapCollection(response).map((invoice) => {
+        const dueDate = dateOnly(invoice.due_date);
+        const today = new Date().toISOString().slice(0, 10);
+        const status = dueDate && dueDate < today && invoice.status !== 'paid'
+            ? 'Overdue'
+            : titleCase(invoice.status);
+        const paymentRecords = mapInvoicePayments(invoice);
+
+        return {
+            id: invoice.id,
+            sales_order_id: invoice.sales_order_id || '',
+            invoice: invoice.invoice_no,
+            order: invoice.sales_order?.order_no || '-',
+            company_id: invoice.company_id,
+            customer_id: invoice.customer_id,
+            company: invoice.company?.name || `Company #${invoice.company_id}`,
+            pharmacy: invoice.customer?.name || `Customer #${invoice.customer_id}`,
+            dueDate: dueDate || '-',
+            amount: money(invoice.total_amount),
+            paid: money(invoice.paid_amount),
+            paidAmount: money(invoice.paid_amount),
+            balanceAmount: money(invoice.balance_amount),
+            balance_amount: invoice.balance_amount || 0,
+            status,
+            invoiceItems: mapInvoiceItems(invoice.items || []),
+            paymentRecords,
+            paymentContext: {
+                company_id: invoice.company_id,
+                customer_id: invoice.customer_id,
+                invoice_id: invoice.id,
+                invoice_no: invoice.invoice_no,
+                balance_amount: invoice.balance_amount || 0,
+            },
+        };
+    });
+}
+
+export function mapPayables(response) {
+    return unwrapCollection(response).map((payable) => {
+        const dueDate = dateOnly(payable.due_date);
+        const today = new Date().toISOString().slice(0, 10);
+        const status = dueDate && dueDate < today && payable.status !== 'paid'
+            ? 'Overdue'
+            : titleCase(payable.status);
+        const paymentTransactions = (payable.payments || []).map((payment) => ({
+            id: payment.id,
+            payment: payment.payment_no || `Payment #${payment.id}`,
+            date: dateOnly(payment.payment_date) || '-',
+            amount: money(payment.amount),
+            method: titleCase(payment.payment_method || '-'),
+            reference: payment.reference_no || '-',
+            note: payment.note || '',
+            status: 'Recorded',
+        }));
+
+        return {
+            id: payable.id,
+            payable: `PAYABLE-${String(payable.id).padStart(4, '0')}`,
+            company_id: payable.company_id,
+            company: payable.company?.name || `Company #${payable.company_id}`,
+            receipt: payable.stock_receipt?.receipt_no || '-',
+            supplierInvoice: payable.stock_receipt?.supplier_invoice_no || '-',
+            payableDate: dateOnly(payable.payable_date) || '-',
+            dueDate: dueDate || '-',
+            amount: money(payable.amount),
+            paidAmount: money(payable.paid_amount),
+            balanceAmount: money(payable.balance_amount),
+            balance_amount: payable.balance_amount || 0,
+            status,
+            paymentTransactions,
+        };
+    });
 }
 
 export function mapStockReceipts(response) {
@@ -89,6 +251,14 @@ export function mapStockReceipts(response) {
         const baseQuantity = items.reduce((total, item) => total + Number(item.base_unit_quantity || 0), 0);
         const receivedDate = dateOnly(receipt.received_date);
         const payableDueDate = dateOnly(receipt.payable_due_date);
+        const payable = receipt.payable || {};
+        const paidAmount = payable.paid_amount ?? receipt.paid_amount ?? 0;
+        const dueAmount = payable.balance_amount ?? receipt.due_amount ?? 0;
+        const dueDate = dateOnly(payable.due_date) || payableDueDate;
+        const today = new Date().toISOString().slice(0, 10);
+        const paymentStatus = dueDate && dueDate < today && Number(dueAmount || 0) > 0
+            ? 'Overdue'
+            : titleCase(payable.status || receipt.payment_status);
 
         return {
             id: receipt.id,
@@ -106,11 +276,11 @@ export function mapStockReceipts(response) {
             items: `${items.length} ${items.length === 1 ? 'item' : 'items'}`,
             baseQuantity: `${money(baseQuantity)} base units`,
             payable: money(receipt.total_amount),
-            paidAmount: money(receipt.paid_amount),
-            dueAmount: money(receipt.due_amount),
-            dueDate: payableDueDate || '-',
-            payment_status_value: receipt.payment_status || '',
-            paymentStatus: titleCase(receipt.payment_status),
+            paidAmount: money(paidAmount),
+            dueAmount: money(dueAmount),
+            dueDate: dueDate || '-',
+            payment_status_value: payable.status || receipt.payment_status || '',
+            paymentStatus,
             receivedDate: receivedDate || '-',
             status_value: receipt.status || '',
             status: receipt.status === 'posted' ? 'Completed' : titleCase(receipt.status),
@@ -148,16 +318,16 @@ export function mapStockReceipts(response) {
             })),
             payablePreview: {
                 total: money(receipt.total_amount),
-                paid: money(receipt.paid_amount),
-                due: money(receipt.due_amount),
-                dueDate: payableDueDate || '-',
+                paid: money(paidAmount),
+                due: money(dueAmount),
+                dueDate: dueDate || '-',
             },
             printItems: [
                 { label: 'Receipt', value: receipt.receipt_no },
                 { label: 'Company', value: receipt.company?.name || `Company #${receipt.company_id}` },
                 { label: 'Invoice', value: receipt.supplier_invoice_no || '-' },
                 { label: 'Items', value: `${items.length} items / ${money(baseQuantity)} base units` },
-                { label: 'Payable due', value: money(receipt.due_amount) },
+                { label: 'Payable due', value: money(dueAmount) },
             ],
         };
     });
@@ -283,6 +453,20 @@ export function mapProducts(response) {
         focRule: product.foc_rules?.length ? `${product.foc_rules.length} active` : 'No active FOC',
         focStatus: product.foc_rules?.length ? 'Active' : 'Not configured',
         status: titleCase(product.status),
+        foc_rules_raw: product.foc_rules || [],
+        focRules: (product.foc_rules || []).map((rule) => ({
+            id: rule.id,
+            title: rule.rule_type === 'value' ? 'Order value FOC' : 'Quantity FOC',
+            type: titleCase(rule.rule_type || 'quantity'),
+            status: titleCase(rule.status || 'active'),
+            condition: rule.rule_type === 'value'
+                ? `Minimum order value ${money(rule.minimum_order_value || 0)}`
+                : `Minimum ${rule.minimum_quantity_base_units || 0} base units`,
+            reward: `${rule.reward_quantity_base_units || 0} base units free`,
+            validity: [rule.starts_at, rule.ends_at].filter(Boolean).length
+                ? `${rule.starts_at || 'Any start'} to ${rule.ends_at || 'No end'}`
+                : '',
+        })),
         product_units_raw: (product.product_units || []).map((unit) => ({
             unit_id: unit.unit_id,
             conversion_factor_to_base: unit.conversion_factor_to_base,
@@ -362,9 +546,12 @@ export function mapCustomers(response) {
         status: titleCase(customer.status),
         address: customer.address || '',
         creditStatuses: (customer.credit_statuses || []).map((credit) => ({
+            company_id: credit.company_id,
             company: credit.company?.name || `Company #${credit.company_id}`,
             status: titleCase(credit.credit_status),
+            credit_status: credit.credit_status,
             reason: credit.reason || 'No overdue balance',
+            outstanding_balance: credit.outstanding_balance || 0,
             outstanding: money(credit.outstanding_balance),
             oldestDue: credit.overdue_days ? `${credit.overdue_days} days overdue` : '-',
         })),
@@ -406,6 +593,8 @@ export function getOfficeEndpoint(pageKey) {
         orders: '/office/orders?per_page=25',
         invoices: '/office/invoices?per_page=25',
         payments: '/office/payments?per_page=25',
+        receivables: '/office/receivables?per_page=15',
+        payables: '/office/payables?per_page=15',
     };
 
     return endpoints[pageKey] || '';
@@ -426,6 +615,8 @@ export function mapOfficeRows(pageKey, response) {
         orders: mapOrders,
         invoices: mapInvoices,
         payments: mapPayments,
+        receivables: mapReceivables,
+        payables: mapPayables,
     };
 
     return mappers[pageKey] ? mappers[pageKey](response) : [];

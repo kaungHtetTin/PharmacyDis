@@ -20,6 +20,7 @@ class SalesOrderService
         private CreditControlService $creditControlService,
         private FocCalculationService $focCalculationService,
         private NumberGeneratorService $numberGeneratorService,
+        private StockMovementService $stockMovementService,
     ) {
     }
 
@@ -72,7 +73,63 @@ class SalesOrderService
 
             $order->update($totals);
 
-            return $order->fresh(['items.product', 'focItems']);
+            return $order->fresh(['company', 'customer', 'salesRepresentative.user', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule']);
+        });
+    }
+
+    public function createAndApprove(array $data, ?User $actor = null): SalesOrder
+    {
+        return DB::transaction(function () use ($data, $actor) {
+            unset($data['status'], $data['auto_approve']);
+
+            $order = $this->create($data, $actor);
+
+            return $this->approve($order, $actor);
+        });
+    }
+
+    public function approve(SalesOrder $order, ?User $actor = null): SalesOrder
+    {
+        return DB::transaction(function () use ($order, $actor) {
+            $order = SalesOrder::query()
+                ->with('items')
+                ->lockForUpdate()
+                ->findOrFail($order->id);
+
+            if (in_array($order->status, ['approved', 'invoiced'], true)) {
+                return $order->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user']);
+            }
+
+            if ($order->status !== 'submitted') {
+                throw ValidationException::withMessages([
+                    'status' => 'Only submitted orders can be approved.',
+                ]);
+            }
+
+            foreach ($order->items as $item) {
+                $quantityToReserve = (int) $item->base_unit_quantity + (int) $item->foc_base_unit_quantity;
+
+                if ($quantityToReserve <= 0) {
+                    continue;
+                }
+
+                $this->stockMovementService->reserve(
+                    (int) $order->company_id,
+                    (int) $item->product_id,
+                    $quantityToReserve,
+                    SalesOrder::class,
+                    (int) $order->id,
+                    $actor?->id
+                );
+            }
+
+            $order->update([
+                'status' => 'approved',
+                'approved_by' => $actor?->id,
+                'approved_at' => now(),
+            ]);
+
+            return $order->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user']);
         });
     }
 
@@ -126,14 +183,16 @@ class SalesOrderService
 
             if ($foc) {
                 $orderItem->update(['foc_base_unit_quantity' => $foc['reward_base_unit_quantity']]);
-                SalesOrderFocItem::create([
-                    'sales_order_id' => $order->id,
-                    'sales_order_item_id' => $orderItem->id,
-                    'foc_rule_id' => $foc['foc_rule_id'],
-                    'product_id' => $product->id,
-                    'reward_base_unit_quantity' => $foc['reward_base_unit_quantity'],
-                    'estimated_value_amount' => $foc['estimated_value_amount'],
-                ]);
+                foreach ($foc['allocations'] as $allocation) {
+                    SalesOrderFocItem::create([
+                        'sales_order_id' => $order->id,
+                        'sales_order_item_id' => $orderItem->id,
+                        'foc_rule_id' => $allocation['foc_rule_id'],
+                        'product_id' => $product->id,
+                        'reward_base_unit_quantity' => $allocation['reward_base_unit_quantity'],
+                        'estimated_value_amount' => $allocation['estimated_value_amount'],
+                    ]);
+                }
                 $focValueTotal += $foc['estimated_value_amount'];
             }
 

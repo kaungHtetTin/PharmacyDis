@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class StorePaymentRequest extends FormRequest
+class StoreCompanyPaymentRequest extends FormRequest
 {
     public function authorize()
     {
@@ -15,15 +15,13 @@ class StorePaymentRequest extends FormRequest
     {
         return [
             'company_id' => ['required', 'exists:companies,id'],
-            'customer_id' => ['required', 'exists:customers,id'],
+            'company_payable_id' => ['nullable', 'exists:company_payables,id'],
+            'pay_all' => ['nullable', 'boolean'],
             'payment_date' => ['nullable', 'date'],
-            'amount' => ['required', 'numeric', 'min:1'],
+            'amount' => ['required_unless:pay_all,true', 'nullable', 'numeric', 'min:1'],
             'payment_method' => ['nullable', 'in:cash,bank_transfer,cheque,mobile_money,other'],
-            'reference_no' => ['nullable', 'string'],
+            'reference_no' => ['nullable', 'string', 'max:255'],
             'note' => ['nullable', 'string'],
-            'allocations' => ['required', 'array', 'min:1'],
-            'allocations.*.invoice_id' => ['required', 'exists:invoices,id'],
-            'allocations.*.allocated_amount' => ['required', 'numeric', 'min:1'],
         ];
     }
 }

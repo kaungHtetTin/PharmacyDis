@@ -45,8 +45,6 @@ export const invoices = {
     viewActionLabel: 'View invoice',
     showEditAction: false,
     rowActions: [
-        { label: 'Record payment', modalScreenKey: 'payments', submitLabel: 'Record payment' },
-        { label: 'Edit invoice', modalTitle: 'Edit invoice', submitLabel: 'Save invoice' },
         { label: 'Print invoice', openDrawer: true },
         { label: 'Delete invoice', confirm: true, variant: 'danger' },
     ],

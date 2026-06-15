@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Office;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreStockReceiptRequest;
+use App\Models\CompanyPayable;
 use App\Models\StockReceipt;
 use App\Models\StockReceiptItem;
 use App\Services\StockReceivingService;
@@ -58,7 +59,20 @@ class StockReceiptController extends Controller
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->warehouse_id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
-            ->when($request->filled('payment_status'), fn ($query) => $query->where('payment_status', $request->payment_status))
+            ->when($request->filled('payment_status'), function ($query) use ($request) {
+                if ($request->payment_status === 'overdue') {
+                    $query->whereHas('payable', function ($payableQuery) {
+                        $payableQuery->where('status', '!=', 'paid')
+                            ->whereDate('due_date', '<', now()->toDateString());
+                    });
+                    return;
+                }
+
+                $query->where(function ($query) use ($request) {
+                    $query->where('payment_status', $request->payment_status)
+                        ->orWhereHas('payable', fn ($payableQuery) => $payableQuery->where('status', $request->payment_status));
+                });
+            })
             ->when($request->filled('date_from'), fn ($query) => $query->whereDate('received_date', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn ($query) => $query->whereDate('received_date', '<=', $request->date_to));
     }
@@ -70,8 +84,8 @@ class StockReceiptController extends Controller
         return [
             'receipt_count' => (clone $query)->count(),
             'total_amount' => (clone $query)->sum('total_amount'),
-            'paid_amount' => (clone $query)->sum('paid_amount'),
-            'due_amount' => (clone $query)->sum('due_amount'),
+            'paid_amount' => CompanyPayable::whereIn('stock_receipt_id', $receiptIds)->sum('paid_amount'),
+            'due_amount' => CompanyPayable::whereIn('stock_receipt_id', $receiptIds)->sum('balance_amount'),
             'item_count' => StockReceiptItem::whereIn('stock_receipt_id', $receiptIds)->count(),
             'base_quantity' => StockReceiptItem::whereIn('stock_receipt_id', $receiptIds)->sum('base_unit_quantity'),
         ];

@@ -6,37 +6,37 @@ export const officeNavSections = [
         ],
     },
     {
-        label: 'Master Data',
+        label: 'Sales Workflow',
         items: [
-            ['companies', 'building', 'Companies'],
-            ['product-categories', 'packageCheck', 'Product Categories'],
-            ['products', 'box', 'Products'],
-            ['units', 'packageCheck', 'Units'],
             ['pharmacies', 'users', 'Pharmacies'],
-            ['representatives', 'user', 'Sales Reps'],
+            ['orders', 'cart', 'Orders'],
+            ['invoices', 'receipt', 'Invoices'],
+            ['receivables', 'wallet', 'Receivables'],
+            ['payments', 'wallet', 'Payments'],
         ],
     },
     {
         label: 'Warehouse',
         items: [
-            ['warehouses', 'building', 'Warehouses'],
-            ['inventory', 'truck', 'Inventory'],
             ['receiving', 'packageCheck', 'Receiving'],
+            ['inventory', 'truck', 'Inventory'],
+            ['warehouses', 'building', 'Warehouses'],
         ],
     },
     {
-        label: 'Sales',
+        label: 'Purchasing & Payables',
         items: [
-            ['orders', 'cart', 'Orders'],
-            ['invoices', 'receipt', 'Invoices'],
-        ],
-    },
-    {
-        label: 'Finance',
-        items: [
-            ['payments', 'wallet', 'Payments'],
-            ['receivables', 'wallet', 'Receivables'],
             ['payables', 'building', 'Payables'],
+        ],
+    },
+    {
+        label: 'Catalog Setup',
+        items: [
+            ['products', 'box', 'Products'],
+            ['product-categories', 'packageCheck', 'Product Categories'],
+            ['units', 'packageCheck', 'Units'],
+            ['companies', 'building', 'Companies'],
+            ['representatives', 'user', 'Sales Reps'],
         ],
     },
     {
@@ -59,8 +59,8 @@ export const officeNav = officeNavSections.flatMap((section) => section.items);
 
 export const salesNav = [
     ['dashboard', 'grid', 'Dashboard'],
-    ['stock', 'packageCheck', 'Stock'],
-    ['pharmacies', 'users', 'Pharmacies'],
     ['new-order', 'cart', 'New Order'],
+    ['pharmacies', 'users', 'Pharmacies'],
     ['orders', 'receipt', 'Order History'],
+    ['stock', 'packageCheck', 'Stock'],
 ];

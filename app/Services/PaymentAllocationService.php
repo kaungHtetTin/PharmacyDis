@@ -2,26 +2,33 @@
 
 namespace App\Services;
 
-use App\Models\Company;
-use App\Models\Customer;
-use App\Models\CustomerBalance;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PaymentAllocationService
 {
     public function __construct(
         private NumberGeneratorService $numberGeneratorService,
-        private CreditControlService $creditControlService,
+        private CustomerBalanceService $customerBalanceService,
     ) {
     }
 
     public function recordCustomerPayment(array $data, ?User $actor = null): Payment
     {
         return DB::transaction(function () use ($data, $actor) {
+            $allocations = $data['allocations'] ?? [];
+            $allocatedTotal = array_reduce($allocations, fn ($total, $allocation) => $total + (float) ($allocation['allocated_amount'] ?? 0), 0.0);
+
+            if (count($allocations) === 0 || abs($allocatedTotal - (float) $data['amount']) > 0.01) {
+                throw ValidationException::withMessages([
+                    'allocations' => 'Payment amount must equal the selected invoice allocations.',
+                ]);
+            }
+
             $payment = Payment::create([
                 'payment_no' => $this->numberGeneratorService->next(Payment::class, 'payment_no', 'PAY'),
                 'company_id' => $data['company_id'],
@@ -34,9 +41,21 @@ class PaymentAllocationService
                 'created_by' => $actor?->id,
             ]);
 
-            foreach ($data['allocations'] ?? [] as $allocation) {
+            foreach ($allocations as $allocation) {
                 $invoice = Invoice::lockForUpdate()->findOrFail($allocation['invoice_id']);
                 $allocatedAmount = (float) $allocation['allocated_amount'];
+
+                if ((int) $invoice->company_id !== (int) $payment->company_id || (int) $invoice->customer_id !== (int) $payment->customer_id) {
+                    throw ValidationException::withMessages([
+                        'allocations' => 'Selected invoice does not belong to this customer and company.',
+                    ]);
+                }
+
+                if ($allocatedAmount > (float) $invoice->balance_amount) {
+                    throw ValidationException::withMessages([
+                        'allocations' => 'Payment amount cannot exceed the selected invoice balance.',
+                    ]);
+                }
 
                 PaymentAllocation::create([
                     'payment_id' => $payment->id,
@@ -53,30 +72,9 @@ class PaymentAllocationService
                 ]);
             }
 
-            $this->refreshCustomerBalance($payment->customer_id, $payment->company_id);
+            $this->customerBalanceService->refresh($payment->customer_id, $payment->company_id);
 
             return $payment->fresh('allocations.invoice');
         });
-    }
-
-    private function refreshCustomerBalance(int $customerId, int $companyId): void
-    {
-        $invoiceTotal = Invoice::where('customer_id', $customerId)->where('company_id', $companyId)->sum('total_amount');
-        $paymentTotal = Payment::where('customer_id', $customerId)->where('company_id', $companyId)->sum('amount');
-        $balance = $invoiceTotal - $paymentTotal;
-
-        CustomerBalance::updateOrCreate(
-            ['customer_id' => $customerId, 'company_id' => $companyId],
-            [
-                'invoice_total' => $invoiceTotal,
-                'payment_total' => $paymentTotal,
-                'balance_amount' => $balance,
-                'last_calculated_at' => now(),
-            ]
-        );
-
-        $customer = Customer::findOrFail($customerId);
-        $company = Company::findOrFail($companyId);
-        $this->creditControlService->refreshOutstanding($customer, $company, $balance);
     }
 }

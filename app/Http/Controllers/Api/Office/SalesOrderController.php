@@ -14,7 +14,8 @@ class SalesOrderController extends Controller
     public function index(Request $request)
     {
         $orders = SalesOrder::query()
-            ->with(['company', 'items.product', 'items.unit', 'customer', 'salesRepresentative.user'])
+            ->with(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user'])
+            ->when($request->filled('order_id'), fn ($query) => $query->whereKey($request->integer('order_id')))
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
@@ -26,20 +27,19 @@ class SalesOrderController extends Controller
 
     public function store(StoreOfficeSalesOrderRequest $request, SalesOrderService $salesOrderService)
     {
-        $order = $salesOrderService->create($request->validated(), $request->user());
+        $data = $request->validated();
+        $order = $request->boolean('auto_approve')
+            ? $salesOrderService->createAndApprove($data, $request->user())
+            : $salesOrderService->create($data, $request->user());
 
         return (new SalesOrderResource($order))->response()->setStatusCode(201);
     }
 
-    public function approve(Request $request, SalesOrder $salesOrder)
+    public function approve(Request $request, SalesOrder $salesOrder, SalesOrderService $salesOrderService)
     {
-        $salesOrder->update([
-            'status' => 'approved',
-            'approved_by' => $request->user()?->id,
-            'approved_at' => now(),
-        ]);
+        $salesOrder = $salesOrderService->approve($salesOrder, $request->user());
 
-        return new SalesOrderResource($salesOrder->fresh(['company', 'items.product', 'items.unit', 'customer', 'salesRepresentative.user']));
+        return new SalesOrderResource($salesOrder);
     }
 
     public function reject(Request $request, SalesOrder $salesOrder)
@@ -51,6 +51,6 @@ class SalesOrderController extends Controller
             'rejection_reason' => $request->rejection_reason,
         ]);
 
-        return new SalesOrderResource($salesOrder->fresh(['company', 'items.product', 'items.unit', 'customer', 'salesRepresentative.user']));
+        return new SalesOrderResource($salesOrder->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user']));
     }
 }

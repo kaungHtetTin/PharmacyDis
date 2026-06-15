@@ -15,4 +15,14 @@ class CompanyPayment extends Model
     protected $casts = [
         'payment_date' => 'date',
     ];
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    public function payable()
+    {
+        return $this->belongsTo(CompanyPayable::class, 'company_payable_id');
+    }
 }

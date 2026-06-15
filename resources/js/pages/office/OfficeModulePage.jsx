@@ -33,6 +33,7 @@ import UnitConversionPreview from '../../components/shared/UnitConversionPreview
 import { officeModules } from '../../data/officeModules';
 import useApiResource from '../../hooks/useApiResource';
 import { api } from '../../services/apiClient';
+import { mergeGeneratedInvoiceRows, rememberGeneratedInvoice } from '../../services/generatedInvoiceCache';
 import { applyLiveRows, getOfficeEndpoint, mapOfficeRows, mapProducts, unwrapCollection } from '../../services/screenAdapters';
 
 const blankCompanyForm = {
@@ -115,6 +116,44 @@ const blankStockAdjustmentForm = {
     reason: '',
 };
 
+const blankCustomerPaymentForm = {
+    company_id: '',
+    customer_id: '',
+    invoice_id: '',
+    payment_date: '',
+    amount: '',
+    payment_method: 'cash',
+    reference_no: '',
+    note: '',
+};
+
+const blankCompanyPaymentForm = {
+    company_id: '',
+    company_payable_id: '',
+    pay_all: false,
+    payment_date: '',
+    amount: '',
+    payment_method: 'cash',
+    reference_no: '',
+    note: '',
+};
+
+const blankOfficeOrderLine = {
+    id: 'office-order-line-1',
+    product_id: '',
+    unit_id: '',
+    quantity: '1',
+};
+
+const blankOfficeOrderForm = {
+    company_id: '',
+    customer_id: '',
+    sales_representative_id: '',
+    requested_delivery_date: '',
+    note: '',
+    auto_approve: true,
+};
+
 const blankSalesRepresentativeForm = {
     name: '',
     email: '',
@@ -124,6 +163,18 @@ const blankSalesRepresentativeForm = {
     region: '',
     joined_at: '',
     password: '',
+    status: 'active',
+};
+
+const blankFocRuleForm = {
+    id: '',
+    enabled: false,
+    rule_type: 'quantity',
+    minimum_quantity_base_units: '',
+    minimum_order_value: '',
+    reward_quantity_base_units: '',
+    starts_at: '',
+    ends_at: '',
     status: 'active',
 };
 
@@ -144,6 +195,7 @@ const blankProductForm = {
     low_stock_threshold_base_units: '0',
     base_unit_selling_price: '0',
     product_units: [],
+    foc_rule: { ...blankFocRuleForm },
     status: 'active',
 };
 
@@ -160,6 +212,30 @@ function storageUrl(path) {
     const normalizedPath = String(path).replace(/^\/+/, '').replace(/^storage\//, '');
 
     return `${baseUrl}/storage/${normalizedPath}`;
+}
+
+function dateInputValue(value) {
+    return value ? String(value).slice(0, 10) : '';
+}
+
+function focRuleFormFromRecord(record) {
+    const rule = record?.foc_rules_raw?.[0];
+
+    if (!rule) {
+        return { ...blankFocRuleForm };
+    }
+
+    return {
+        id: rule.id || '',
+        enabled: true,
+        rule_type: rule.rule_type || 'quantity',
+        minimum_quantity_base_units: rule.minimum_quantity_base_units ? String(rule.minimum_quantity_base_units) : '',
+        minimum_order_value: rule.minimum_order_value ? String(rule.minimum_order_value) : '',
+        reward_quantity_base_units: rule.reward_quantity_base_units ? String(rule.reward_quantity_base_units) : '',
+        starts_at: dateInputValue(rule.starts_at),
+        ends_at: dateInputValue(rule.ends_at),
+        status: String(rule.status || 'active').toLowerCase(),
+    };
 }
 
 function FieldGrid({ fields }) {
@@ -386,10 +462,6 @@ function RecordFacts({ record, screen }) {
 }
 
 function contextualFields(screen, contextKey) {
-    if (contextKey === 'payments') {
-        return (screen.formFields || []).filter((field) => !['Customer', 'Invoice'].includes(field.label));
-    }
-
     if (contextKey === 'orders') {
         return (screen.formFields || []).filter((field) => field.label !== 'Customer credit status');
     }
@@ -538,6 +610,12 @@ function WarehouseForm({ form, onChange }) {
 
 function formatAmount(value) {
     return Number(value || 0).toLocaleString();
+}
+
+function titleCase(value) {
+    return String(value || '')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function findReceiptProduct(products, productId) {
@@ -798,6 +876,167 @@ function StockAdjustmentForm({
     );
 }
 
+function CustomerPaymentForm({ form, onChange, record }) {
+    return (
+        <div className="company-form-layout">
+            <div className="workflow-context-card">
+                <span>Receivable invoice</span>
+                <strong>{record?.invoice || 'Select an invoice from receivables'}</strong>
+                <small>{record?.pharmacy || '-'} / Balance {record?.balanceAmount || '-'}</small>
+            </div>
+            <div className="crud-grid">
+                <FormField label="Payment date" name="payment_date" onChange={onChange} type="date" value={form.payment_date} />
+                <FormField label="Amount" name="amount" onChange={onChange} required type="number" value={form.amount} />
+                <label className="form-field">
+                    <span>Payment method</span>
+                    <select name="payment_method" onChange={onChange} value={form.payment_method}>
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank transfer</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="mobile_money">Mobile money</option>
+                        <option value="other">Other</option>
+                    </select>
+                </label>
+                <FormField label="Reference no." name="reference_no" onChange={onChange} value={form.reference_no} />
+            </div>
+            <FormField label="Note" name="note" onChange={onChange} type="textarea" value={form.note} />
+        </div>
+    );
+}
+
+function CompanyPaymentForm({ companies = [], form, onChange, record }) {
+    const bulkMode = Boolean(form.pay_all);
+
+    return (
+        <div className="company-form-layout">
+            <div className="workflow-context-card">
+                <span>{bulkMode ? 'Company settlement' : 'Company payable'}</span>
+                <strong>{bulkMode ? 'Settle all open payables' : record?.company || 'Select a payable row'}</strong>
+                <small>{bulkMode ? 'All unpaid and partial payables for the selected company will be marked paid.' : `${record?.receipt || '-'} / Balance ${record?.balanceAmount || '-'}`}</small>
+            </div>
+            <div className="crud-grid">
+                {bulkMode ? (
+                    <label className="form-field">
+                        <span>Company</span>
+                        <select name="company_id" onChange={onChange} required value={form.company_id}>
+                            <option value="" disabled>Select company</option>
+                            {companies.map((company) => (
+                                <option key={company.id} value={company.id}>{company.name}</option>
+                            ))}
+                        </select>
+                    </label>
+                ) : null}
+                <FormField label="Payment date" name="payment_date" onChange={onChange} type="date" value={form.payment_date} />
+                {!bulkMode && <FormField label="Amount" name="amount" onChange={onChange} required type="number" value={form.amount} />}
+                <label className="form-field">
+                    <span>Payment method</span>
+                    <select name="payment_method" onChange={onChange} value={form.payment_method}>
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank transfer</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="mobile_money">Mobile money</option>
+                        <option value="other">Other</option>
+                    </select>
+                </label>
+                <FormField label="Reference no." name="reference_no" onChange={onChange} value={form.reference_no} />
+            </div>
+            <FormField label="Note" name="note" onChange={onChange} type="textarea" value={form.note} />
+        </div>
+    );
+}
+
+function OfficeOrderForm({
+    companies = [],
+    customers = [],
+    error = '',
+    form,
+    lines,
+    lockedCustomer = null,
+    onChange,
+    onLineChange,
+    products = [],
+    productsLoading = false,
+    representatives = [],
+    representativesLoading = false,
+    submitting = false,
+}) {
+    const selectedCustomer = customers.find((customer) => String(customer.id) === String(form.customer_id)) || lockedCustomer;
+    const selectedCredit = selectedCustomer?.credit_statuses?.find((credit) => String(credit.company_id) === String(form.company_id))
+        || selectedCustomer?.creditStatuses?.find((credit) => String(credit.company_id) === String(form.company_id));
+    const creditStatus = titleCase(selectedCredit?.credit_status || selectedCredit?.status || 'ready');
+    const outstandingBalance = selectedCredit?.outstanding_balance ?? selectedCredit?.outstanding ?? 0;
+    const blocked = isBlockedCredit(creditStatus);
+    const customerOptions = selectedCustomer?.id && !customers.some((customer) => String(customer.id) === String(selectedCustomer.id))
+        ? [selectedCustomer, ...customers]
+        : customers;
+
+    return (
+        <div className="order-create-form sales-order-create-form">
+            <section className="order-setup-card">
+                <div className="section-heading">
+                    <div>
+                        <p className="eyebrow">Admin order</p>
+                        <h2>Pharmacy, company, and approval setup</h2>
+                    </div>
+                </div>
+                <div className="sales-order-context-grid">
+                    <label className="form-field">
+                        <span>Company</span>
+                        <select disabled={submitting} name="company_id" onChange={onChange} required value={form.company_id}>
+                            <option value="" disabled>Select company</option>
+                            {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="form-field">
+                        <span>Pharmacy</span>
+                        <select disabled={Boolean(lockedCustomer?.id) || submitting} name="customer_id" onChange={onChange} required value={form.customer_id}>
+                            <option value="" disabled>Select pharmacy</option>
+                            {customerOptions.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="form-field">
+                        <span>Sales representative</span>
+                        <select disabled={!form.company_id || representativesLoading || submitting} name="sales_representative_id" onChange={onChange} value={form.sales_representative_id}>
+                            <option value="">{representativesLoading ? 'Loading representatives' : 'No representative'}</option>
+                            {representatives.map((representative) => (
+                                <option key={representative.id} value={representative.id}>
+                                    {representative.user?.name || representative.employee_code || `Rep #${representative.id}`}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <FormField label="Requested delivery date" name="requested_delivery_date" onChange={onChange} type="date" value={form.requested_delivery_date} />
+                    <article className={`order-credit-summary ${blocked ? 'is-blocked' : ''}`}>
+                        <div>
+                            <span>Company credit</span>
+                            <StatusBadge value={creditStatus} />
+                        </div>
+                        <strong>{blocked ? 'Order creation is blocked' : 'Order creation is allowed'}</strong>
+                        <small>{selectedCredit?.reason || 'No overdue balance for this company.'}</small>
+                        <small>Outstanding: {formatAmount(outstandingBalance)}</small>
+                    </article>
+                    <label className="form-field sales-order-note">
+                        <span>Order note</span>
+                        <textarea disabled={submitting} name="note" onChange={onChange} placeholder="Optional note for warehouse or finance" rows="3" value={form.note} />
+                    </label>
+                </div>
+            </section>
+
+            <OrderLineBuilder
+                allowFallback={false}
+                disabled={!form.company_id || blocked || productsLoading || submitting}
+                onChange={onLineChange}
+                productOptions={products}
+                value={lines}
+            />
+            {error && <span className="error-text">{error}</span>}
+            <p className="helper-copy">
+                Admin-created orders are approved immediately, reserve available batch stock, and are then ready for invoice generation.
+            </p>
+        </div>
+    );
+}
+
 function SalesRepresentativeForm({ companies = [], form, onChange }) {
     return (
         <div className="company-form-layout">
@@ -950,7 +1189,79 @@ function ProductUnitEditor({ baseUnitId, onAddUnit, onRemoveUnit, onUnitChange, 
     );
 }
 
-function ProductForm({ categories = [], companies = [], form, onAddUnit, onChange, onImageChange, onRemoveUnit, onUnitChange, units = [] }) {
+function ProductFocRuleEditor({ form, onChange }) {
+    const rule = form.foc_rule || blankFocRuleForm;
+
+    return (
+        <section className={`product-foc-editor${rule.enabled ? '' : ' is-disabled'}`}>
+            <div className="section-heading compact">
+                <div>
+                    <p className="eyebrow">FOC rules</p>
+                    <h2>Product FOC setup</h2>
+                </div>
+                <label className="form-check compact">
+                    <input checked={Boolean(rule.enabled)} name="enabled" onChange={onChange} type="checkbox" />
+                    <span>Enable FOC</span>
+                </label>
+            </div>
+            {rule.enabled && (
+                <>
+                    <div className="crud-grid">
+                        <label className="form-field">
+                            <span>Trigger type</span>
+                            <select name="rule_type" onChange={onChange} value={rule.rule_type || 'quantity'}>
+                                <option value="quantity">Quantity</option>
+                                <option value="value">Order value</option>
+                            </select>
+                        </label>
+                        {rule.rule_type === 'value' ? (
+                            <FormField
+                                label="Minimum order value"
+                                min="1"
+                                name="minimum_order_value"
+                                onChange={onChange}
+                                required
+                                type="number"
+                                value={rule.minimum_order_value}
+                            />
+                        ) : (
+                            <FormField
+                                label="Minimum quantity in base units"
+                                min="1"
+                                name="minimum_quantity_base_units"
+                                onChange={onChange}
+                                required
+                                type="number"
+                                value={rule.minimum_quantity_base_units}
+                            />
+                        )}
+                        <FormField
+                            label="FOC reward in base units"
+                            min="1"
+                            name="reward_quantity_base_units"
+                            onChange={onChange}
+                            required
+                            type="number"
+                            value={rule.reward_quantity_base_units}
+                        />
+                        <label className="form-field">
+                            <span>Status</span>
+                            <select name="status" onChange={onChange} value={rule.status || 'active'}>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </label>
+                        <FormField label="Starts at" name="starts_at" onChange={onChange} type="date" value={rule.starts_at} />
+                        <FormField label="Ends at" name="ends_at" onChange={onChange} type="date" value={rule.ends_at} />
+                    </div>
+                    <p className="helper-copy">Orders use the product base unit for the trigger and reward quantity. Leave dates empty when the rule should stay open-ended.</p>
+                </>
+            )}
+        </section>
+    );
+}
+
+function ProductForm({ categories = [], companies = [], form, onAddUnit, onChange, onFocRuleChange, onImageChange, onRemoveUnit, onUnitChange, units = [] }) {
     const imageName = form.primary_image?.name || (form.primary_image_path ? form.primary_image_path.split('/').pop() : '');
 
     return (
@@ -1002,6 +1313,7 @@ function ProductForm({ categories = [], companies = [], form, onAddUnit, onChang
                 rows={form.product_units}
                 units={units}
             />
+            <ProductFocRuleEditor form={form} onChange={onFocRuleChange} />
             <FormField label="Description" name="description" onChange={onChange} type="textarea" value={form.description} />
         </div>
     );
@@ -1016,10 +1328,6 @@ function WorkflowContext({ context, screenKey }) {
         invoices: {
             label: 'Source order',
             note: 'Order, pharmacy, products, FOC, discounts, and totals are carried into this invoice.',
-        },
-        payments: {
-            label: 'Selected invoice',
-            note: 'Invoice and customer are carried into this payment allocation.',
         },
     };
     const copy = contextCopy[screenKey] || {
@@ -1219,6 +1527,36 @@ function Details({ defaultUnitBusy = false, onDefaultSalesUnitChange, record, sc
                     warningCards={record?.warningCards || screen.warningCards || []}
                 />
             )}
+            {record?.paymentTransactions && (
+                <section className="drawer-section">
+                    <p className="eyebrow">Payment transactions</p>
+                    {record.paymentTransactions.length > 0 ? (
+                        <div className="finance-allocation-table">
+                            <div className="finance-allocation-head">
+                                <span>Payment</span>
+                                <span>Date</span>
+                                <span>Method</span>
+                                <span>Amount</span>
+                                <span>Status</span>
+                            </div>
+                            {record.paymentTransactions.map((payment) => (
+                                <div className="finance-allocation-row" key={payment.id}>
+                                    <div>
+                                        <strong>{payment.payment}</strong>
+                                        <small>{payment.reference}</small>
+                                    </div>
+                                    <span>{payment.date}</span>
+                                    <span>{payment.method}</span>
+                                    <strong>{payment.amount}</strong>
+                                    <StatusBadge value={payment.status} />
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <span className="muted">No company payment has been recorded for this payable.</span>
+                    )}
+                </section>
+            )}
             {(screen.focExamples || screen.commissionPreviewRows) && (
                 <RuleSetupPreview
                     commissionRows={screen.commissionPreviewRows || []}
@@ -1332,6 +1670,21 @@ const blankInventoryListFilters = {
     search: '',
     status: '',
     warehouse_id: '',
+};
+
+const blankReceivableListFilters = {
+    aging: '',
+    company_id: '',
+    page: 1,
+    search: '',
+    status: '',
+};
+
+const blankPayableListFilters = {
+    company_id: '',
+    page: 1,
+    search: '',
+    status: '',
 };
 
 const blankInventoryDetailFilters = {
@@ -1471,6 +1824,64 @@ function buildInventoryListEndpoint(filters) {
     return `/office/stock/current?${params.toString()}`;
 }
 
+function buildReceivableListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    if (filters.aging) {
+        params.set('aging', filters.aging);
+    }
+
+    return `/office/receivables?${params.toString()}`;
+}
+
+function buildPayableListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/payables?${params.toString()}`;
+}
+
+function buildOrderListEndpoint(orderId = '') {
+    const params = new URLSearchParams({
+        per_page: '25',
+    });
+
+    if (orderId) {
+        params.set('order_id', orderId);
+    }
+
+    return `/office/orders?${params.toString()}`;
+}
+
 function buildInventoryDetailEndpoint(productId, filters) {
     if (!productId) {
         return '';
@@ -1498,23 +1909,31 @@ function buildInventoryDetailEndpoint(productId, filters) {
 
 export default function OfficeModulePage({ onNavigate, pageKey }) {
     const isCompaniesPage = pageKey === 'companies';
+    const isInvoicesPage = pageKey === 'invoices';
     const isInventoryPage = pageKey === 'inventory';
     const isInventoryDetailPage = pageKey === 'inventory-detail';
     const isStockWorkspacePage = isInventoryPage || isInventoryDetailPage;
     const isPharmaciesPage = pageKey === 'pharmacies';
     const isProductCategoriesPage = pageKey === 'product-categories';
     const isProductsPage = pageKey === 'products';
+    const isPayablesPage = pageKey === 'payables';
     const isReceivingPage = pageKey === 'receiving';
+    const isReceivablesPage = pageKey === 'receivables';
+    const isOrdersPage = pageKey === 'orders';
+    const isFinancePage = isReceivablesPage || isPayablesPage;
     const isRepresentativesPage = pageKey === 'representatives';
     const isUnitsPage = pageKey === 'units';
     const isWarehousesPage = pageKey === 'warehouses';
     const [pharmacyListFilters, setPharmacyListFilters] = useState(blankPharmacyListFilters);
     const [productListFilters, setProductListFilters] = useState(blankProductListFilters);
     const routeSearchParams = new URLSearchParams(window.location.search);
+    const selectedOrderId = routeSearchParams.get('order_id') || '';
     const inventoryDetailProductId = routeSearchParams.get('product_id') || '';
     const inventoryDetailCompanyId = routeSearchParams.get('company_id') || '';
     const inventoryDetailWarehouseId = routeSearchParams.get('warehouse_id') || '';
     const [inventoryListFilters, setInventoryListFilters] = useState(blankInventoryListFilters);
+    const [receivableListFilters, setReceivableListFilters] = useState(blankReceivableListFilters);
+    const [payableListFilters, setPayableListFilters] = useState(blankPayableListFilters);
     const [inventoryDetailFilters, setInventoryDetailFilters] = useState({
         ...blankInventoryDetailFilters,
         warehouse_id: inventoryDetailWarehouseId,
@@ -1537,19 +1956,47 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                             ? buildInventoryListEndpoint(inventoryListFilters)
                             : isInventoryDetailPage
                                 ? buildInventoryDetailEndpoint(inventoryDetailProductId, inventoryDetailFilters)
-                                : getOfficeEndpoint(pageKey);
+                                : isReceivablesPage
+                                    ? buildReceivableListEndpoint(receivableListFilters)
+                                        : isPayablesPage
+                                            ? buildPayableListEndpoint(payableListFilters)
+                                            : isOrdersPage
+                                                ? buildOrderListEndpoint(selectedOrderId)
+                                                : getOfficeEndpoint(pageKey);
     const liveResource = useApiResource(liveEndpoint);
-    const productCompaniesResource = useApiResource(isProductsPage || isReceivingPage || isStockWorkspacePage ? '/lookups/companies' : isRepresentativesPage ? '/office/companies?per_page=100' : '');
+    const productCompaniesResource = useApiResource(isProductsPage || isPharmaciesPage || isReceivingPage || isStockWorkspacePage || isFinancePage || isOrdersPage ? '/lookups/companies' : isRepresentativesPage ? '/office/companies?per_page=100' : '');
     const productCategoriesResource = useApiResource(isProductsPage ? '/lookups/product-categories' : '');
     const productUnitsResource = useApiResource(isProductsPage ? '/lookups/units' : '');
     const receivingWarehousesResource = useApiResource(isReceivingPage || isStockWorkspacePage ? '/office/warehouses?per_page=100' : '');
     const liveRows = liveResource.data ? mapOfficeRows(pageKey, liveResource.data) : [];
-    const liveScreen = liveEndpoint ? applyLiveRows(baseScreen, liveRows, Boolean(liveResource.data)) : baseScreen;
+    const visibleLiveRows = isInvoicesPage ? mergeGeneratedInvoiceRows(liveRows) : liveRows;
+    const hasRowsToDisplay = Boolean(liveResource.data) || (isInvoicesPage && visibleLiveRows.length > 0);
+    const liveScreen = liveEndpoint ? applyLiveRows(baseScreen, visibleLiveRows, hasRowsToDisplay) : baseScreen;
     const inventoryDetailProduct = liveResource.data?.product;
     const inventoryDetailProductName = inventoryDetailProduct?.name || routeSearchParams.get('product_name') || window.sessionStorage.getItem('selected_inventory_product_name') || '';
     const inventoryDetailSummary = liveResource.data?.summary;
     const inventoryDetailUnit = inventoryDetailProduct?.base_unit?.abbreviation || inventoryDetailProduct?.base_unit?.name || 'base units';
-    const screen = isReceivingPage || isStockWorkspacePage ? {
+    const financeSummary = liveResource.data?.summary;
+    const screen = isFinancePage ? {
+        ...liveScreen,
+        summaries: financeSummary ? [
+            {
+                label: isReceivablesPage ? 'Open invoices' : 'Open payables',
+                value: formatAmount(financeSummary.invoice_count || financeSummary.payable_count || 0),
+                note: 'Filtered records',
+            },
+            {
+                label: isReceivablesPage ? 'Receivable balance' : 'Payable balance',
+                value: formatAmount(financeSummary.receivable_amount || financeSummary.payable_amount || 0),
+                note: 'Outstanding amount',
+            },
+            {
+                label: 'Overdue balance',
+                value: formatAmount(financeSummary.overdue_amount || 0),
+                note: 'Past due date',
+            },
+        ] : null,
+    } : isReceivingPage || isStockWorkspacePage ? {
         ...liveScreen,
         ...(isInventoryDetailPage ? {
             title: inventoryDetailProductName ? `Inventory Detail - ${inventoryDetailProductName}` : liveScreen.title,
@@ -1564,7 +2011,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             { label: 'Nearest expiry', value: inventoryDetailSummary.nearest_expiry_date || '-', note: 'Earliest batch date' },
         ] : null,
     } : liveScreen;
-    const showFilterToolbar = isStockWorkspacePage || isProductsPage || isPharmaciesPage || isReceivingPage || isRepresentativesPage || isWarehousesPage || screen.showFilterToolbar !== false;
+    const showFilterToolbar = isStockWorkspacePage || isProductsPage || isPharmaciesPage || isReceivingPage || isRepresentativesPage || isWarehousesPage || isFinancePage || screen.showFilterToolbar !== false;
     const showViewAction = !isStockWorkspacePage && screen.showViewAction !== false;
     const showEditAction = !isStockWorkspacePage && screen.showEditAction !== false;
     const isManagedCrudPage = isCompaniesPage || isPharmaciesPage || isProductCategoriesPage || isProductsPage || isReceivingPage || isRepresentativesPage || isUnitsPage || isWarehousesPage;
@@ -1576,6 +2023,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [modalSubmitLabelOverride, setModalSubmitLabelOverride] = useState('');
     const [confirmAction, setConfirmAction] = useState(null);
     const [selectedRecord, setSelectedRecord] = useState(screen.rows[0]);
+    const [openedLinkedOrderId, setOpenedLinkedOrderId] = useState('');
     const [selectedOrderCompany, setSelectedOrderCompany] = useState('');
     const [companyForm, setCompanyForm] = useState(blankCompanyForm);
     const [companyError, setCompanyError] = useState('');
@@ -1604,8 +2052,22 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [stockAdjustmentForm, setStockAdjustmentForm] = useState(blankStockAdjustmentForm);
     const [stockAdjustmentError, setStockAdjustmentError] = useState('');
     const [stockAdjustmentSubmitting, setStockAdjustmentSubmitting] = useState(false);
+    const [customerPaymentForm, setCustomerPaymentForm] = useState(blankCustomerPaymentForm);
+    const [customerPaymentError, setCustomerPaymentError] = useState('');
+    const [customerPaymentSubmitting, setCustomerPaymentSubmitting] = useState(false);
+    const [companyPaymentForm, setCompanyPaymentForm] = useState(blankCompanyPaymentForm);
+    const [companyPaymentError, setCompanyPaymentError] = useState('');
+    const [companyPaymentSubmitting, setCompanyPaymentSubmitting] = useState(false);
+    const [officeOrderForm, setOfficeOrderForm] = useState(blankOfficeOrderForm);
+    const [officeOrderLines, setOfficeOrderLines] = useState([{ ...blankOfficeOrderLine }]);
+    const [officeOrderError, setOfficeOrderError] = useState('');
+    const [officeOrderModalOpen, setOfficeOrderModalOpen] = useState(false);
+    const [officeOrderSubmitting, setOfficeOrderSubmitting] = useState(false);
     const receivingProductsResource = useApiResource(isReceivingPage && modalOpen && stockReceiptForm.company_id ? `/lookups/products?company_id=${stockReceiptForm.company_id}` : '');
     const stockAdjustmentProductsResource = useApiResource(isStockWorkspacePage && modalOpen && stockAdjustmentForm.company_id ? `/lookups/products?company_id=${stockAdjustmentForm.company_id}` : '');
+    const officeOrderCustomersResource = useApiResource(officeOrderModalOpen ? '/lookups/customers' : '');
+    const officeOrderRepresentativesResource = useApiResource(officeOrderModalOpen && officeOrderForm.company_id ? `/lookups/sales-representatives?company_id=${officeOrderForm.company_id}` : '');
+    const officeOrderProductsResource = useApiResource(officeOrderModalOpen && officeOrderForm.company_id ? `/lookups/products?company_id=${officeOrderForm.company_id}` : '');
     const modalScreen = modalScreenKey ? officeModules[modalScreenKey] : screen;
     const modalContext = (modalScreenKey || modalTitleOverride) ? getRecordTitle(selectedRecord, '') : '';
     const modalTitle = `${modalTitleOverride || `${modalScreen.primaryAction} Form`}${modalContext ? ` - ${modalContext}` : ''}`;
@@ -1616,7 +2078,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         || productCategoriesResource.loading
         || productUnitsResource.loading
     );
-    const modalBusy = companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting;
+    const modalBusy = companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting;
     const orderCreditStatuses = normalizeCreditStatuses(selectedRecord?.creditStatuses || modalScreen.creditStatuses || []);
     const selectedCreditStatus = getCompanyCreditStatus(orderCreditStatuses, selectedOrderCompany);
     const orderCreateBlocked = isOrderCreateModal && isBlockedCredit(selectedCreditStatus?.status);
@@ -1670,6 +2132,14 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const receivingWarehouses = unwrapCollection(receivingWarehousesResource.data);
     const receivingProducts = unwrapCollection(receivingProductsResource.data);
     const stockAdjustmentProducts = unwrapCollection(stockAdjustmentProductsResource.data);
+    const officeOrderCustomers = unwrapCollection(officeOrderCustomersResource.data);
+    const officeOrderProducts = unwrapCollection(officeOrderProductsResource.data);
+    const officeOrderRepresentatives = unwrapCollection(officeOrderRepresentativesResource.data);
+    const officeOrderSelectedCustomer = officeOrderCustomers.find((customer) => String(customer.id) === String(officeOrderForm.customer_id));
+    const officeOrderSelectedCredit = officeOrderSelectedCustomer?.credit_statuses?.find((credit) => String(credit.company_id) === String(officeOrderForm.company_id));
+    const officeOrderLockedCustomer = officeOrderModalOpen ? selectedRecord : null;
+    const officeOrderLockedCredit = officeOrderLockedCustomer?.creditStatuses?.find((credit) => String(credit.company_id) === String(officeOrderForm.company_id));
+    const officeOrderBlocked = officeOrderModalOpen && isBlockedCredit(titleCase(officeOrderSelectedCredit?.credit_status || officeOrderLockedCredit?.credit_status || 'ready'));
     const receivingPagination = isReceivingPage && liveResource.data ? {
         currentPage: Number(liveResource.data.current_page || 1),
         from: Number(liveResource.data.from || 0),
@@ -1687,6 +2157,22 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         total: Number(liveResource.data.total || 0),
     } : null;
     const inventoryDetailPagination = isInventoryDetailPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const receivablePagination = isReceivablesPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const payablePagination = isPayablesPage && liveResource.data ? {
         currentPage: Number(liveResource.data.current_page || 1),
         from: Number(liveResource.data.from || 0),
         lastPage: Number(liveResource.data.last_page || 1),
@@ -1716,6 +2202,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 { label: 'Paid', value: 'paid' },
                 { label: 'Partial', value: 'partial' },
                 { label: 'Unpaid', value: 'unpaid' },
+                { label: 'Overdue', value: 'overdue' },
             ],
             placeholder: 'All payments',
             value: receivingListFilters.payment_status,
@@ -1818,6 +2305,81 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     };
     const goToInventoryDetailPage = (page) => {
         setInventoryDetailFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const receivableListFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: receivableListFilters.company_id,
+        },
+        {
+            key: 'status',
+            label: 'Invoice status',
+            options: [
+                { label: 'Issued', value: 'issued' },
+                { label: 'Partial', value: 'partial' },
+                { label: 'Overdue', value: 'overdue' },
+            ],
+            placeholder: 'All statuses',
+            value: receivableListFilters.status,
+        },
+        {
+            key: 'aging',
+            label: 'Aging',
+            options: [
+                { label: 'Due soon', value: 'due_soon' },
+                { label: 'Overdue', value: 'overdue' },
+            ],
+            placeholder: 'All aging',
+            value: receivableListFilters.aging,
+        },
+    ];
+    const updateReceivableListSearch = (value) => {
+        setReceivableListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateReceivableListFilter = (key, value) => {
+        setReceivableListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetReceivableListFilters = () => {
+        setReceivableListFilters(blankReceivableListFilters);
+    };
+    const goToReceivablePage = (page) => {
+        setReceivableListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const payableListFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: payableListFilters.company_id,
+        },
+        {
+            key: 'status',
+            label: 'Payable status',
+            options: [
+                { label: 'Unpaid', value: 'unpaid' },
+                { label: 'Partial', value: 'partial' },
+                { label: 'Paid', value: 'paid' },
+                { label: 'Overdue', value: 'overdue' },
+            ],
+            placeholder: 'All statuses',
+            value: payableListFilters.status,
+        },
+    ];
+    const updatePayableListSearch = (value) => {
+        setPayableListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updatePayableListFilter = (key, value) => {
+        setPayableListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetPayableListFilters = () => {
+        setPayableListFilters(blankPayableListFilters);
+    };
+    const goToPayablePage = (page) => {
+        setPayableListFilters((current) => ({ ...current, page: Math.max(1, page) }));
     };
     const representativePagination = isRepresentativesPage && liveResource.data ? {
         currentPage: Number(liveResource.data.current_page || 1),
@@ -1963,16 +2525,35 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             setSelectedRecord(screen.rows[0]);
         }
     }, [drawerOpen, modalOpen, screen.rows, selectedRecord?.id]);
+    useEffect(() => {
+        if (!isOrdersPage || !selectedOrderId || openedLinkedOrderId === selectedOrderId || !screen.rows.length) {
+            return;
+        }
+
+        const linkedOrder = screen.rows.find((row) => String(row.id) === String(selectedOrderId));
+
+        if (!linkedOrder) {
+            return;
+        }
+
+        setSelectedRecord(linkedOrder);
+        setDrawerOpen(true);
+        setOpenedLinkedOrderId(selectedOrderId);
+    }, [isOrdersPage, openedLinkedOrderId, screen.rows, selectedOrderId]);
 
     const closeWorkflowModal = () => {
         setModalOpen(false);
         setModalScreenKey(null);
+        setOfficeOrderModalOpen(false);
         setModalTitleOverride('');
         setModalSubmitLabelOverride('');
         setCompanyError('');
         setPharmacyError('');
         setProductCategoryError('');
         setProductError('');
+        setCompanyPaymentError('');
+        setCustomerPaymentError('');
+        setOfficeOrderError('');
         setSalesRepresentativeError('');
         setStockAdjustmentError('');
         setStockReceiptError('');
@@ -2362,8 +2943,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 is_default_sales_unit: Boolean(unit.is_default_sales_unit),
                 status: unit.status || 'active',
             })),
+            foc_rule: focRuleFormFromRecord(record),
             status: String(record.status || 'active').toLowerCase(),
-        } : { ...blankProductForm, product_units: [] };
+        } : { ...blankProductForm, product_units: [], foc_rule: { ...blankFocRuleForm } };
 
         setSelectedRecord(record || {});
         setProductForm(nextForm);
@@ -2483,6 +3065,63 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         });
         setProductError('');
     };
+    const updateProductFocRule = (event) => {
+        const { checked, name, type, value } = event.target;
+
+        setProductForm((current) => {
+            const currentRule = current.foc_rule || { ...blankFocRuleForm };
+            const nextRule = {
+                ...currentRule,
+                [name]: type === 'checkbox' ? checked : value,
+            };
+
+            if (name === 'rule_type') {
+                nextRule.minimum_quantity_base_units = value === 'quantity' ? currentRule.minimum_quantity_base_units : '';
+                nextRule.minimum_order_value = value === 'value' ? currentRule.minimum_order_value : '';
+            }
+
+            if (name === 'enabled' && checked) {
+                nextRule.status = nextRule.status || 'active';
+                nextRule.rule_type = nextRule.rule_type || 'quantity';
+            }
+
+            return {
+                ...current,
+                foc_rule: nextRule,
+            };
+        });
+        setProductError('');
+    };
+    const syncProductFocRule = async (savedProduct) => {
+        const rule = productForm.foc_rule || blankFocRuleForm;
+
+        if (!rule.enabled) {
+            if (rule.id) {
+                await api.delete(`/office/foc-rules/${rule.id}`);
+            }
+
+            return;
+        }
+
+        const payload = {
+            company_id: savedProduct.company_id || productForm.company_id,
+            product_id: savedProduct.id || selectedRecord?.id,
+            rule_type: rule.rule_type || 'quantity',
+            minimum_quantity_base_units: rule.rule_type === 'quantity' ? rule.minimum_quantity_base_units : null,
+            minimum_order_value: rule.rule_type === 'value' ? rule.minimum_order_value : null,
+            reward_quantity_base_units: rule.reward_quantity_base_units,
+            starts_at: rule.starts_at || null,
+            ends_at: rule.ends_at || null,
+            status: rule.status || 'active',
+        };
+
+        if (rule.id) {
+            await api.put(`/office/foc-rules/${rule.id}`, payload);
+            return;
+        }
+
+        await api.post('/office/foc-rules', payload);
+    };
     const submitProductForm = async () => {
         setProductSubmitting(true);
         setProductError('');
@@ -2490,7 +3129,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         try {
             const payload = new FormData();
             Object.entries(productForm).forEach(([key, value]) => {
-                if (['primary_image', 'primary_image_preview', 'product_units'].includes(key)) {
+                if (['primary_image', 'primary_image_preview', 'product_units', 'foc_rule'].includes(key)) {
                     return;
                 }
 
@@ -2511,9 +3150,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
 
             if (selectedRecord?.id) {
                 payload.append('_method', 'PUT');
-                await api.post(`/office/products/${selectedRecord.id}`, payload);
+                const updatedProduct = await api.post(`/office/products/${selectedRecord.id}`, payload);
+                await syncProductFocRule(updatedProduct);
             } else {
-                await api.post('/office/products', payload);
+                const createdProduct = await api.post('/office/products', payload);
+                await syncProductFocRule(createdProduct);
             }
 
             liveResource.refresh();
@@ -2723,6 +3364,14 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             ...(inventoryListFilters.warehouse_id ? { warehouse_id: inventoryListFilters.warehouse_id } : {}),
         });
     };
+    const openInvoiceOrderDetail = (invoice) => {
+        if (!invoice?.sales_order_id) {
+            return;
+        }
+
+        setDrawerOpen(false);
+        onNavigate?.('orders', { order_id: invoice.sales_order_id });
+    };
     const updateStockAdjustmentForm = (event) => {
         const { name, value } = event.target;
 
@@ -2829,6 +3478,224 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             setProductSubmitting(false);
         }
     };
+    const openCustomerPaymentForm = (record = null) => {
+        const nextForm = {
+            ...blankCustomerPaymentForm,
+            company_id: record?.company_id || '',
+            customer_id: record?.customer_id || '',
+            invoice_id: record?.id || '',
+            amount: record?.balance_amount ? String(record.balance_amount) : '',
+        };
+
+        setSelectedRecord(record || {});
+        setCustomerPaymentForm(nextForm);
+        setModalScreenKey(null);
+        setModalTitleOverride('Record customer payment');
+        setModalSubmitLabelOverride('Save payment');
+        setCustomerPaymentError('');
+        setModalOpen(true);
+    };
+    const updateCustomerPaymentForm = (event) => {
+        setCustomerPaymentForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+        setCustomerPaymentError('');
+    };
+    const submitCustomerPaymentForm = async () => {
+        setCustomerPaymentSubmitting(true);
+        setCustomerPaymentError('');
+
+        try {
+            await api.post('/office/payments', {
+                company_id: customerPaymentForm.company_id,
+                customer_id: customerPaymentForm.customer_id,
+                payment_date: customerPaymentForm.payment_date || null,
+                amount: customerPaymentForm.amount,
+                payment_method: customerPaymentForm.payment_method,
+                reference_no: customerPaymentForm.reference_no || null,
+                note: customerPaymentForm.note || null,
+                allocations: [{
+                    invoice_id: customerPaymentForm.invoice_id,
+                    allocated_amount: customerPaymentForm.amount,
+                }],
+            });
+            liveResource.refresh();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setCustomerPaymentError(requestError.message);
+        } finally {
+            setCustomerPaymentSubmitting(false);
+        }
+    };
+    const openCompanyPaymentForm = (record = null) => {
+        const nextForm = {
+            ...blankCompanyPaymentForm,
+            company_id: record?.company_id || '',
+            company_payable_id: record?.id || '',
+            pay_all: !record?.id,
+            amount: record?.balance_amount ? String(record.balance_amount) : '',
+        };
+
+        setSelectedRecord(record || {});
+        setCompanyPaymentForm(nextForm);
+        setModalScreenKey(null);
+        setModalTitleOverride(record?.id ? 'Record payable payment' : 'Settle company payables');
+        setModalSubmitLabelOverride(record?.id ? 'Save company payment' : 'Settle payables');
+        setCompanyPaymentError('');
+        setModalOpen(true);
+    };
+    const updateCompanyPaymentForm = (event) => {
+        setCompanyPaymentForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+        setCompanyPaymentError('');
+    };
+    const submitCompanyPaymentForm = async () => {
+        setCompanyPaymentSubmitting(true);
+        setCompanyPaymentError('');
+
+        try {
+            await api.post('/office/company-payments', {
+                ...companyPaymentForm,
+                company_payable_id: companyPaymentForm.pay_all ? null : companyPaymentForm.company_payable_id,
+                amount: companyPaymentForm.pay_all ? null : companyPaymentForm.amount,
+                payment_date: companyPaymentForm.payment_date || null,
+                reference_no: companyPaymentForm.reference_no || null,
+                note: companyPaymentForm.note || null,
+            });
+            liveResource.refresh();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setCompanyPaymentError(requestError.message);
+        } finally {
+            setCompanyPaymentSubmitting(false);
+        }
+    };
+    const openOfficeOrderForm = (record = null) => {
+        setSelectedRecord(record || {});
+        setOfficeOrderForm({
+            ...blankOfficeOrderForm,
+            customer_id: record?.id || '',
+        });
+        setOfficeOrderLines([{ ...blankOfficeOrderLine, id: `office-order-line-${Date.now()}` }]);
+        setModalScreenKey(null);
+        setOfficeOrderModalOpen(true);
+        setModalTitleOverride('Create approved order');
+        setModalSubmitLabelOverride('Create and approve order');
+        setOfficeOrderError('');
+        setModalOpen(true);
+    };
+    const updateOfficeOrderForm = (event) => {
+        const { checked, name, type, value } = event.target;
+
+        setOfficeOrderForm((current) => ({
+            ...current,
+            [name]: type === 'checkbox' ? checked : value,
+            ...(name === 'company_id' ? { sales_representative_id: '' } : {}),
+        }));
+
+        if (name === 'company_id') {
+            setOfficeOrderLines([{ ...blankOfficeOrderLine, id: `office-order-line-${Date.now()}` }]);
+        }
+
+        setOfficeOrderError('');
+    };
+    const updateOfficeOrderLines = (nextLines) => {
+        setOfficeOrderLines(nextLines.map((line) => {
+            if (!line.product_id || line.unit_id) {
+                return line;
+            }
+
+            const product = findReceiptProduct(officeOrderProducts, line.product_id);
+            const defaultUnit = product?.product_units?.find((unit) => unit.is_default_sales_unit)
+                || product?.product_units?.find((unit) => unit.is_base_unit)
+                || product?.product_units?.[0];
+
+            return {
+                ...line,
+                unit_id: defaultUnit?.unit_id || '',
+            };
+        }));
+        setOfficeOrderError('');
+    };
+    const officeOrderPayload = () => ({
+        ...officeOrderForm,
+        requested_delivery_date: officeOrderForm.requested_delivery_date || null,
+        sales_representative_id: officeOrderForm.sales_representative_id || null,
+        note: officeOrderForm.note || null,
+        auto_approve: true,
+        items: officeOrderLines
+            .filter((line) => line.product_id && line.unit_id && Number(line.quantity || line.orderedQuantity || 0) > 0)
+            .map((line) => ({
+                product_id: line.product_id,
+                unit_id: line.unit_id,
+                quantity: Number(line.quantity || line.orderedQuantity || 1),
+            })),
+    });
+    const submitOfficeOrderForm = async () => {
+        setOfficeOrderSubmitting(true);
+        setOfficeOrderError('');
+
+        try {
+            await api.post('/office/orders', officeOrderPayload());
+            liveResource.refresh();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setOfficeOrderError(requestError.message);
+        } finally {
+            setOfficeOrderSubmitting(false);
+        }
+    };
+    const approveOfficeOrder = async (record) => {
+        if (!record?.id) {
+            return;
+        }
+
+        setOfficeOrderSubmitting(true);
+        setOfficeOrderError('');
+
+        try {
+            await api.post(`/office/orders/${record.id}/approve`);
+            window.dispatchEvent(new Event('office-submitted-orders-changed'));
+            liveResource.refresh();
+        } catch (requestError) {
+            setOfficeOrderError(requestError.message);
+            window.alert(requestError.message);
+        } finally {
+            setOfficeOrderSubmitting(false);
+        }
+    };
+    const generateInvoiceFromOrder = async (record) => {
+        if (!record?.id) {
+            return;
+        }
+
+        setOfficeOrderSubmitting(true);
+        setOfficeOrderError('');
+
+        try {
+            if (String(record.status_value || record.status || '').toLowerCase() === 'submitted') {
+                await api.post(`/office/orders/${record.id}/approve`);
+                window.dispatchEvent(new Event('office-submitted-orders-changed'));
+            }
+
+            const invoice = await api.post(`/office/orders/${record.id}/generate-invoice`);
+            rememberGeneratedInvoice(invoice);
+            liveResource.refresh();
+        } catch (requestError) {
+            setOfficeOrderError(requestError.message);
+            window.alert(requestError.message);
+        } finally {
+            setOfficeOrderSubmitting(false);
+        }
+    };
+    const openDetailPage = (record) => {
+        if (!screen.detailPageKey) {
+            return;
+        }
+
+        const params = screen.detailPageKey === 'pharmacies-detail'
+            ? { customer_id: record?.id || '' }
+            : { record_id: record?.id || '' };
+
+        onNavigate?.(screen.detailPageKey, params);
+    };
     const closeConfirmAction = () => setConfirmAction(null);
     const inventoryRowActions = isStockWorkspacePage ? [
         ...(isInventoryPage ? [
@@ -2867,6 +3734,31 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     return;
                 }
 
+                if (action.financeAction === 'customerPayment') {
+                    openCustomerPaymentForm(record);
+                    return;
+                }
+
+                if (action.financeAction === 'companyPayment') {
+                    openCompanyPaymentForm(record);
+                    return;
+                }
+
+                if (action.orderAction === 'approve') {
+                    approveOfficeOrder(record);
+                    return;
+                }
+
+                if (action.orderAction === 'invoice') {
+                    generateInvoiceFromOrder(record);
+                    return;
+                }
+
+                if (action.orderAction === 'createForPharmacy') {
+                    openOfficeOrderForm(record);
+                    return;
+                }
+
                 if (action.target) {
                     setSelectedRecord(record);
                     onNavigate?.(action.target);
@@ -2889,8 +3781,8 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         <button className="btn secondary" onClick={() => onNavigate?.('inventory')} type="button">Back to inventory</button>
                         <button className="btn primary" onClick={() => openStockAdjustmentForm(null)} type="button">{screen.primaryAction}</button>
                     </div>
-                ) : (
-                    <button className="btn primary" onClick={isCompaniesPage ? () => openCompanyForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isWarehousesPage ? () => openWarehouseForm() : isProductsPage ? () => openProductForm() : isReceivingPage ? () => openStockReceiptForm() : isInventoryPage ? () => openStockAdjustmentForm(selectedRecord) : isRepresentativesPage ? () => openSalesRepresentativeForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{screen.primaryAction}</button>
+                ) : screen.hidePrimaryAction ? null : (
+                    <button className="btn primary" onClick={isCompaniesPage ? () => openCompanyForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isWarehousesPage ? () => openWarehouseForm() : isProductsPage ? () => openProductForm() : isReceivingPage ? () => openStockReceiptForm() : isInventoryPage ? () => openStockAdjustmentForm(selectedRecord) : isReceivablesPage ? () => openCustomerPaymentForm(selectedRecord) : isPayablesPage ? () => openCompanyPaymentForm(null) : isRepresentativesPage ? () => openSalesRepresentativeForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{screen.primaryAction}</button>
                 )}
                 description={screen.description}
                 eyebrow={screen.eyebrow}
@@ -2978,6 +3870,24 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         searchPlaceholder="Search batch number"
                         searchValue={inventoryDetailFilters.search}
                     />
+                ) : isReceivablesPage ? (
+                    <FilterToolbar
+                        filters={receivableListFilterControls}
+                        onFilterChange={updateReceivableListFilter}
+                        onReset={resetReceivableListFilters}
+                        onSearch={updateReceivableListSearch}
+                        searchPlaceholder="Search invoice, pharmacy, or company"
+                        searchValue={receivableListFilters.search}
+                    />
+                ) : isPayablesPage ? (
+                    <FilterToolbar
+                        filters={payableListFilterControls}
+                        onFilterChange={updatePayableListFilter}
+                        onReset={resetPayableListFilters}
+                        onSearch={updatePayableListSearch}
+                        searchPlaceholder="Search company, receipt, or supplier invoice"
+                        searchValue={payableListFilters.search}
+                    />
                 ) : <FilterToolbar filters={screen.filters} showDate />)}
                 <DataTable
                     actions={[
@@ -2986,7 +3896,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         ] : []),
                         ...rowActions,
                         ...(screen.detailPageKey ? [
-                            { label: screen.detailActionLabel || `Open ${recordLabel}`, onClick: () => onNavigate?.(screen.detailPageKey) },
+                            { label: screen.detailActionLabel || `Open ${recordLabel}`, onClick: openDetailPage },
                         ] : []),
                         ...(showEditAction ? [
                             {
@@ -3018,7 +3928,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                             return;
                         }
                         if (screen.detailPageKey) {
-                            onNavigate?.(screen.detailPageKey);
+                            openDetailPage(record);
                             return;
                         }
                         setDrawerOpen(true);
@@ -3122,15 +4032,33 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         total={inventoryDetailPagination.total}
                     />
                 )}
+                {isReceivablesPage && receivablePagination && (
+                    <PaginationBar
+                        currentPage={receivablePagination.currentPage}
+                        emptyLabel="No receivables to show"
+                        from={receivablePagination.from}
+                        lastPage={receivablePagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToReceivablePage(receivablePagination.currentPage + 1)}
+                        onPrevious={() => goToReceivablePage(receivablePagination.currentPage - 1)}
+                        to={receivablePagination.to}
+                        total={receivablePagination.total}
+                    />
+                )}
+                {isPayablesPage && payablePagination && (
+                    <PaginationBar
+                        currentPage={payablePagination.currentPage}
+                        emptyLabel="No payables to show"
+                        from={payablePagination.from}
+                        lastPage={payablePagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToPayablePage(payablePagination.currentPage + 1)}
+                        onPrevious={() => goToPayablePage(payablePagination.currentPage - 1)}
+                        to={payablePagination.to}
+                        total={payablePagination.total}
+                    />
+                )}
             </Panel>
-
-            {!isManagedCrudPage && !isStockWorkspacePage && (
-                <div className="state-grid">
-                    <article><strong>Empty state</strong><small>Tables show a no-record message</small></article>
-                    <article><strong>Loading state</strong><small>Shared table supports loading rows</small></article>
-                    <article><strong>Error state</strong><small>Shared table supports inline API errors</small></article>
-                </div>
-            )}
 
             <Modal
                 actions={modalScreen.stockReceivingForm && !isReceivingPage ? (
@@ -3142,14 +4070,32 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 busy={modalBusy}
                 open={modalOpen}
                 onClose={closeWorkflowModal}
-                onSubmit={isCompaniesPage && !modalScreenKey ? submitCompanyForm : isPharmaciesPage && !modalScreenKey ? submitPharmacyForm : isProductCategoriesPage && !modalScreenKey ? submitProductCategoryForm : isUnitsPage && !modalScreenKey ? submitUnitForm : isWarehousesPage && !modalScreenKey ? submitWarehouseForm : isProductsPage && !modalScreenKey ? submitProductForm : isReceivingPage && !modalScreenKey ? submitStockReceiptForm : isStockWorkspacePage && !modalScreenKey ? submitStockAdjustmentForm : isRepresentativesPage && !modalScreenKey ? submitSalesRepresentativeForm : closeWorkflowModal}
-                submitDisabled={orderCreateBlocked || companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting}
-                submitDisabledReason={companyError || pharmacyError || productCategoryError || productError || salesRepresentativeError || stockAdjustmentError || stockReceiptError || unitError || warehouseError || (orderCreateBlocked ? 'Company credit is blocked. Order creation is not allowed.' : '')}
+                onSubmit={officeOrderModalOpen ? submitOfficeOrderForm : isCompaniesPage && !modalScreenKey ? submitCompanyForm : isPharmaciesPage && !modalScreenKey ? submitPharmacyForm : isProductCategoriesPage && !modalScreenKey ? submitProductCategoryForm : isUnitsPage && !modalScreenKey ? submitUnitForm : isWarehousesPage && !modalScreenKey ? submitWarehouseForm : isProductsPage && !modalScreenKey ? submitProductForm : isReceivingPage && !modalScreenKey ? submitStockReceiptForm : isStockWorkspacePage && !modalScreenKey ? submitStockAdjustmentForm : isReceivablesPage && !modalScreenKey ? submitCustomerPaymentForm : isPayablesPage && !modalScreenKey ? submitCompanyPaymentForm : isRepresentativesPage && !modalScreenKey ? submitSalesRepresentativeForm : closeWorkflowModal}
+                submitDisabled={orderCreateBlocked || officeOrderBlocked || companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting}
+                submitDisabledReason={companyError || companyPaymentError || customerPaymentError || officeOrderError || pharmacyError || productCategoryError || productError || salesRepresentativeError || stockAdjustmentError || stockReceiptError || unitError || warehouseError || (orderCreateBlocked || officeOrderBlocked ? 'Company credit is blocked. Order creation is not allowed.' : '')}
                 submitLabel={modalSubmitLabel}
                 title={modalTitle}
             >
                 {!isManagedCrudPage && !isStockWorkspacePage && <WorkflowContext context={modalContext} screenKey={modalScreenKey} />}
-                {isCompaniesPage && !modalScreenKey
+                {officeOrderModalOpen
+                    ? (
+                        <OfficeOrderForm
+                            companies={productCompanies}
+                            customers={officeOrderCustomers}
+                            error={officeOrderError || officeOrderCustomersResource.error || officeOrderProductsResource.error || officeOrderRepresentativesResource.error}
+                            form={officeOrderForm}
+                            lines={officeOrderLines}
+                            lockedCustomer={officeOrderLockedCustomer}
+                            onChange={updateOfficeOrderForm}
+                            onLineChange={updateOfficeOrderLines}
+                            products={officeOrderProducts}
+                            productsLoading={officeOrderProductsResource.loading}
+                            representatives={officeOrderRepresentatives}
+                            representativesLoading={officeOrderRepresentativesResource.loading}
+                            submitting={officeOrderSubmitting}
+                        />
+                    )
+                    : isCompaniesPage && !modalScreenKey
                     ? <CompanyForm form={companyForm} onChange={updateCompanyForm} />
                     : isPharmaciesPage && !modalScreenKey
                         ? <PharmacyForm form={pharmacyForm} onChange={updatePharmacyForm} />
@@ -3191,6 +4137,23 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                 warehouses={receivingWarehouses}
                             />
                         )
+                    : isReceivablesPage && !modalScreenKey
+                        ? (
+                            <CustomerPaymentForm
+                                form={customerPaymentForm}
+                                onChange={updateCustomerPaymentForm}
+                                record={selectedRecord}
+                            />
+                        )
+                    : isPayablesPage && !modalScreenKey
+                        ? (
+                            <CompanyPaymentForm
+                                companies={productCompanies}
+                                form={companyPaymentForm}
+                                onChange={updateCompanyPaymentForm}
+                                record={selectedRecord}
+                            />
+                        )
                     : isProductsPage && !modalScreenKey
                         ? productLookupsLoading ? <ProductFormSkeleton /> : (
                             <ProductForm
@@ -3199,6 +4162,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                 form={productForm}
                                 onAddUnit={addProductUnit}
                                 onChange={updateProductForm}
+                                onFocRuleChange={updateProductFocRule}
                                 onImageChange={updateProductImage}
                                 onRemoveUnit={removeProductUnit}
                                 onUnitChange={updateProductUnit}
@@ -3250,12 +4214,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 </Modal>
             )}
 
-            {pageKey === 'invoices' ? (
+            {isInvoicesPage || isReceivablesPage ? (
                 <InvoiceDetailDrawer
                     actions={(
                         <>
-                            <button className="btn secondary" onClick={() => { setDrawerOpen(false); openWorkflowModal('payments', selectedRecord, { submitLabel: 'Record payment', title: 'Record payment' }); }} type="button">Record payment</button>
-                            <button className="btn secondary" onClick={() => openWorkflowModal(null, selectedRecord, { submitLabel: 'Save invoice', title: 'Edit invoice' })} type="button">Edit invoice</button>
+                            {selectedRecord?.sales_order_id && <button className="btn secondary" onClick={() => openInvoiceOrderDetail(selectedRecord)} type="button">Open order detail</button>}
                             <button className="btn primary" onClick={() => setDrawerOpen(false)} type="button">Done</button>
                         </>
                     )}
@@ -3281,6 +4244,16 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                             return;
                                         }
 
+                                        if (action.orderAction === 'approve') {
+                                            approveOfficeOrder(selectedRecord);
+                                            return;
+                                        }
+
+                                        if (action.orderAction === 'invoice') {
+                                            generateInvoiceFromOrder(selectedRecord);
+                                            return;
+                                        }
+
                                         createScreenAction(action, onNavigate, () => openWorkflowModal(null, selectedRecord))();
                                     }}
                                     type="button"
@@ -3289,11 +4262,13 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                 </button>
                             ))}
                             {screen.detailPageKey && (
-                                <button className="btn secondary" onClick={() => onNavigate?.(screen.detailPageKey)} type="button">
+                                <button className="btn secondary" onClick={() => openDetailPage(selectedRecord)} type="button">
                                     Open detail
                                 </button>
                             )}
-                            <button className="btn secondary" onClick={() => isCompaniesPage ? openCompanyForm(selectedRecord) : isPharmaciesPage ? openPharmacyForm(selectedRecord) : isProductCategoriesPage ? openProductCategoryForm(selectedRecord) : isUnitsPage ? openUnitForm(selectedRecord) : isWarehousesPage ? openWarehouseForm(selectedRecord) : isProductsPage ? openProductForm(selectedRecord) : isReceivingPage ? openStockReceiptForm(selectedRecord) : isRepresentativesPage ? openSalesRepresentativeForm(selectedRecord) : openWorkflowModal(null, selectedRecord, { submitLabel: `Save ${recordLabel}`, title: `Edit ${recordLabel}` })} type="button">Edit {recordLabel}</button>
+                            {showEditAction && (
+                                <button className="btn secondary" onClick={() => isCompaniesPage ? openCompanyForm(selectedRecord) : isPharmaciesPage ? openPharmacyForm(selectedRecord) : isProductCategoriesPage ? openProductCategoryForm(selectedRecord) : isUnitsPage ? openUnitForm(selectedRecord) : isWarehousesPage ? openWarehouseForm(selectedRecord) : isProductsPage ? openProductForm(selectedRecord) : isReceivingPage ? openStockReceiptForm(selectedRecord) : isRepresentativesPage ? openSalesRepresentativeForm(selectedRecord) : openWorkflowModal(null, selectedRecord, { submitLabel: `Save ${recordLabel}`, title: `Edit ${recordLabel}` })} type="button">Edit {recordLabel}</button>
+                            )}
                             <button className="btn primary" onClick={() => setDrawerOpen(false)} type="button">Done</button>
                         </>
                     )}

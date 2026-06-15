@@ -16,4 +16,19 @@ class CompanyPayable extends Model
         'payable_date' => 'date',
         'due_date' => 'date',
     ];
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    public function stockReceipt()
+    {
+        return $this->belongsTo(StockReceipt::class);
+    }
+
+    public function payments()
+    {
+        return $this->hasMany(CompanyPayment::class);
+    }
 }

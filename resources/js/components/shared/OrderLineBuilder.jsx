@@ -20,6 +20,80 @@ function getProductUnits(product) {
     return product?.product_units || product?.productUnits || [];
 }
 
+function getDefaultProductUnit(product) {
+    const units = getProductUnits(product);
+
+    return units.find((unit) => unit.is_default_sales_unit)
+        || units.find((unit) => unit.is_base_unit)
+        || units[0];
+}
+
+function getProductFocRules(product) {
+    return product?.foc_rules || product?.foc_rules_raw || product?.focRules || [];
+}
+
+function isRuleCurrent(rule) {
+    const today = new Date().toISOString().slice(0, 10);
+    const startsAt = rule.starts_at ? String(rule.starts_at).slice(0, 10) : '';
+    const endsAt = rule.ends_at ? String(rule.ends_at).slice(0, 10) : '';
+
+    return String(rule.status || 'active').toLowerCase() === 'active'
+        && (!startsAt || startsAt <= today)
+        && (!endsAt || endsAt >= today);
+}
+
+function formatAmount(value) {
+    return Number(value || 0).toLocaleString();
+}
+
+function calculateTieredFocReward(rules, thresholdKey, basis) {
+    let remaining = Number(basis || 0);
+
+    return rules
+        .filter(isRuleCurrent)
+        .sort((first, second) => Number(second[thresholdKey] || 0) - Number(first[thresholdKey] || 0))
+        .reduce((total, rule) => {
+            const threshold = Number(rule[thresholdKey] || 0);
+
+            if (threshold <= 0 || remaining < threshold) {
+                return total;
+            }
+
+            const multiplier = Math.floor(remaining / threshold);
+            remaining -= multiplier * threshold;
+
+            return total + (multiplier * Number(rule.reward_quantity_base_units || 0));
+        }, 0);
+}
+
+function calculateFocRewardBaseUnits(product, baseQuantity, lineTotal) {
+    const currentRules = getProductFocRules(product)
+        .filter(isRuleCurrent)
+        .filter((rule) => ['quantity', 'value'].includes(rule.rule_type));
+    const quantityReward = calculateTieredFocReward(
+        currentRules.filter((rule) => rule.rule_type === 'quantity'),
+        'minimum_quantity_base_units',
+        baseQuantity
+    );
+    const valueReward = calculateTieredFocReward(
+        currentRules.filter((rule) => rule.rule_type === 'value'),
+        'minimum_order_value',
+        lineTotal
+    );
+
+    return Math.max(quantityReward, valueReward);
+}
+
+function calculateFocPreview(product, baseQuantity, lineTotal) {
+    const rewardBaseUnits = calculateFocRewardBaseUnits(product, baseQuantity, lineTotal);
+
+    if (rewardBaseUnits <= 0) {
+        return getProductFocRules(product).some(isRuleCurrent) ? 'No match' : 'No FOC';
+    }
+
+    return `${formatAmount(rewardBaseUnits)} base units`;
+}
+
 function calculatePreview(line, productOptions) {
     const product = productOptions.find((option) => String(option.id) === String(line.product_id));
     const productUnit = getProductUnits(product).find((unit) => String(unit.unit_id) === String(line.unit_id));
@@ -34,11 +108,28 @@ function calculatePreview(line, productOptions) {
         unitPrice: productUnit ? unitPrice.toLocaleString() : line.unitPrice || '-',
         baseQuantity: productUnit && quantity ? `${quantity * conversion} base units` : line.baseQuantity || '-',
         discount: productUnit ? `${discount}%` : line.discount || '0%',
+        focPreview: productUnit && quantity ? calculateFocPreview(product, quantity * conversion, Math.max(0, gross - discountAmount)) : line.focPreview || '-',
         lineTotal: productUnit && quantity ? Math.max(0, gross - discountAmount).toLocaleString() : line.lineTotal || '-',
     };
 }
 
-export default function OrderLineBuilder({ disabled = false, lines = [], onChange, productOptions = [], value }) {
+function previewFocQuantity(item, productOptions) {
+    const product = productOptions.find((option) => String(option.id) === String(item.product_id));
+    const productUnit = getProductUnits(product).find((unit) => String(unit.unit_id) === String(item.unit_id));
+    const quantity = Number(item.quantity || item.orderedQuantity || 0);
+
+    if (!product || !productUnit || !quantity) {
+        return 0;
+    }
+
+    const conversion = Number(productUnit.conversion_factor_to_base || 1);
+    const unitPrice = Number(productUnit.selling_price || 0);
+    const discount = Number(item.discount_percentage ?? product.default_discount_percentage ?? 0);
+    const lineTotal = Math.max(0, (quantity * unitPrice) - ((quantity * unitPrice) * (discount / 100)));
+    return calculateFocRewardBaseUnits(product, quantity * conversion, lineTotal);
+}
+
+export default function OrderLineBuilder({ allowFallback = true, disabled = false, lines = [], onChange, productOptions = [], value }) {
     const [items, setItems] = useState(lines.length ? lines : [blankLine]);
     const controlled = Array.isArray(value);
     const activeItems = controlled ? value : items;
@@ -62,6 +153,8 @@ export default function OrderLineBuilder({ disabled = false, lines = [], onChang
     function updateLine(id, patch) {
         updateItems(activeItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
     }
+
+    const totalFocBaseUnits = activeItems.reduce((total, item) => total + previewFocQuantity(item, productOptions), 0);
 
     return (
         <section className={`form-section ${disabled ? 'is-disabled' : ''}`}>
@@ -95,17 +188,22 @@ export default function OrderLineBuilder({ disabled = false, lines = [], onChang
                                 <span>Product</span>
                                 <select
                                     disabled={disabled}
-                                    onChange={(event) => updateLine(item.id, {
-                                        product_id: event.target.value,
+                                    onChange={(event) => {
+                                        const nextProduct = productOptions.find((product) => String(product.id) === String(event.target.value));
+                                        const defaultUnit = getDefaultProductUnit(nextProduct);
+
+                                        updateLine(item.id, {
+                                            product_id: event.target.value,
                                         product: event.target.selectedOptions[0]?.textContent,
-                                        unit_id: '',
-                                    })}
+                                            unit_id: defaultUnit?.unit_id || '',
+                                        });
+                                    }}
                                     value={item.product_id || item.product || ''}
                                 >
                                     <option value="" disabled>Select product</option>
                                     {productOptions.length
                                         ? productOptions.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)
-                                        : fallbackProducts.map((product) => <option key={product}>{product}</option>)}
+                                        : allowFallback ? fallbackProducts.map((product) => <option key={product}>{product}</option>) : null}
                                 </select>
                             </label>
                             <label>
@@ -129,7 +227,7 @@ export default function OrderLineBuilder({ disabled = false, lines = [], onChang
                                     <option value="" disabled>Select unit</option>
                                     {unitOptions.length
                                         ? unitOptions.map((productUnit) => <option key={productUnit.id} value={productUnit.unit_id}>{productUnit.unit?.name || productUnit.unit_id}</option>)
-                                        : fallbackUnits.map((unit) => <option key={unit}>{unit}</option>)}
+                                        : allowFallback ? fallbackUnits.map((unit) => <option key={unit}>{unit}</option>) : null}
                                 </select>
                             </label>
                             <div className="order-line-preview">
@@ -146,7 +244,7 @@ export default function OrderLineBuilder({ disabled = false, lines = [], onChang
                             </div>
                             <div className="order-line-preview">
                                 <span>FOC</span>
-                                <strong>{item.focPreview || 'Auto'}</strong>
+                                <strong>{preview.focPreview || 'No FOC'}</strong>
                             </div>
                             <div className="order-line-preview">
                                 <span>Total</span>
@@ -161,7 +259,7 @@ export default function OrderLineBuilder({ disabled = false, lines = [], onChang
             </div>
             <div className="order-line-total-strip">
                 <span>Lines: {activeItems.length}</span>
-                <span>Stock, discount, FOC, and base quantity recalculate per product line.</span>
+                <span>Preview FOC: {formatAmount(totalFocBaseUnits)} base units</span>
             </div>
         </section>
     );

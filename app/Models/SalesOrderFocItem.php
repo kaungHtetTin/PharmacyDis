@@ -25,4 +25,9 @@ class SalesOrderFocItem extends Model
     {
         return $this->belongsTo(FocRule::class);
     }
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
 }

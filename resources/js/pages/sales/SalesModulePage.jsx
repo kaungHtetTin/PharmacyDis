@@ -54,7 +54,13 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const baseScreen = salesModules[pageKey] || salesModules.stock;
     const liveEndpoint = getSalesEndpoint(pageKey);
     const liveResource = useApiResource(liveEndpoint);
-    const customersResource = useApiResource(pageKey === 'new-order' ? '/lookups/customers' : '');
+    const [pharmacySearch, setPharmacySearch] = useState('');
+    const [debouncedPharmacySearch, setDebouncedPharmacySearch] = useState('');
+    const customerLookupQuery = new URLSearchParams({
+        limit: '30',
+        search: debouncedPharmacySearch,
+    });
+    const customersResource = useApiResource(pageKey === 'new-order' ? `/lookups/customers?${customerLookupQuery.toString()}` : '');
     const productsResource = useApiResource(pageKey === 'new-order' ? '/lookups/products' : '');
     const liveRows = liveResource.data ? mapSalesRows(pageKey, liveResource.data) : [];
     const screen = liveEndpoint ? applyLiveRows(baseScreen, liveRows) : baseScreen;
@@ -86,6 +92,14 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
         setPageIndex(0);
         setSelectedRecord(screen.rows[0]);
     }, [pageKey, screen.rows]);
+
+    useEffect(() => {
+        const timeout = window.setTimeout(() => {
+            setDebouncedPharmacySearch(pharmacySearch.trim());
+        }, 240);
+
+        return () => window.clearTimeout(timeout);
+    }, [pharmacySearch]);
 
     function openRecord(record) {
         if (screen.detailPageKey) {
@@ -131,6 +145,7 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
             await api.post('/sales/orders', payload);
             setSubmitSuccess('Order submitted for office approval.');
             setOrderForm({ customer_id: '', requested_delivery_date: '', note: '' });
+            setPharmacySearch('');
             setOrderLines([{ id: `draft-line-${Date.now()}`, product_id: '', unit_id: '', quantity: '' }]);
         } catch (requestError) {
             setSubmitError(requestError.message);
@@ -162,7 +177,10 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     lines={orderLines}
                     onChange={updateOrderForm}
                     onLineChange={setOrderLines}
+                    onPharmacySearchChange={setPharmacySearch}
                     onSubmit={submitSalesOrder}
+                    pharmacyLoading={customersResource.loading}
+                    pharmacySearch={pharmacySearch}
                     productOptions={products}
                     submitting={submitting}
                     success={submitSuccess}
@@ -211,12 +229,6 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     total={screen.rows.length}
                 />
             </Panel>
-
-            <div className="state-grid">
-                <article><strong>Empty</strong><small>No assigned records</small></article>
-                <article><strong>Loading</strong><small>Field network state</small></article>
-                <article><strong>Error</strong><small>Retry message support</small></article>
-            </div>
 
             <Modal
                 open={modalOpen}

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Office\DashboardController as OfficeDashboardContro
 use App\Http\Controllers\Api\Office\CompanyController as OfficeCompanyController;
 use App\Http\Controllers\Api\Office\CustomerController as OfficeCustomerController;
 use App\Http\Controllers\Api\Office\FocRuleController as OfficeFocRuleController;
+use App\Http\Controllers\Api\Office\FinanceController as OfficeFinanceController;
 use App\Http\Controllers\Api\Office\InvoiceController as OfficeInvoiceController;
 use App\Http\Controllers\Api\Office\PaymentController as OfficePaymentController;
 use App\Http\Controllers\Api\Office\ProductCategoryController as OfficeProductCategoryController;
@@ -59,6 +60,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('dashboard', OfficeDashboardController::class);
         Route::apiResource('companies', OfficeCompanyController::class)->except(['show']);
         Route::apiResource('customers', OfficeCustomerController::class)->except(['show']);
+        Route::get('customers/{customer}/detail', [OfficeCustomerController::class, 'detail']);
         Route::apiResource('product-categories', OfficeProductCategoryController::class)->except(['show']);
         Route::apiResource('products', OfficeProductController::class)->except(['show']);
         Route::apiResource('sales-representatives', OfficeSalesRepresentativeController::class)->except(['show']);
@@ -75,6 +77,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('payments', [OfficePaymentController::class, 'index']);
         Route::post('payments', [OfficePaymentController::class, 'store']);
+        Route::get('receivables', [OfficeFinanceController::class, 'receivables']);
+        Route::get('payables', [OfficeFinanceController::class, 'payables']);
+        Route::get('company-payments', [OfficeFinanceController::class, 'companyPayments']);
+        Route::post('company-payments', [OfficeFinanceController::class, 'recordCompanyPayment']);
 
         Route::get('stock-receipts', [OfficeStockReceiptController::class, 'index']);
         Route::post('stock-receipts', [OfficeStockReceiptController::class, 'store']);

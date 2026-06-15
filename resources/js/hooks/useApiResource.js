@@ -9,10 +9,14 @@ export default function useApiResource(url, options = {}) {
 
     useEffect(() => {
         if (!url) {
+            setData(options.initialData ?? null);
+            setLoading(false);
+            setError('');
             return undefined;
         }
 
         let active = true;
+        setData((current) => (options.keepPreviousData ? current : options.initialData ?? null));
         setLoading(true);
         setError('');
 

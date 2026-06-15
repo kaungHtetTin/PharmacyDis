@@ -34,30 +34,36 @@ export default function SalesOrderDetail({
 
             <section className="drawer-section">
                 <p className="eyebrow">Ordered items</p>
-                <div className="order-line-table">
-                    <div className="order-line-head">
-                        <span>Product</span>
-                        <span>Selected unit</span>
-                        <span>Base quantity</span>
-                        <span>Unit price</span>
-                        <span>Total</span>
-                        <span>Stock</span>
-                    </div>
+                <div className="order-item-card-list">
                     {orderItems.map((item) => (
-                        <div className="order-line-row" key={item.id}>
-                            <div>
-                                <strong>{item.product}</strong>
-                                <small>{item.company}</small>
+                        <article className="order-item-card" key={item.id}>
+                            <div className="order-item-card-title">
+                                <div>
+                                    <strong>{item.product}</strong>
+                                    <small>{item.company}</small>
+                                </div>
+                                <StatusBadge value={item.stockStatus} />
                             </div>
-                            <div>
-                                <strong>{item.orderedQuantity} {item.selectedUnit}</strong>
-                                <small>{item.conversion}</small>
+                            <div className="order-item-card-facts">
+                                <div>
+                                    <span>Selected unit</span>
+                                    <strong>{item.orderedQuantity} {item.selectedUnit}</strong>
+                                    <small>{item.conversion}</small>
+                                </div>
+                                <div>
+                                    <span>Base quantity</span>
+                                    <strong>{item.baseQuantity}</strong>
+                                </div>
+                                <div>
+                                    <span>Unit price</span>
+                                    <strong>{item.unitPrice}</strong>
+                                </div>
+                                <div>
+                                    <span>Total</span>
+                                    <strong>{item.lineTotal}</strong>
+                                </div>
                             </div>
-                            <strong>{item.baseQuantity}</strong>
-                            <span>{item.unitPrice}</span>
-                            <strong>{item.lineTotal}</strong>
-                            <StatusBadge value={item.stockStatus} />
-                        </div>
+                        </article>
                     ))}
                 </div>
             </section>
@@ -68,9 +74,18 @@ export default function SalesOrderDetail({
                     <div className="foc-list">
                         {focItems.map((item) => (
                             <article key={item.id}>
-                                <strong>{item.product}</strong>
-                                <span>{item.quantity} / {item.baseQuantity}</span>
-                                <small>{item.rule}</small>
+                                <div>
+                                    <span>Reward product</span>
+                                    <strong>{item.product}</strong>
+                                </div>
+                                <div>
+                                    <span>Reward</span>
+                                    <strong>{item.quantity}</strong>
+                                </div>
+                                <div>
+                                    <span>Rule</span>
+                                    <small>{item.rule}</small>
+                                </div>
                             </article>
                         ))}
                     </div>

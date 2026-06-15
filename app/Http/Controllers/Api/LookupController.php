@@ -25,11 +25,25 @@ class LookupController extends Controller
 
     public function customers(Request $request)
     {
+        $search = trim((string) $request->query('search', ''));
+        $limit = min(max((int) $request->query('limit', 50), 10), 100);
+
         return Customer::query()
             ->with(['creditStatuses.company'])
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($searchQuery) use ($search) {
+                    $searchQuery
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhere('code', 'like', "%{$search}%")
+                        ->orWhere('owner_name', 'like', "%{$search}%")
+                        ->orWhere('phone', 'like', "%{$search}%")
+                        ->orWhere('township', 'like', "%{$search}%")
+                        ->orWhere('city', 'like', "%{$search}%");
+                });
+            })
             ->where('status', 'active')
             ->orderBy('name')
-            ->limit(50)
+            ->limit($limit)
             ->get();
     }
 

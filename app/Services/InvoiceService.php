@@ -11,8 +11,10 @@ use Illuminate\Validation\ValidationException;
 
 class InvoiceService
 {
-    public function __construct(private NumberGeneratorService $numberGeneratorService)
-    {
+    public function __construct(
+        private NumberGeneratorService $numberGeneratorService,
+        private CustomerBalanceService $customerBalanceService,
+    ) {
     }
 
     public function generateFromOrder(SalesOrder $order, ?User $actor = null): Invoice
@@ -23,6 +25,27 @@ class InvoiceService
             if (! in_array($order->status, ['approved', 'invoiced'], true)) {
                 throw ValidationException::withMessages([
                     'order' => 'Only approved orders can generate invoices.',
+                ]);
+            }
+
+            $existingInvoice = $order->invoices()->with('items')->latest('id')->first();
+
+            if ($existingInvoice) {
+                $this->customerBalanceService->refresh((int) $existingInvoice->customer_id, (int) $existingInvoice->company_id);
+
+                return $existingInvoice->fresh([
+                    'items.product',
+                    'items.unit',
+                    'company',
+                    'customer',
+                    'salesOrder.company',
+                    'salesOrder.customer',
+                    'salesOrder.salesRepresentative.user',
+                    'salesOrder.items.product',
+                    'salesOrder.items.unit',
+                    'salesOrder.focItems.product',
+                    'salesOrder.focItems.focRule',
+                    'allocations.payment',
                 ]);
             }
 
@@ -61,8 +84,22 @@ class InvoiceService
             }
 
             $order->update(['status' => 'invoiced']);
+            $this->customerBalanceService->refresh((int) $invoice->customer_id, (int) $invoice->company_id);
 
-            return $invoice->fresh('items');
+            return $invoice->fresh([
+                'items.product',
+                'items.unit',
+                'company',
+                'customer',
+                'salesOrder.company',
+                'salesOrder.customer',
+                'salesOrder.salesRepresentative.user',
+                'salesOrder.items.product',
+                'salesOrder.items.unit',
+                'salesOrder.focItems.product',
+                'salesOrder.focItems.focRule',
+                'allocations.payment',
+            ]);
         });
     }
 }

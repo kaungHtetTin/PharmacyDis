@@ -14,7 +14,20 @@ class InvoiceController extends Controller
     public function index(Request $request)
     {
         $invoices = Invoice::query()
-            ->with(['company', 'customer', 'salesOrder', 'items'])
+            ->with([
+                'company',
+                'customer',
+                'salesOrder.company',
+                'salesOrder.customer',
+                'salesOrder.salesRepresentative.user',
+                'salesOrder.items.product',
+                'salesOrder.items.unit',
+                'salesOrder.focItems.product',
+                'salesOrder.focItems.focRule',
+                'items.product',
+                'items.unit',
+                'allocations.payment',
+            ])
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
