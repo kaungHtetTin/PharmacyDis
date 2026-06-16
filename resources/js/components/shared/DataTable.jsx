@@ -109,9 +109,14 @@ function getActionIcon(action) {
 }
 
 function RowActions({ actions, row }) {
-    const hasOverflow = actions.length > 3;
-    const directActions = hasOverflow ? actions.slice(0, 2) : actions;
-    const menuActions = hasOverflow ? actions.slice(2) : [];
+    const visibleActions = actions.filter((action) => !action.shouldShow || action.shouldShow(row));
+    const hasOverflow = visibleActions.length > 3;
+    const directActions = hasOverflow ? visibleActions.slice(0, 2) : visibleActions;
+    const menuActions = hasOverflow ? visibleActions.slice(2) : [];
+
+    if (!visibleActions.length) {
+        return null;
+    }
 
     return (
         <div className="inline-actions">

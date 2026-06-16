@@ -20,4 +20,9 @@ class StockMovement extends Model
     {
         return $this->belongsTo(StockBatch::class);
     }
+
+    public function warehouse()
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
 }

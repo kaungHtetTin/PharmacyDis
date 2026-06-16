@@ -22,7 +22,7 @@ class InvoiceService
         return DB::transaction(function () use ($order, $actor) {
             $order->load('items');
 
-            if (! in_array($order->status, ['approved', 'invoiced'], true)) {
+            if (! in_array($order->status, ['approved', 'invoiced', 'delivered'], true)) {
                 throw ValidationException::withMessages([
                     'order' => 'Only approved orders can generate invoices.',
                 ]);
@@ -83,7 +83,9 @@ class InvoiceService
                 ]);
             }
 
-            $order->update(['status' => 'invoiced']);
+            if ($order->status !== 'delivered') {
+                $order->update(['status' => 'invoiced']);
+            }
             $this->customerBalanceService->refresh((int) $invoice->customer_id, (int) $invoice->company_id);
 
             return $invoice->fresh([

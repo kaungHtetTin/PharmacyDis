@@ -20,6 +20,7 @@ export const officeNavSections = [
         items: [
             ['receiving', 'packageCheck', 'Receiving'],
             ['inventory', 'truck', 'Inventory'],
+            ['stock-transfers', 'packageCheck', 'Stock Transfers'],
             ['warehouses', 'building', 'Warehouses'],
         ],
     },

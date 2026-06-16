@@ -28,6 +28,7 @@ class InvoiceController extends Controller
                 'items.unit',
                 'allocations.payment',
             ])
+            ->when($request->filled('invoice_id'), fn ($query) => $query->whereKey($request->integer('invoice_id')))
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))

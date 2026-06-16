@@ -26,6 +26,7 @@ class SalesOrderResource extends JsonResource
             'total_amount' => $this->total_amount,
             'items' => SalesOrderItemResource::collection($this->whenLoaded('items')),
             'foc_items' => $this->whenLoaded('focItems'),
+            'invoices' => $this->whenLoaded('invoices'),
         ];
     }
 }

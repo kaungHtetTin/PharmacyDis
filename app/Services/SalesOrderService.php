@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\DeliveryVoucher;
 use App\Models\Product;
 use App\Models\SalesOrder;
 use App\Models\SalesOrderFocItem;
@@ -84,20 +85,20 @@ class SalesOrderService
 
             $order = $this->create($data, $actor);
 
-            return $this->approve($order, $actor);
+            return $this->approve($order, $actor, $data['warehouse_id'] ?? null);
         });
     }
 
-    public function approve(SalesOrder $order, ?User $actor = null): SalesOrder
+    public function approve(SalesOrder $order, ?User $actor = null, ?int $warehouseId = null): SalesOrder
     {
-        return DB::transaction(function () use ($order, $actor) {
+        return DB::transaction(function () use ($order, $actor, $warehouseId) {
             $order = SalesOrder::query()
                 ->with('items')
                 ->lockForUpdate()
                 ->findOrFail($order->id);
 
             if (in_array($order->status, ['approved', 'invoiced'], true)) {
-                return $order->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user']);
+                return $order->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user', 'invoices']);
             }
 
             if ($order->status !== 'submitted') {
@@ -119,7 +120,8 @@ class SalesOrderService
                     $quantityToReserve,
                     SalesOrder::class,
                     (int) $order->id,
-                    $actor?->id
+                    $actor?->id,
+                    $warehouseId
                 );
             }
 
@@ -129,7 +131,62 @@ class SalesOrderService
                 'approved_at' => now(),
             ]);
 
-            return $order->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user']);
+            return $order->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user', 'invoices']);
+        });
+    }
+
+    public function deliver(SalesOrder $order, ?User $actor = null): SalesOrder
+    {
+        return DB::transaction(function () use ($order, $actor) {
+            $order = SalesOrder::query()
+                ->with(['items', 'invoices'])
+                ->lockForUpdate()
+                ->findOrFail($order->id);
+
+            if ($order->status === 'delivered') {
+                return $order->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user', 'invoices']);
+            }
+
+            if (! in_array($order->status, ['approved', 'invoiced'], true)) {
+                throw ValidationException::withMessages([
+                    'status' => 'Only approved or invoiced orders can be delivered.',
+                ]);
+            }
+
+            foreach ($order->items as $item) {
+                $quantityToDeliver = (int) $item->base_unit_quantity + (int) $item->foc_base_unit_quantity;
+
+                if ($quantityToDeliver <= 0) {
+                    continue;
+                }
+
+                $this->stockMovementService->sellReserved(
+                    (int) $order->company_id,
+                    (int) $item->product_id,
+                    $quantityToDeliver,
+                    SalesOrder::class,
+                    (int) $order->id,
+                    $actor?->id
+                );
+            }
+
+            $invoice = $order->invoices->sortByDesc('id')->first();
+
+            DeliveryVoucher::updateOrCreate(
+                ['sales_order_id' => $order->id],
+                [
+                    'voucher_no' => $this->numberGeneratorService->next(DeliveryVoucher::class, 'voucher_no', 'DV'),
+                    'invoice_id' => $invoice?->id,
+                    'delivery_date' => now()->toDateString(),
+                    'status' => 'delivered',
+                    'delivered_by' => $actor?->name,
+                    'created_by' => $actor?->id,
+                ]
+            );
+
+            $order->update(['status' => 'delivered']);
+
+            return $order->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user', 'invoices']);
         });
     }
 

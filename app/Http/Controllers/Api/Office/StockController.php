@@ -4,18 +4,49 @@ namespace App\Http\Controllers\Api\Office;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreStockAdjustmentRequest;
+use App\Http\Requests\StoreStockTransferRequest;
 use App\Models\Product;
 use App\Models\StockAdjustment;
 use App\Models\StockBatch;
 use App\Models\StockMovement;
+use App\Models\StockTransfer;
 use App\Services\NumberGeneratorService;
 use App\Services\ProductUnitConversionService;
+use App\Services\StockTransferService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class StockController extends Controller
 {
+    public function transfers(Request $request)
+    {
+        return StockTransfer::query()
+            ->with([
+                'company',
+                'sourceWarehouse',
+                'destinationWarehouse',
+                'movements' => fn ($query) => $query->where('base_unit_quantity', '<', 0),
+                'movements.product.baseUnit',
+                'movements.stockBatch',
+            ])
+            ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
+            ->when($request->filled('source_warehouse_id'), fn ($query) => $query->where('source_warehouse_id', $request->source_warehouse_id))
+            ->when($request->filled('destination_warehouse_id'), fn ($query) => $query->where('destination_warehouse_id', $request->destination_warehouse_id))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = $request->search;
+
+                $query->where(function ($searchQuery) use ($search) {
+                    $searchQuery->where('transfer_no', 'like', "%{$search}%")
+                        ->orWhereHas('company', fn ($companyQuery) => $companyQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('sourceWarehouse', fn ($warehouseQuery) => $warehouseQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('destinationWarehouse', fn ($warehouseQuery) => $warehouseQuery->where('name', 'like', "%{$search}%"));
+                });
+            })
+            ->latest()
+            ->paginate($request->integer('per_page', 15));
+    }
+
     public function current(Request $request)
     {
         $query = StockBatch::query()
@@ -182,6 +213,13 @@ class StockController extends Controller
 
             return $adjustment->load(['product.baseUnit', 'stockBatch']);
         });
+    }
+
+    public function transfer(StoreStockTransferRequest $request, StockTransferService $transferService)
+    {
+        $transfer = $transferService->transfer($request->validated(), $request->user());
+
+        return response()->json($transfer, 201);
     }
 
     private function consumeStockForAdjustment(StockAdjustment $adjustment, array $data, Product $product, int $baseQuantity, ?int $userId): void

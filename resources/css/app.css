@@ -2483,6 +2483,63 @@ tbody tr:hover {
     font-weight: 800;
 }
 
+.transfer-workspace {
+    display: grid;
+    gap: 12px;
+}
+
+.transfer-batch-list {
+    display: grid;
+    gap: 7px;
+}
+
+.transfer-batch-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 1.2fr) minmax(94px, .6fr) minmax(124px, .75fr) minmax(110px, .55fr);
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid var(--compact-card-border);
+    border-radius: 6px;
+    background: var(--compact-card-bg);
+    font-size: 11px;
+    font-weight: 750;
+}
+
+.transfer-batch-row > span {
+    min-width: 0;
+    color: var(--color-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.transfer-batch-row input[type="number"] {
+    width: 100%;
+    min-width: 0;
+}
+
+.checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: var(--color-text);
+}
+
+.checkbox-field input {
+    flex: none;
+}
+
+.checkbox-field span,
+.checkbox-field strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .sales-order-detail {
     display: grid;
     gap: 18px;
@@ -3695,8 +3752,15 @@ tbody tr:hover {
 
     .receiving-item-grid,
     .receiving-preview,
-    .receiving-summary {
+    .receiving-summary,
+    .transfer-batch-row {
         grid-template-columns: 1fr;
+    }
+
+    .transfer-batch-row > span,
+    .checkbox-field span,
+    .checkbox-field strong {
+        white-space: normal;
     }
 
     .filter-toolbar {
@@ -4177,6 +4241,118 @@ tbody tr:last-child .row-more-list {
     width: min(1040px, 96vw);
 }
 
+.operation-modal:has(.delivery-form) {
+    width: min(920px, 96vw);
+}
+
+.form-error {
+    margin: 0;
+    border: 1px solid color-mix(in srgb, var(--input-error) 26%, transparent);
+    border-radius: 6px;
+    padding: 9px 10px;
+    color: var(--input-error);
+    font-size: 12px;
+    font-weight: 800;
+    background: color-mix(in srgb, var(--input-error) 8%, transparent);
+}
+
+.btn.icon-only {
+    width: 38px;
+    min-width: 38px;
+    padding: 0;
+}
+
+.delivery-form,
+.delivery-item-list,
+.delivery-allocation-list {
+    display: grid;
+    gap: 12px;
+}
+
+.delivery-item-card {
+    display: grid;
+    gap: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 14px;
+    background: var(--color-surface);
+}
+
+.delivery-item-card > header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.delivery-item-card > header div:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.delivery-item-card > header strong {
+    color: var(--color-text);
+    font-size: 15px;
+}
+
+.delivery-item-card > header span,
+.delivery-batch-note,
+.delivery-quantity-breakdown small {
+    color: var(--color-muted);
+    font-size: 11px;
+    font-weight: 750;
+}
+
+.delivery-quantity-pill {
+    flex: 0 0 auto;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 6px 9px;
+    color: var(--color-muted);
+    font-size: 12px;
+    font-weight: 850;
+    background: var(--color-glass);
+}
+
+.delivery-quantity-pill.ready {
+    border-color: transparent;
+    color: var(--color-primary);
+    background: var(--color-primary-soft);
+}
+
+.delivery-quantity-breakdown {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.delivery-quantity-breakdown span {
+    display: grid;
+    gap: 2px;
+    border: 1px solid var(--compact-card-border);
+    border-radius: 6px;
+    padding: 9px;
+    background: var(--compact-card-bg);
+}
+
+.delivery-quantity-breakdown strong {
+    color: var(--color-text);
+    font-size: 16px;
+}
+
+.delivery-allocation-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) minmax(130px, 160px) 38px;
+    gap: 8px;
+    align-items: end;
+}
+
+.delivery-allocation-row .delivery-batch-note {
+    grid-column: 1 / -1;
+    margin-top: -4px;
+}
+
 .modal-progress {
     position: sticky;
     top: -16px;
@@ -4372,5 +4548,22 @@ tbody tr:last-child .row-more-list {
 
     .operation-modal {
         width: 100%;
+    }
+
+    .delivery-item-card > header,
+    .delivery-allocation-row {
+        grid-template-columns: 1fr;
+    }
+
+    .delivery-item-card > header {
+        display: grid;
+    }
+
+    .delivery-quantity-breakdown {
+        grid-template-columns: 1fr;
+    }
+
+    .delivery-allocation-row .delivery-batch-note {
+        grid-column: auto;
     }
 }

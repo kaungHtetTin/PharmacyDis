@@ -70,6 +70,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('orders', [OfficeSalesOrderController::class, 'index']);
         Route::post('orders', [OfficeSalesOrderController::class, 'store']);
         Route::post('orders/{salesOrder}/approve', [OfficeSalesOrderController::class, 'approve']);
+        Route::post('orders/{salesOrder}/deliver', [OfficeSalesOrderController::class, 'deliver']);
         Route::post('orders/{salesOrder}/reject', [OfficeSalesOrderController::class, 'reject']);
 
         Route::get('invoices', [OfficeInvoiceController::class, 'index']);
@@ -86,9 +87,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('stock-receipts', [OfficeStockReceiptController::class, 'store']);
         Route::put('stock-receipts/{stockReceipt}', [OfficeStockReceiptController::class, 'update']);
         Route::delete('stock-receipts/{stockReceipt}', [OfficeStockReceiptController::class, 'destroy']);
+        Route::get('stock/transfers', [OfficeStockController::class, 'transfers']);
         Route::get('stock/current', [OfficeStockController::class, 'current']);
         Route::get('stock/products/{product}/batches', [OfficeStockController::class, 'productBatches']);
         Route::post('stock/adjustments', [OfficeStockController::class, 'adjust']);
+        Route::post('stock/transfers', [OfficeStockController::class, 'transfer']);
 
         Route::apiResource('foc-rules', OfficeFocRuleController::class)->except(['show']);
     });

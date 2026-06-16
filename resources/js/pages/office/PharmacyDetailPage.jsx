@@ -140,10 +140,13 @@ function PharmacyOrderModal({
     representatives = [],
     representativesLoading = false,
     submitting = false,
+    warehouses = [],
+    warehousesLoading = false,
 }) {
     const selectedCredit = creditStatuses.find((credit) => String(credit.company_id) === String(form.company_id));
     const creditStatus = titleCase(selectedCredit?.credit_status || 'active');
     const blocked = isBlockedCredit(creditStatus);
+    const missingWarehouse = !form.warehouse_id;
 
     return (
         <Modal
@@ -151,8 +154,8 @@ function PharmacyOrderModal({
             onClose={onClose}
             onSubmit={onSubmit}
             open={open}
-            submitDisabled={blocked || submitting}
-            submitDisabledReason={error || (blocked ? 'Company credit is blocked. Order creation is not allowed.' : '')}
+            submitDisabled={blocked || missingWarehouse || submitting}
+            submitDisabledReason={error || (blocked ? 'Company credit is blocked. Order creation is not allowed.' : '') || (missingWarehouse ? 'Select a warehouse before creating the approved order.' : '')}
             submitLabel="Create and approve order"
             title={`Create order - ${customer?.name || 'Pharmacy'}`}
         >
@@ -183,6 +186,17 @@ function PharmacyOrderModal({
                                 ))}
                             </select>
                         </label>
+                        <label className="form-field">
+                            <span>Reserve from warehouse</span>
+                            <select disabled={warehousesLoading || submitting} name="warehouse_id" onChange={onChange} required value={form.warehouse_id}>
+                                <option value="" disabled>{warehousesLoading ? 'Loading warehouses' : 'Select warehouse'}</option>
+                                {warehouses.map((warehouse) => (
+                                    <option key={warehouse.id} value={warehouse.id}>
+                                        {warehouse.name}{warehouse.code ? ` (${warehouse.code})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
                         <FormField label="Requested delivery date" name="requested_delivery_date" onChange={onChange} type="date" value={form.requested_delivery_date} />
                         <article className={`order-credit-summary ${blocked ? 'is-blocked' : ''}`}>
                             <div>
@@ -208,7 +222,7 @@ function PharmacyOrderModal({
                     value={lines}
                 />
                 <p className="helper-copy">
-                    This order is created for the selected pharmacy, approved immediately, and reserves available batch stock.
+                    This order is approved immediately. Stock is reserved from the selected warehouse by nearest expiry date.
                 </p>
             </div>
         </Modal>
@@ -223,12 +237,18 @@ export default function PharmacyDetailPage({ onNavigate }) {
     const [orderForm, setOrderForm] = useState({
         company_id: '',
         sales_representative_id: '',
+        warehouse_id: '',
         requested_delivery_date: '',
         note: '',
     });
     const [orderLines, setOrderLines] = useState([{ ...blankOrderLine }]);
     const [orderError, setOrderError] = useState('');
     const [orderSubmitting, setOrderSubmitting] = useState(false);
+    const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+    const [approvalOrder, setApprovalOrder] = useState(null);
+    const [approvalForm, setApprovalForm] = useState({ warehouse_id: '' });
+    const [approvalError, setApprovalError] = useState('');
+    const [approvalSubmitting, setApprovalSubmitting] = useState(false);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [selectedPayment, setSelectedPayment] = useState(null);
     const [orderPage, setOrderPage] = useState(1);
@@ -237,6 +257,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
     const [actionError, setActionError] = useState('');
     const [actionBusy, setActionBusy] = useState(false);
     const companiesResource = useApiResource(orderModalOpen ? '/lookups/companies' : '');
+    const warehousesResource = useApiResource(orderModalOpen || approvalModalOpen ? '/office/warehouses?per_page=100' : '');
     const productsResource = useApiResource(orderModalOpen && orderForm.company_id ? `/lookups/products?company_id=${orderForm.company_id}` : '');
     const representativesResource = useApiResource(orderModalOpen && orderForm.company_id ? `/lookups/sales-representatives?company_id=${orderForm.company_id}` : '');
     const detail = detailResource.data || {};
@@ -259,6 +280,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
         .join('')
         .slice(0, 3);
     const companies = unwrapCollection(companiesResource.data);
+    const warehouses = unwrapCollection(warehousesResource.data);
     const products = unwrapCollection(productsResource.data);
     const representatives = unwrapCollection(representativesResource.data);
     const goToPage = (setter) => (page) => setter(Math.max(1, page));
@@ -267,18 +289,53 @@ export default function PharmacyDetailPage({ onNavigate }) {
             return;
         }
 
+        setApprovalOrder(record);
+        setApprovalForm({ warehouse_id: record?.warehouse_id || warehouses[0]?.id || '' });
+        setApprovalError('');
+        setApprovalModalOpen(true);
+    };
+    const closeApprovalModal = (force = false) => {
+        if (force || !approvalSubmitting) {
+            setApprovalModalOpen(false);
+            setApprovalOrder(null);
+            setApprovalForm({ warehouse_id: '' });
+            setApprovalError('');
+        }
+    };
+    const updateApprovalForm = (event) => {
+        const { name, value } = event.target;
+
+        setApprovalForm((current) => ({ ...current, [name]: value }));
+        setApprovalError('');
+    };
+    const submitApproval = async () => {
+        if (!approvalOrder?.id || actionBusy || approvalSubmitting) {
+            return;
+        }
+
+        if (!approvalForm.warehouse_id) {
+            setApprovalError('Select a warehouse before approving this order.');
+            return;
+        }
+
         setActionBusy(true);
+        setApprovalSubmitting(true);
         setActionError('');
+        setApprovalError('');
 
         try {
-            await api.post(`/office/orders/${record.id}/approve`);
+            await api.post(`/office/orders/${approvalOrder.id}/approve`, {
+                warehouse_id: approvalForm.warehouse_id,
+            });
             window.dispatchEvent(new Event('office-submitted-orders-changed'));
             detailResource.refresh();
+            closeApprovalModal(true);
         } catch (error) {
             setActionError(error.message);
-            window.alert(error.message);
+            setApprovalError(error.message);
         } finally {
             setActionBusy(false);
+            setApprovalSubmitting(false);
         }
     };
     const generateInvoice = async (record) => {
@@ -309,6 +366,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
         setOrderForm({
             company_id: '',
             sales_representative_id: '',
+            warehouse_id: '',
             requested_delivery_date: '',
             note: '',
         });
@@ -360,6 +418,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 ...orderForm,
                 customer_id: customer.id,
                 sales_representative_id: orderForm.sales_representative_id || null,
+                warehouse_id: orderForm.warehouse_id || null,
                 requested_delivery_date: orderForm.requested_delivery_date || null,
                 note: orderForm.note || null,
                 auto_approve: true,
@@ -528,11 +587,43 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 payment={selectedPayment}
             />
 
+            <Modal
+                busy={approvalSubmitting || warehousesResource.loading}
+                onClose={closeApprovalModal}
+                onSubmit={submitApproval}
+                open={approvalModalOpen}
+                submitDisabled={approvalSubmitting || warehousesResource.loading || !approvalForm.warehouse_id}
+                submitDisabledReason={approvalError || warehousesResource.error || (!approvalForm.warehouse_id ? 'Select a warehouse to reserve stock.' : '')}
+                submitLabel="Approve and reserve stock"
+                title={`Approve order - ${approvalOrder?.order || 'Order'}`}
+            >
+                <div className="approval-form">
+                    <div className="workflow-context-card">
+                        <span>{customer?.name || 'Customer order'}</span>
+                        <strong>{approvalOrder?.order || 'Selected order'}</strong>
+                        <small>{approvalOrder?.company || 'Reserve stock by nearest expiry date'}</small>
+                    </div>
+                    {approvalError && <p className="form-error">{approvalError}</p>}
+                    <label className="form-field">
+                        <span>Reserve from warehouse</span>
+                        <select name="warehouse_id" onChange={updateApprovalForm} required value={approvalForm.warehouse_id}>
+                            <option value="" disabled>{warehousesResource.loading ? 'Loading warehouses' : 'Select warehouse'}</option>
+                            {warehouses.map((warehouse) => (
+                                <option key={warehouse.id} value={warehouse.id}>
+                                    {warehouse.name}{warehouse.code ? ` (${warehouse.code})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <p className="helper-copy">The system reserves this order from the selected warehouse by nearest expiry date.</p>
+                </div>
+            </Modal>
+
             <PharmacyOrderModal
                 companies={companies}
                 creditStatuses={detail.credit_statuses || []}
                 customer={customer}
-                error={orderError || companiesResource.error || productsResource.error || representativesResource.error}
+                error={orderError || companiesResource.error || productsResource.error || representativesResource.error || warehousesResource.error}
                 form={orderForm}
                 lines={orderLines}
                 onChange={updateOrderForm}
@@ -545,6 +636,8 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 representatives={representatives}
                 representativesLoading={representativesResource.loading}
                 submitting={orderSubmitting}
+                warehouses={warehouses}
+                warehousesLoading={warehousesResource.loading}
             />
         </div>
     );

@@ -157,6 +157,23 @@ export const officeModules = {
         ],
         rows: emptyRows,
     },
+    'stock-transfers': {
+        eyebrow: 'Warehouse',
+        title: 'Stock Transfers',
+        description: 'Move stock between warehouses by selecting available product batches and exact base-unit quantities.',
+        primaryAction: 'Create transfer',
+        showEditAction: false,
+        showViewAction: false,
+        columns: [
+            { key: 'transfer', label: 'Transfer' },
+            { key: 'route', label: 'Route' },
+            { key: 'company', label: 'Company' },
+            { key: 'products', label: 'Products' },
+            { key: 'baseQuantity', label: 'Base Qty' },
+            { key: 'date', label: 'Date' },
+        ],
+        rows: emptyRows,
+    },
     receiving: {
         eyebrow: 'Warehouse',
         title: 'Stock Receiving',

@@ -233,7 +233,7 @@ return new class extends Migration
             $table->foreignId('warehouse_id')->nullable()->constrained('warehouses')->nullOnDelete();
             $table->foreignId('product_id')->constrained('products');
             $table->foreignId('stock_batch_id')->nullable()->constrained('stock_batches')->nullOnDelete();
-            $table->enum('movement_type', ['receipt', 'reserve', 'release', 'sale', 'adjustment', 'damage', 'expiry', 'return']);
+            $table->enum('movement_type', ['receipt', 'reserve', 'release', 'sale', 'adjustment', 'damage', 'expiry', 'return', 'transfer']);
             $table->integer('base_unit_quantity');
             $table->string('reference_type')->nullable();
             $table->unsignedBigInteger('reference_id')->nullable();

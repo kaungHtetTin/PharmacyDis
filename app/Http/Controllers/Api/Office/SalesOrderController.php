@@ -14,7 +14,7 @@ class SalesOrderController extends Controller
     public function index(Request $request)
     {
         $orders = SalesOrder::query()
-            ->with(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user'])
+            ->with(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user', 'invoices:id,sales_order_id,invoice_no'])
             ->when($request->filled('order_id'), fn ($query) => $query->whereKey($request->integer('order_id')))
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
@@ -37,7 +37,18 @@ class SalesOrderController extends Controller
 
     public function approve(Request $request, SalesOrder $salesOrder, SalesOrderService $salesOrderService)
     {
-        $salesOrder = $salesOrderService->approve($salesOrder, $request->user());
+        $data = $request->validate([
+            'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
+        ]);
+
+        $salesOrder = $salesOrderService->approve($salesOrder, $request->user(), $data['warehouse_id']);
+
+        return new SalesOrderResource($salesOrder);
+    }
+
+    public function deliver(Request $request, SalesOrder $salesOrder, SalesOrderService $salesOrderService)
+    {
+        $salesOrder = $salesOrderService->deliver($salesOrder, $request->user());
 
         return new SalesOrderResource($salesOrder);
     }

@@ -116,6 +116,27 @@ const blankStockAdjustmentForm = {
     reason: '',
 };
 
+const blankStockTransferForm = {
+    company_id: '',
+    company_name: '',
+    source_warehouse_id: '',
+    destination_warehouse_id: '',
+    lines: [],
+    note: '',
+};
+
+function newStockTransferLine(productId = '', productName = '') {
+    return {
+        id: `stock-transfer-line-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        product_id: productId,
+        product_name: productName,
+        batches: [],
+        batches_error: '',
+        batches_loading: false,
+        items: [],
+    };
+}
+
 const blankCustomerPaymentForm = {
     company_id: '',
     customer_id: '',
@@ -138,6 +159,10 @@ const blankCompanyPaymentForm = {
     note: '',
 };
 
+const blankApprovalForm = {
+    warehouse_id: '',
+};
+
 const blankOfficeOrderLine = {
     id: 'office-order-line-1',
     product_id: '',
@@ -149,6 +174,7 @@ const blankOfficeOrderForm = {
     company_id: '',
     customer_id: '',
     sales_representative_id: '',
+    warehouse_id: '',
     requested_delivery_date: '',
     note: '',
     auto_approve: true,
@@ -876,6 +902,202 @@ function StockAdjustmentForm({
     );
 }
 
+function StockTransferWorkspace({
+    companies = [],
+    error = '',
+    form,
+    onAddLine,
+    onBatchQuantityChange,
+    onBatchToggle,
+    onChange,
+    onLineProductChange,
+    onRemoveLine,
+    onSubmit,
+    products = [],
+    productsLoading = false,
+    submitting = false,
+    warehouses = [],
+}) {
+    const selectedTotal = (form.lines || []).reduce((lineSum, line) => (
+        lineSum + (line.items || []).reduce((itemSum, item) => itemSum + Number(item.base_unit_quantity || 0), 0)
+    ), 0);
+    const selectedBatchCount = (form.lines || []).reduce((sum, line) => sum + (line.items || []).length, 0);
+    const selectedProductCount = (form.lines || []).filter((line) => line.product_id && (line.items || []).length > 0).length;
+    const routeReady = Boolean(form.company_id && form.source_warehouse_id && form.destination_warehouse_id);
+
+    return (
+        <div className="transfer-workspace">
+            <Panel eyebrow="Transfer Setup" title="Warehouse route">
+                <div className="crud-grid">
+                    <label className="form-field">
+                        <span>Company</span>
+                        <select disabled={submitting} name="company_id" onChange={onChange} required value={form.company_id}>
+                            <option value="" disabled>Select company</option>
+                            {companies.map((company) => (
+                                <option key={company.id} value={company.id}>{company.name}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="form-field">
+                        <span>From warehouse</span>
+                        <select disabled={submitting} name="source_warehouse_id" onChange={onChange} required value={form.source_warehouse_id}>
+                            <option value="" disabled>Select source</option>
+                            {warehouses.map((warehouse) => (
+                                <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="form-field">
+                        <span>To warehouse</span>
+                        <select disabled={submitting} name="destination_warehouse_id" onChange={onChange} required value={form.destination_warehouse_id}>
+                            <option value="" disabled>Select destination</option>
+                            {warehouses
+                                .filter((warehouse) => String(warehouse.id) !== String(form.source_warehouse_id))
+                                .map((warehouse) => (
+                                    <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                                ))}
+                        </select>
+                    </label>
+                </div>
+            </Panel>
+
+            <Panel
+                eyebrow="Batch Selection"
+                title="Products and available batches"
+                action={<button className="btn secondary" disabled={!routeReady || productsLoading || submitting} onClick={onAddLine} type="button">Add product</button>}
+            >
+                {error && <span className="error-text">{error}</span>}
+                {!routeReady ? (
+                    <p className="helper-copy">Select company, source warehouse, and destination warehouse before adding products.</p>
+                ) : (
+                    <div className="receiving-items">
+                        {(form.lines || []).map((line, index) => {
+                            const selectedItemsByBatch = new Map((line.items || []).map((item) => [String(item.stock_batch_id), item]));
+                            const product = findReceiptProduct(products, line.product_id);
+                            const lineTotal = (line.items || []).reduce((sum, item) => sum + Number(item.base_unit_quantity || 0), 0);
+
+                            return (
+                                <article className="receiving-item" key={line.id}>
+                                    <div className="receiving-item-head">
+                                        <strong>Product #{index + 1}</strong>
+                                        <button className="btn secondary" disabled={submitting} onClick={() => onRemoveLine(line.id)} type="button">Remove</button>
+                                    </div>
+                                    <div className="receiving-item-grid">
+                                        <label className="form-field">
+                                            <span>Product</span>
+                                            <select disabled={productsLoading || submitting} onChange={(event) => onLineProductChange(line.id, event.target.value)} required value={line.product_id}>
+                                                <option value="" disabled>{productsLoading ? 'Loading products' : 'Select product'}</option>
+                                                {products.map((item) => (
+                                                    <option key={item.id} value={item.id}>{item.name}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div className="receiving-preview">
+                                        <span><strong>{formatAmount(lineTotal)}</strong><small>Selected base quantity</small></span>
+                                        <span><strong>{product?.base_unit?.name || product?.baseUnit?.name || 'Base unit'}</strong><small>Inventory unit</small></span>
+                                        <span><strong>{formatAmount((line.items || []).length)}</strong><small>Selected batches</small></span>
+                                    </div>
+                                    {line.batches_error && <span className="error-text">{line.batches_error}</span>}
+                                    {!line.product_id ? (
+                                        <p className="helper-copy">Choose a product to show source warehouse batches.</p>
+                                    ) : line.batches_loading ? (
+                                        <p className="helper-copy">Loading available batches...</p>
+                                    ) : (line.batches || []).length === 0 ? (
+                                        <p className="helper-copy">No available batches for this product in the source warehouse.</p>
+                                    ) : (
+                                        <div className="transfer-batch-list">
+                                            {line.batches.map((batch) => {
+                                                const selectedItem = selectedItemsByBatch.get(String(batch.id));
+                                                const checked = Boolean(selectedItem);
+                                                const available = Number(batch.available_base_quantity || 0);
+                                                const unit = batch.product?.base_unit?.abbreviation || batch.product?.base_unit?.name || product?.base_unit?.abbreviation || product?.base_unit?.name || 'base units';
+                                                const expiry = batch.expiry_date ? String(batch.expiry_date).slice(0, 10) : '-';
+
+                                                return (
+                                                    <div className="transfer-batch-row" key={batch.id}>
+                                                        <label className="checkbox-field">
+                                                            <input checked={checked} disabled={submitting} onChange={(event) => onBatchToggle(line.id, batch, event.target.checked)} type="checkbox" />
+                                                            <span>{batch.batch_no || `Batch #${batch.id}`}</span>
+                                                        </label>
+                                                        <span>{expiry}</span>
+                                                        <span>{formatAmount(available)} {unit}</span>
+                                                        <input
+                                                            disabled={!checked || submitting}
+                                                            max={available}
+                                                            min="1"
+                                                            onChange={(event) => onBatchQuantityChange(line.id, batch.id, event.target.value)}
+                                                            type="number"
+                                                            value={selectedItem?.base_unit_quantity || ''}
+                                                        />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </article>
+                            );
+                        })}
+                    </div>
+                )}
+                {routeReady && (form.lines || []).length === 0 && (
+                    <p className="helper-copy">Add a product to start selecting available batches.</p>
+                )}
+            </Panel>
+
+            <Panel eyebrow="Transfer Summary" title="Review and submit">
+                <div className="receiving-summary">
+                    <div><span>Products</span><strong>{formatAmount(selectedProductCount)}</strong></div>
+                    <div><span>Batches</span><strong>{formatAmount(selectedBatchCount)}</strong></div>
+                    <div><span>Total base quantity</span><strong>{formatAmount(selectedTotal)}</strong></div>
+                </div>
+                <FormField label="Note" name="note" onChange={onChange} placeholder="Optional transfer note" type="textarea" value={form.note} />
+                <div className="page-heading-actions">
+                    <button className="btn primary" disabled={!routeReady || selectedTotal <= 0 || submitting} onClick={onSubmit} type="button">
+                        {submitting ? 'Transferring...' : 'Create transfer'}
+                    </button>
+                </div>
+            </Panel>
+        </div>
+    );
+}
+
+function ApprovalWarehouseForm({
+    error = '',
+    form,
+    onChange,
+    order,
+    warehouses = [],
+}) {
+    return (
+        <div className="approval-form">
+            <div className="workflow-context-card">
+                <span>{order?.pharmacy || 'Customer order'}</span>
+                <strong>{order?.order || 'Selected order'}</strong>
+                <small>{order?.company || '-'} / {order?.baseQuantity || 'Ready to reserve'}</small>
+            </div>
+
+            {error && <p className="form-error">{error}</p>}
+
+            <label className="form-field">
+                <span>Reserve from warehouse</span>
+                <select name="warehouse_id" onChange={onChange} required value={form.warehouse_id}>
+                    <option value="" disabled>Select warehouse</option>
+                    {warehouses.map((warehouse) => (
+                        <option key={warehouse.id} value={warehouse.id}>
+                            {warehouse.name}{warehouse.code ? ` (${warehouse.code})` : ''}
+                        </option>
+                    ))}
+                </select>
+            </label>
+            <div className="approval-note">
+                <Icon name="packageCheck" size={18} />
+                <span>The system will reserve stock from this warehouse by nearest expiry date, including FOC quantities.</span>
+            </div>
+        </div>
+    );
+}
+
 function CustomerPaymentForm({ form, onChange, record }) {
     return (
         <div className="company-form-layout">
@@ -959,6 +1181,8 @@ function OfficeOrderForm({
     representatives = [],
     representativesLoading = false,
     submitting = false,
+    warehouses = [],
+    warehousesLoading = false,
 }) {
     const selectedCustomer = customers.find((customer) => String(customer.id) === String(form.customer_id)) || lockedCustomer;
     const selectedCredit = selectedCustomer?.credit_statuses?.find((credit) => String(credit.company_id) === String(form.company_id))
@@ -1005,6 +1229,17 @@ function OfficeOrderForm({
                             ))}
                         </select>
                     </label>
+                    <label className="form-field">
+                        <span>Reserve from warehouse</span>
+                        <select disabled={warehousesLoading || submitting} name="warehouse_id" onChange={onChange} required value={form.warehouse_id}>
+                            <option value="" disabled>{warehousesLoading ? 'Loading warehouses' : 'Select warehouse'}</option>
+                            {warehouses.map((warehouse) => (
+                                <option key={warehouse.id} value={warehouse.id}>
+                                    {warehouse.name}{warehouse.code ? ` (${warehouse.code})` : ''}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
                     <FormField label="Requested delivery date" name="requested_delivery_date" onChange={onChange} type="date" value={form.requested_delivery_date} />
                     <article className={`order-credit-summary ${blocked ? 'is-blocked' : ''}`}>
                         <div>
@@ -1031,7 +1266,7 @@ function OfficeOrderForm({
             />
             {error && <span className="error-text">{error}</span>}
             <p className="helper-copy">
-                Admin-created orders are approved immediately, reserve available batch stock, and are then ready for invoice generation.
+                Admin-created orders are approved immediately. Stock is reserved from the selected warehouse by nearest expiry date.
             </p>
         </div>
     );
@@ -1882,6 +2117,22 @@ function buildOrderListEndpoint(orderId = '') {
     return `/office/orders?${params.toString()}`;
 }
 
+function buildInvoiceListEndpoint(invoiceId = '') {
+    const params = new URLSearchParams({
+        per_page: '25',
+    });
+
+    if (invoiceId) {
+        params.set('invoice_id', invoiceId);
+    }
+
+    return `/office/invoices?${params.toString()}`;
+}
+
+function orderStatusValue(record) {
+    return String(record?.status_value || record?.status || '').toLowerCase();
+}
+
 function buildInventoryDetailEndpoint(productId, filters) {
     if (!productId) {
         return '';
@@ -1920,6 +2171,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const isReceivingPage = pageKey === 'receiving';
     const isReceivablesPage = pageKey === 'receivables';
     const isOrdersPage = pageKey === 'orders';
+    const isStockTransfersPage = pageKey === 'stock-transfers';
     const isFinancePage = isReceivablesPage || isPayablesPage;
     const isRepresentativesPage = pageKey === 'representatives';
     const isUnitsPage = pageKey === 'units';
@@ -1928,9 +2180,14 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [productListFilters, setProductListFilters] = useState(blankProductListFilters);
     const routeSearchParams = new URLSearchParams(window.location.search);
     const selectedOrderId = routeSearchParams.get('order_id') || '';
+    const selectedInvoiceId = routeSearchParams.get('invoice_id') || '';
     const inventoryDetailProductId = routeSearchParams.get('product_id') || '';
     const inventoryDetailCompanyId = routeSearchParams.get('company_id') || '';
     const inventoryDetailWarehouseId = routeSearchParams.get('warehouse_id') || '';
+    const transferProductId = routeSearchParams.get('product_id') || '';
+    const transferProductName = routeSearchParams.get('product_name') || '';
+    const transferCompanyId = routeSearchParams.get('company_id') || '';
+    const transferSourceWarehouseId = routeSearchParams.get('source_warehouse_id') || routeSearchParams.get('warehouse_id') || '';
     const [inventoryListFilters, setInventoryListFilters] = useState(blankInventoryListFilters);
     const [receivableListFilters, setReceivableListFilters] = useState(blankReceivableListFilters);
     const [payableListFilters, setPayableListFilters] = useState(blankPayableListFilters);
@@ -1962,12 +2219,14 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                             ? buildPayableListEndpoint(payableListFilters)
                                             : isOrdersPage
                                                 ? buildOrderListEndpoint(selectedOrderId)
-                                                : getOfficeEndpoint(pageKey);
+                                                : isInvoicesPage
+                                                    ? buildInvoiceListEndpoint(selectedInvoiceId)
+                                                    : getOfficeEndpoint(pageKey);
     const liveResource = useApiResource(liveEndpoint);
-    const productCompaniesResource = useApiResource(isProductsPage || isPharmaciesPage || isReceivingPage || isStockWorkspacePage || isFinancePage || isOrdersPage ? '/lookups/companies' : isRepresentativesPage ? '/office/companies?per_page=100' : '');
+    const productCompaniesResource = useApiResource(isProductsPage || isPharmaciesPage || isReceivingPage || isStockWorkspacePage || isStockTransfersPage || isFinancePage || isOrdersPage ? '/lookups/companies' : isRepresentativesPage ? '/office/companies?per_page=100' : '');
     const productCategoriesResource = useApiResource(isProductsPage ? '/lookups/product-categories' : '');
     const productUnitsResource = useApiResource(isProductsPage ? '/lookups/units' : '');
-    const receivingWarehousesResource = useApiResource(isReceivingPage || isStockWorkspacePage ? '/office/warehouses?per_page=100' : '');
+    const receivingWarehousesResource = useApiResource(isReceivingPage || isStockWorkspacePage || isStockTransfersPage || isOrdersPage ? '/office/warehouses?per_page=100' : '');
     const liveRows = liveResource.data ? mapOfficeRows(pageKey, liveResource.data) : [];
     const visibleLiveRows = isInvoicesPage ? mergeGeneratedInvoiceRows(liveRows) : liveRows;
     const hasRowsToDisplay = Boolean(liveResource.data) || (isInvoicesPage && visibleLiveRows.length > 0);
@@ -2024,6 +2283,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [confirmAction, setConfirmAction] = useState(null);
     const [selectedRecord, setSelectedRecord] = useState(screen.rows[0]);
     const [openedLinkedOrderId, setOpenedLinkedOrderId] = useState('');
+    const [openedLinkedInvoiceId, setOpenedLinkedInvoiceId] = useState('');
     const [selectedOrderCompany, setSelectedOrderCompany] = useState('');
     const [companyForm, setCompanyForm] = useState(blankCompanyForm);
     const [companyError, setCompanyError] = useState('');
@@ -2052,6 +2312,10 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [stockAdjustmentForm, setStockAdjustmentForm] = useState(blankStockAdjustmentForm);
     const [stockAdjustmentError, setStockAdjustmentError] = useState('');
     const [stockAdjustmentSubmitting, setStockAdjustmentSubmitting] = useState(false);
+    const [stockTransferForm, setStockTransferForm] = useState(blankStockTransferForm);
+    const [stockTransferError, setStockTransferError] = useState('');
+    const [stockTransferSubmitting, setStockTransferSubmitting] = useState(false);
+    const [stockTransferRouteApplied, setStockTransferRouteApplied] = useState(false);
     const [customerPaymentForm, setCustomerPaymentForm] = useState(blankCustomerPaymentForm);
     const [customerPaymentError, setCustomerPaymentError] = useState('');
     const [customerPaymentSubmitting, setCustomerPaymentSubmitting] = useState(false);
@@ -2063,7 +2327,14 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [officeOrderError, setOfficeOrderError] = useState('');
     const [officeOrderModalOpen, setOfficeOrderModalOpen] = useState(false);
     const [officeOrderSubmitting, setOfficeOrderSubmitting] = useState(false);
+    const [approvalOrder, setApprovalOrder] = useState(null);
+    const [approvalForm, setApprovalForm] = useState(blankApprovalForm);
+    const [approvalError, setApprovalError] = useState('');
+    const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+    const [approvalSubmitting, setApprovalSubmitting] = useState(false);
+    const [deliverySubmitting, setDeliverySubmitting] = useState(false);
     const receivingProductsResource = useApiResource(isReceivingPage && modalOpen && stockReceiptForm.company_id ? `/lookups/products?company_id=${stockReceiptForm.company_id}` : '');
+    const stockTransferProductsResource = useApiResource(isStockTransfersPage && stockTransferForm.company_id ? `/lookups/products?company_id=${stockTransferForm.company_id}` : '');
     const stockAdjustmentProductsResource = useApiResource(isStockWorkspacePage && modalOpen && stockAdjustmentForm.company_id ? `/lookups/products?company_id=${stockAdjustmentForm.company_id}` : '');
     const officeOrderCustomersResource = useApiResource(officeOrderModalOpen ? '/lookups/customers' : '');
     const officeOrderRepresentativesResource = useApiResource(officeOrderModalOpen && officeOrderForm.company_id ? `/lookups/sales-representatives?company_id=${officeOrderForm.company_id}` : '');
@@ -2078,7 +2349,8 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         || productCategoriesResource.loading
         || productUnitsResource.loading
     );
-    const modalBusy = companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting;
+    const modalBusy = companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || deliverySubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || stockTransferSubmitting || unitSubmitting || warehouseSubmitting;
+    const approvalBusy = approvalSubmitting || receivingWarehousesResource.loading;
     const orderCreditStatuses = normalizeCreditStatuses(selectedRecord?.creditStatuses || modalScreen.creditStatuses || []);
     const selectedCreditStatus = getCompanyCreditStatus(orderCreditStatuses, selectedOrderCompany);
     const orderCreateBlocked = isOrderCreateModal && isBlockedCredit(selectedCreditStatus?.status);
@@ -2132,6 +2404,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const receivingWarehouses = unwrapCollection(receivingWarehousesResource.data);
     const receivingProducts = unwrapCollection(receivingProductsResource.data);
     const stockAdjustmentProducts = unwrapCollection(stockAdjustmentProductsResource.data);
+    const stockTransferProducts = unwrapCollection(stockTransferProductsResource.data);
     const officeOrderCustomers = unwrapCollection(officeOrderCustomersResource.data);
     const officeOrderProducts = unwrapCollection(officeOrderProductsResource.data);
     const officeOrderRepresentatives = unwrapCollection(officeOrderRepresentativesResource.data);
@@ -2140,6 +2413,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const officeOrderLockedCustomer = officeOrderModalOpen ? selectedRecord : null;
     const officeOrderLockedCredit = officeOrderLockedCustomer?.creditStatuses?.find((credit) => String(credit.company_id) === String(officeOrderForm.company_id));
     const officeOrderBlocked = officeOrderModalOpen && isBlockedCredit(titleCase(officeOrderSelectedCredit?.credit_status || officeOrderLockedCredit?.credit_status || 'ready'));
+    const officeOrderMissingWarehouse = officeOrderModalOpen && !officeOrderForm.warehouse_id;
+    const stockTransferSelectedQuantity = (stockTransferForm.lines || []).reduce((lineSum, line) => (
+        lineSum + (line.items || []).reduce((itemSum, item) => itemSum + Number(item.base_unit_quantity || 0), 0)
+    ), 0);
+    const stockTransferMissingItems = isStockTransfersPage && stockTransferSelectedQuantity <= 0;
     const receivingPagination = isReceivingPage && liveResource.data ? {
         currentPage: Number(liveResource.data.current_page || 1),
         from: Number(liveResource.data.from || 0),
@@ -2540,6 +2818,21 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setDrawerOpen(true);
         setOpenedLinkedOrderId(selectedOrderId);
     }, [isOrdersPage, openedLinkedOrderId, screen.rows, selectedOrderId]);
+    useEffect(() => {
+        if (!isInvoicesPage || !selectedInvoiceId || openedLinkedInvoiceId === selectedInvoiceId || !screen.rows.length) {
+            return;
+        }
+
+        const linkedInvoice = screen.rows.find((row) => String(row.id) === String(selectedInvoiceId));
+
+        if (!linkedInvoice) {
+            return;
+        }
+
+        setSelectedRecord(linkedInvoice);
+        setDrawerOpen(true);
+        setOpenedLinkedInvoiceId(selectedInvoiceId);
+    }, [isInvoicesPage, openedLinkedInvoiceId, screen.rows, selectedInvoiceId]);
 
     const closeWorkflowModal = () => {
         setModalOpen(false);
@@ -2557,6 +2850,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setSalesRepresentativeError('');
         setStockAdjustmentError('');
         setStockReceiptError('');
+        setStockTransferError('');
         setUnitError('');
         setWarehouseError('');
     };
@@ -3351,6 +3645,18 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setStockAdjustmentError('');
         setModalOpen(true);
     };
+    const openStockTransferPage = (record = null) => {
+        const sourceWarehouseId = record?.warehouse_id
+            || (isInventoryDetailPage ? inventoryDetailFilters.warehouse_id : inventoryListFilters.warehouse_id)
+            || '';
+
+        onNavigate?.('stock-transfers', {
+            company_id: record?.company_id || inventoryDetailCompanyId || inventoryDetailProduct?.company_id || inventoryListFilters.company_id || '',
+            product_id: record?.product_id || inventoryDetailProductId || '',
+            product_name: record?.product || inventoryDetailProductName || '',
+            source_warehouse_id: sourceWarehouseId,
+        });
+    };
     const openInventoryDetail = (record) => {
         if (!record?.product_id) {
             return;
@@ -3371,6 +3677,10 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
 
         setDrawerOpen(false);
         onNavigate?.('orders', { order_id: invoice.sales_order_id });
+    };
+    const openOrderInvoiceDetail = (order) => {
+        setDrawerOpen(false);
+        onNavigate?.('invoices', order?.invoice_id ? { invoice_id: order.invoice_id } : undefined);
     };
     const updateStockAdjustmentForm = (event) => {
         const { name, value } = event.target;
@@ -3431,6 +3741,202 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             setStockAdjustmentSubmitting(false);
         }
     };
+    const loadStockTransferLineBatches = async (lineId, productId, sourceWarehouseId = stockTransferForm.source_warehouse_id) => {
+        if (!productId || !sourceWarehouseId) {
+            return;
+        }
+
+        setStockTransferForm((current) => ({
+            ...current,
+            lines: current.lines.map((line) => String(line.id) === String(lineId)
+                ? { ...line, batches_loading: true, batches_error: '', batches: [], items: [] }
+                : line),
+        }));
+
+        try {
+            const response = await api.get(`/office/stock/products/${productId}/batches?warehouse_id=${sourceWarehouseId}&status=available&per_page=100`);
+            const batches = unwrapCollection(response).filter((batch) => Number(batch.available_base_quantity || 0) > 0);
+
+            setStockTransferForm((current) => ({
+                ...current,
+                lines: current.lines.map((line) => String(line.id) === String(lineId)
+                    ? { ...line, batches, batches_loading: false, batches_error: '' }
+                    : line),
+            }));
+        } catch (requestError) {
+            setStockTransferForm((current) => ({
+                ...current,
+                lines: current.lines.map((line) => String(line.id) === String(lineId)
+                    ? { ...line, batches: [], batches_loading: false, batches_error: requestError.message }
+                    : line),
+            }));
+        }
+    };
+    const updateStockTransferForm = (event) => {
+        const { name, value } = event.target;
+
+        setStockTransferForm((current) => {
+            if (name === 'company_id') {
+                return {
+                    ...current,
+                    company_id: value,
+                    lines: [],
+                };
+            }
+
+            if (name === 'source_warehouse_id' && String(value) === String(current.destination_warehouse_id)) {
+                const destination = receivingWarehouses.find((warehouse) => String(warehouse.id) !== String(value));
+
+                return {
+                    ...current,
+                    source_warehouse_id: value,
+                    destination_warehouse_id: destination?.id || '',
+                    lines: current.lines.map((line) => ({ ...line, batches: [], items: [], batches_error: '' })),
+                };
+            }
+
+            if (name === 'source_warehouse_id') {
+                return {
+                    ...current,
+                    source_warehouse_id: value,
+                    lines: current.lines.map((line) => ({ ...line, batches: [], items: [], batches_error: '' })),
+                };
+            }
+
+            return { ...current, [name]: value };
+        });
+        setStockTransferError('');
+    };
+    const addStockTransferLine = () => {
+        setStockTransferForm((current) => ({
+            ...current,
+            lines: [...current.lines, newStockTransferLine()],
+        }));
+        setStockTransferError('');
+    };
+    const removeStockTransferLine = (lineId) => {
+        setStockTransferForm((current) => {
+            const lines = current.lines.filter((line) => String(line.id) !== String(lineId));
+
+            return { ...current, lines };
+        });
+        setStockTransferError('');
+    };
+    const changeStockTransferLineProduct = (lineId, productId) => {
+        const product = findReceiptProduct(stockTransferProducts, productId);
+
+        setStockTransferForm((current) => ({
+            ...current,
+            lines: current.lines.map((line) => String(line.id) === String(lineId)
+                ? { ...line, product_id: productId, product_name: product?.name || '', batches: [], batches_error: '', items: [] }
+                : line),
+        }));
+        setStockTransferError('');
+
+        if (productId && stockTransferForm.source_warehouse_id) {
+            loadStockTransferLineBatches(lineId, productId, stockTransferForm.source_warehouse_id);
+        }
+    };
+    const toggleStockTransferBatch = (lineId, batch, checked) => {
+        setStockTransferForm((current) => ({
+            ...current,
+            lines: current.lines.map((line) => {
+                if (String(line.id) !== String(lineId)) {
+                    return line;
+                }
+
+                if (!checked) {
+                    return {
+                        ...line,
+                        items: line.items.filter((item) => String(item.stock_batch_id) !== String(batch.id)),
+                    };
+                }
+
+                if (line.items.some((item) => String(item.stock_batch_id) === String(batch.id))) {
+                    return line;
+                }
+
+                return {
+                    ...line,
+                    items: [
+                        ...line.items,
+                        {
+                            stock_batch_id: batch.id,
+                            base_unit_quantity: String(Math.min(1, Number(batch.available_base_quantity || 0))),
+                        },
+                    ],
+                };
+            }),
+        }));
+        setStockTransferError('');
+    };
+    const updateStockTransferBatchQuantity = (lineId, batchId, value) => {
+        setStockTransferForm((current) => ({
+            ...current,
+            lines: current.lines.map((line) => String(line.id) === String(lineId)
+                ? {
+                    ...line,
+                    items: line.items.map((item) => String(item.stock_batch_id) === String(batchId)
+                        ? { ...item, base_unit_quantity: value }
+                        : item),
+                }
+                : line),
+        }));
+        setStockTransferError('');
+    };
+    const stockTransferPayload = () => ({
+        company_id: stockTransferForm.company_id,
+        source_warehouse_id: stockTransferForm.source_warehouse_id,
+        destination_warehouse_id: stockTransferForm.destination_warehouse_id,
+        items: stockTransferForm.lines
+            .flatMap((line) => line.items || [])
+            .filter((item) => Number(item.base_unit_quantity || 0) > 0)
+            .map((item) => ({
+                stock_batch_id: item.stock_batch_id,
+                base_unit_quantity: Number(item.base_unit_quantity || 0),
+            })),
+        note: stockTransferForm.note || null,
+    });
+    const submitStockTransferForm = async () => {
+        if (stockTransferMissingItems) {
+            setStockTransferError('Select at least one available batch quantity to transfer.');
+            return;
+        }
+
+        setStockTransferSubmitting(true);
+        setStockTransferError('');
+
+        try {
+            await api.post('/office/stock/transfers', stockTransferPayload());
+            liveResource.refresh();
+            setStockTransferForm(blankStockTransferForm);
+        } catch (requestError) {
+            setStockTransferError(requestError.message);
+        } finally {
+            setStockTransferSubmitting(false);
+        }
+    };
+    useEffect(() => {
+        if (!isStockTransfersPage || stockTransferRouteApplied || (!transferCompanyId && !transferSourceWarehouseId && !transferProductId)) {
+            return;
+        }
+
+        const destination = receivingWarehouses.find((warehouse) => String(warehouse.id) !== String(transferSourceWarehouseId));
+        const line = transferProductId ? newStockTransferLine(transferProductId, transferProductName) : null;
+
+        setStockTransferForm({
+            ...blankStockTransferForm,
+            company_id: transferCompanyId,
+            source_warehouse_id: transferSourceWarehouseId,
+            destination_warehouse_id: destination?.id || '',
+            lines: line ? [line] : [],
+        });
+        setStockTransferRouteApplied(true);
+
+        if (line && transferSourceWarehouseId) {
+            loadStockTransferLineBatches(line.id, transferProductId, transferSourceWarehouseId);
+        }
+    }, [isStockTransfersPage, receivingWarehouses, stockTransferRouteApplied, transferCompanyId, transferProductId, transferProductName, transferSourceWarehouseId]);
     const changeProductDefaultSalesUnit = async (unit) => {
         if (!isProductsPage || !selectedRecord?.id || !unit?.unitId) {
             return;
@@ -3618,6 +4124,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         ...officeOrderForm,
         requested_delivery_date: officeOrderForm.requested_delivery_date || null,
         sales_representative_id: officeOrderForm.sales_representative_id || null,
+        warehouse_id: officeOrderForm.warehouse_id || null,
         note: officeOrderForm.note || null,
         auto_approve: true,
         items: officeOrderLines
@@ -3647,18 +4154,58 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             return;
         }
 
+        setSelectedRecord(record);
+        setApprovalOrder(record);
+        setApprovalForm({
+            ...blankApprovalForm,
+            warehouse_id: record?.warehouse_id || receivingWarehouses[0]?.id || '',
+        });
+        setApprovalError('');
+        setApprovalModalOpen(true);
+    };
+    const closeApprovalOrderDialog = () => {
+        setApprovalModalOpen(false);
+        setApprovalOrder(null);
+        setApprovalForm(blankApprovalForm);
+        setApprovalError('');
+    };
+    const updateApprovalForm = (event) => {
+        const { name, value } = event.target;
+
+        setApprovalForm((current) => ({ ...current, [name]: value }));
+        setApprovalError('');
+    };
+    const submitApprovalOrder = async () => {
+        if (!approvalOrder?.id) {
+            return;
+        }
+
+        if (!approvalForm.warehouse_id) {
+            setApprovalError('Select a warehouse before approving this order.');
+            return;
+        }
+
         setOfficeOrderSubmitting(true);
+        setApprovalSubmitting(true);
         setOfficeOrderError('');
+        setApprovalError('');
 
         try {
-            await api.post(`/office/orders/${record.id}/approve`);
+            await api.post(`/office/orders/${approvalOrder.id}/approve`, {
+                warehouse_id: approvalForm.warehouse_id,
+            });
             window.dispatchEvent(new Event('office-submitted-orders-changed'));
+            setSelectedRecord((current) => String(current?.id) === String(approvalOrder.id)
+                ? { ...current, status: 'Approved', status_value: 'approved', stockStatus: 'Reserved' }
+                : current);
             liveResource.refresh();
+            closeApprovalOrderDialog();
         } catch (requestError) {
             setOfficeOrderError(requestError.message);
-            window.alert(requestError.message);
+            setApprovalError(requestError.message);
         } finally {
             setOfficeOrderSubmitting(false);
+            setApprovalSubmitting(false);
         }
     };
     const generateInvoiceFromOrder = async (record) => {
@@ -3671,18 +4218,44 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
 
         try {
             if (String(record.status_value || record.status || '').toLowerCase() === 'submitted') {
-                await api.post(`/office/orders/${record.id}/approve`);
-                window.dispatchEvent(new Event('office-submitted-orders-changed'));
+                setOfficeOrderError('Select a warehouse and approve this order before generating an invoice.');
+                approveOfficeOrder(record);
+                return;
             }
 
             const invoice = await api.post(`/office/orders/${record.id}/generate-invoice`);
             rememberGeneratedInvoice(invoice);
+            const invoiceId = invoice?.data?.id || invoice?.id || record.invoice_id || '';
+            setSelectedRecord((current) => String(current?.id) === String(record.id)
+                ? { ...current, status: 'Invoiced', status_value: 'invoiced', invoice_id: invoiceId }
+                : current);
             liveResource.refresh();
         } catch (requestError) {
             setOfficeOrderError(requestError.message);
             window.alert(requestError.message);
         } finally {
             setOfficeOrderSubmitting(false);
+        }
+    };
+    const deliverOfficeOrder = async (record) => {
+        if (!record?.id) {
+            return;
+        }
+
+        setDeliverySubmitting(true);
+        setOfficeOrderError('');
+
+        try {
+            await api.post(`/office/orders/${record.id}/deliver`);
+            setSelectedRecord((current) => String(current?.id) === String(record.id)
+                ? { ...current, status: 'Delivered', status_value: 'delivered', stockStatus: 'Delivered' }
+                : current);
+            liveResource.refresh();
+        } catch (requestError) {
+            setOfficeOrderError(requestError.message);
+            window.alert(requestError.message);
+        } finally {
+            setDeliverySubmitting(false);
         }
     };
     const openDetailPage = (record) => {
@@ -3708,10 +4281,22 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             label: 'Adjust stock',
             onClick: (record) => openStockAdjustmentForm(record),
         },
+        {
+            label: 'Transfer stock',
+            onClick: (record) => openStockTransferPage(record),
+        },
     ] : [];
+    const orderWorkflowActions = [
+        { label: 'Approve order', orderAction: 'approve', icon: 'A', variant: 'primary', shouldShow: (record) => orderStatusValue(record) === 'submitted' },
+        { label: 'Generate invoice', orderAction: 'invoice', icon: 'I', variant: 'primary', shouldShow: (record) => orderStatusValue(record) === 'approved' },
+        { label: 'Deliver stock', orderAction: 'deliver', icon: 'truck', shouldShow: (record) => ['approved', 'invoiced'].includes(orderStatusValue(record)) },
+        { label: 'Open invoice', orderAction: 'openInvoice', icon: 'receipt', variant: 'primary', shouldShow: (record) => orderStatusValue(record) === 'delivered' },
+    ];
+    const workflowRowActions = isOrdersPage ? orderWorkflowActions : (screen.rowActions || []);
+    const workflowContextActions = isOrdersPage ? orderWorkflowActions : (screen.contextActions || []);
     const rowActions = [
         ...inventoryRowActions,
-        ...(screen.rowActions || []).map((action) => ({
+        ...workflowRowActions.map((action) => ({
             ...action,
             onClick: (record) => {
                 if (action.openDrawer) {
@@ -3754,6 +4339,16 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     return;
                 }
 
+                if (action.orderAction === 'deliver') {
+                    deliverOfficeOrder(record);
+                    return;
+                }
+
+                if (action.orderAction === 'openInvoice') {
+                    openOrderInvoiceDetail(record);
+                    return;
+                }
+
                 if (action.orderAction === 'createForPharmacy') {
                     openOfficeOrderForm(record);
                     return;
@@ -3779,15 +4374,35 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 action={isInventoryDetailPage ? (
                     <div className="page-heading-actions">
                         <button className="btn secondary" onClick={() => onNavigate?.('inventory')} type="button">Back to inventory</button>
+                        <button className="btn secondary" onClick={() => openStockTransferPage(null)} type="button">Transfer stock</button>
                         <button className="btn primary" onClick={() => openStockAdjustmentForm(null)} type="button">{screen.primaryAction}</button>
                     </div>
-                ) : screen.hidePrimaryAction ? null : (
+                ) : isStockTransfersPage || screen.hidePrimaryAction ? null : (
                     <button className="btn primary" onClick={isCompaniesPage ? () => openCompanyForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isWarehousesPage ? () => openWarehouseForm() : isProductsPage ? () => openProductForm() : isReceivingPage ? () => openStockReceiptForm() : isInventoryPage ? () => openStockAdjustmentForm(selectedRecord) : isReceivablesPage ? () => openCustomerPaymentForm(selectedRecord) : isPayablesPage ? () => openCompanyPaymentForm(null) : isRepresentativesPage ? () => openSalesRepresentativeForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{screen.primaryAction}</button>
                 )}
                 description={screen.description}
                 eyebrow={screen.eyebrow}
                 title={screen.title}
             />
+
+            {isStockTransfersPage && (
+                <StockTransferWorkspace
+                    companies={productCompanies}
+                    error={stockTransferError || productCompaniesResource.error || receivingWarehousesResource.error || stockTransferProductsResource.error}
+                    form={stockTransferForm}
+                    onAddLine={addStockTransferLine}
+                    onBatchQuantityChange={updateStockTransferBatchQuantity}
+                    onBatchToggle={toggleStockTransferBatch}
+                    onChange={updateStockTransferForm}
+                    onLineProductChange={changeStockTransferLineProduct}
+                    onRemoveLine={removeStockTransferLine}
+                    onSubmit={submitStockTransferForm}
+                    products={stockTransferProducts}
+                    productsLoading={stockTransferProductsResource.loading}
+                    submitting={stockTransferSubmitting}
+                    warehouses={receivingWarehouses}
+                />
+            )}
 
             {screen.summaries && (
                 <div className="summary-grid">
@@ -4071,8 +4686,8 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 open={modalOpen}
                 onClose={closeWorkflowModal}
                 onSubmit={officeOrderModalOpen ? submitOfficeOrderForm : isCompaniesPage && !modalScreenKey ? submitCompanyForm : isPharmaciesPage && !modalScreenKey ? submitPharmacyForm : isProductCategoriesPage && !modalScreenKey ? submitProductCategoryForm : isUnitsPage && !modalScreenKey ? submitUnitForm : isWarehousesPage && !modalScreenKey ? submitWarehouseForm : isProductsPage && !modalScreenKey ? submitProductForm : isReceivingPage && !modalScreenKey ? submitStockReceiptForm : isStockWorkspacePage && !modalScreenKey ? submitStockAdjustmentForm : isReceivablesPage && !modalScreenKey ? submitCustomerPaymentForm : isPayablesPage && !modalScreenKey ? submitCompanyPaymentForm : isRepresentativesPage && !modalScreenKey ? submitSalesRepresentativeForm : closeWorkflowModal}
-                submitDisabled={orderCreateBlocked || officeOrderBlocked || companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting}
-                submitDisabledReason={companyError || companyPaymentError || customerPaymentError || officeOrderError || pharmacyError || productCategoryError || productError || salesRepresentativeError || stockAdjustmentError || stockReceiptError || unitError || warehouseError || (orderCreateBlocked || officeOrderBlocked ? 'Company credit is blocked. Order creation is not allowed.' : '')}
+                submitDisabled={orderCreateBlocked || officeOrderBlocked || officeOrderMissingWarehouse || stockTransferMissingItems || companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || stockTransferSubmitting || unitSubmitting || warehouseSubmitting}
+                submitDisabledReason={companyError || companyPaymentError || customerPaymentError || officeOrderError || pharmacyError || productCategoryError || productError || salesRepresentativeError || stockAdjustmentError || stockReceiptError || stockTransferError || unitError || warehouseError || (orderCreateBlocked || officeOrderBlocked ? 'Company credit is blocked. Order creation is not allowed.' : '') || (officeOrderMissingWarehouse ? 'Select a warehouse before creating the approved order.' : '') || (stockTransferMissingItems ? 'Select at least one batch quantity to transfer.' : '')}
                 submitLabel={modalSubmitLabel}
                 title={modalTitle}
             >
@@ -4093,6 +4708,8 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                             representatives={officeOrderRepresentatives}
                             representativesLoading={officeOrderRepresentativesResource.loading}
                             submitting={officeOrderSubmitting}
+                            warehouses={receivingWarehouses}
+                            warehousesLoading={receivingWarehousesResource.loading}
                         />
                     )
                     : isCompaniesPage && !modalScreenKey
@@ -4189,6 +4806,27 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     )}
             </Modal>
 
+            {approvalModalOpen && (
+                <Modal
+                    busy={approvalBusy}
+                    open
+                    onClose={closeApprovalOrderDialog}
+                    onSubmit={submitApprovalOrder}
+                    submitDisabled={approvalBusy || !approvalForm.warehouse_id}
+                    submitDisabledReason={approvalError || receivingWarehousesResource.error || (!approvalForm.warehouse_id ? 'Select a warehouse to reserve stock.' : '')}
+                    submitLabel="Approve and reserve stock"
+                    title={`Approve order - ${approvalOrder?.order || 'Order'}`}
+                >
+                    <ApprovalWarehouseForm
+                        error={approvalError || receivingWarehousesResource.error}
+                        form={approvalForm}
+                        onChange={updateApprovalForm}
+                        order={approvalOrder}
+                        warehouses={receivingWarehouses}
+                    />
+                </Modal>
+            )}
+
             {confirmAction && (
                 <Modal
                     busy={modalBusy}
@@ -4234,7 +4872,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 <Drawer
                     actions={(
                         <>
-                            {(screen.contextActions || []).map((action) => (
+                            {workflowContextActions
+                                .filter((action) => !action.shouldShow || action.shouldShow(selectedRecord))
+                                .map((action) => (
                                 <button
                                     className={action.variant === 'primary' ? 'btn primary' : 'btn secondary'}
                                     key={action.label}
@@ -4254,6 +4894,16 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                             return;
                                         }
 
+                                        if (action.orderAction === 'deliver') {
+                                            deliverOfficeOrder(selectedRecord);
+                                            return;
+                                        }
+
+                                        if (action.orderAction === 'openInvoice') {
+                                            openOrderInvoiceDetail(selectedRecord);
+                                            return;
+                                        }
+
                                         createScreenAction(action, onNavigate, () => openWorkflowModal(null, selectedRecord))();
                                     }}
                                     type="button"
@@ -4269,7 +4919,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                             {showEditAction && (
                                 <button className="btn secondary" onClick={() => isCompaniesPage ? openCompanyForm(selectedRecord) : isPharmaciesPage ? openPharmacyForm(selectedRecord) : isProductCategoriesPage ? openProductCategoryForm(selectedRecord) : isUnitsPage ? openUnitForm(selectedRecord) : isWarehousesPage ? openWarehouseForm(selectedRecord) : isProductsPage ? openProductForm(selectedRecord) : isReceivingPage ? openStockReceiptForm(selectedRecord) : isRepresentativesPage ? openSalesRepresentativeForm(selectedRecord) : openWorkflowModal(null, selectedRecord, { submitLabel: `Save ${recordLabel}`, title: `Edit ${recordLabel}` })} type="button">Edit {recordLabel}</button>
                             )}
-                            <button className="btn primary" onClick={() => setDrawerOpen(false)} type="button">Done</button>
+                            <button className={isOrdersPage ? 'btn secondary' : 'btn primary'} onClick={() => setDrawerOpen(false)} type="button">Done</button>
                         </>
                     )}
                     eyebrow={`${screen.title} Detail`}

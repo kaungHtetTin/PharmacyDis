@@ -66,6 +66,7 @@ export function mapOrders(response) {
         company_id: order.company_id,
         customer_id: order.customer_id,
         sales_representative_id: order.sales_representative_id || '',
+        invoice_id: order.invoices?.[0]?.id || '',
         status_value: order.status,
         requested_delivery_date: order.requested_delivery_date || '',
         note: order.note || '',
@@ -76,7 +77,7 @@ export function mapOrders(response) {
         submittedDate: order.order_date,
         baseQuantity: `${(order.items || []).reduce((total, item) => total + Number(item.base_unit_quantity || 0), 0)} units`,
         creditStatus: 'Ready',
-        stockStatus: ['approved', 'invoiced'].includes(order.status) ? 'Reserved' : 'Ready',
+        stockStatus: order.status === 'delivered' ? 'Delivered' : ['approved', 'invoiced'].includes(order.status) ? 'Reserved' : 'Ready',
         total: money(order.total_amount),
         status: titleCase(order.status),
         orderItems: (order.items || []).map((item) => ({
@@ -409,6 +410,36 @@ export function mapStockBatches(response) {
     });
 }
 
+export function mapStockTransfers(response) {
+    return unwrapCollection(response).map((transfer) => {
+        const outboundMovements = (transfer.movements || []).filter((movement) => Number(movement.base_unit_quantity || 0) < 0);
+        const productNames = [...new Set(outboundMovements.map((movement) => movement.product?.name || `Product #${movement.product_id || '-'}`))];
+        const baseQuantity = outboundMovements.reduce((sum, movement) => sum + Math.abs(Number(movement.base_unit_quantity || 0)), 0);
+        const lineSummary = outboundMovements
+            .slice(0, 3)
+            .map((movement) => {
+                const unit = movement.product?.base_unit?.abbreviation || movement.product?.base_unit?.name || 'base units';
+                const batch = movement.stock_batch?.batch_no || `Batch #${movement.stock_batch_id}`;
+
+                return `${movement.product?.name || 'Product'} / ${batch} / ${money(Math.abs(Number(movement.base_unit_quantity || 0)))} ${unit}`;
+            })
+            .join(', ');
+
+        return {
+            id: transfer.id,
+            transfer: transfer.transfer_no || `Transfer #${transfer.id}`,
+            route: `${transfer.source_warehouse?.name || '-'} -> ${transfer.destination_warehouse?.name || '-'}`,
+            company: transfer.company?.name || '-',
+            products: productNames.length > 0 ? productNames.join(', ') : '-',
+            baseQuantity: money(baseQuantity),
+            date: dateOnly(transfer.created_at),
+            note: transfer.note || '',
+            lineSummary: lineSummary || '-',
+            status: 'Completed',
+        };
+    });
+}
+
 export function mapCompanies(response) {
     return unwrapCollection(response).map((company) => ({
         id: company.id,
@@ -589,6 +620,7 @@ export function getOfficeEndpoint(pageKey) {
         representatives: '/office/sales-representatives?per_page=15',
         receiving: '/office/stock-receipts?per_page=15',
         inventory: '/office/stock/current',
+        'stock-transfers': '/office/stock/transfers?per_page=15',
         'inventory-detail': '',
         orders: '/office/orders?per_page=25',
         invoices: '/office/invoices?per_page=25',
@@ -611,6 +643,7 @@ export function mapOfficeRows(pageKey, response) {
         representatives: mapSalesRepresentatives,
         receiving: mapStockReceipts,
         inventory: mapStock,
+        'stock-transfers': mapStockTransfers,
         'inventory-detail': mapStockBatches,
         orders: mapOrders,
         invoices: mapInvoices,

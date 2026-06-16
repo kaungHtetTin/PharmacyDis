@@ -13,7 +13,9 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\SalesOrder;
 use App\Models\StockBatch;
+use App\Models\StockTransfer;
 use App\Models\Unit;
+use App\Models\Warehouse;
 use Database\Seeders\RolesAndSampleDataSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -129,9 +131,16 @@ class BusinessWorkflowTest extends TestCase
     public function test_office_can_approve_order_and_generate_invoice(): void
     {
         $order = SalesOrder::where('order_no', 'SO-DEMO-1001')->firstOrFail();
+        $orderItem = $order->items()->firstOrFail();
+        $warehouseId = StockBatch::where('company_id', $order->company_id)
+            ->where('product_id', $orderItem->product_id)
+            ->where('available_base_quantity', '>', 0)
+            ->value('warehouse_id');
 
         $this->withToken($this->officeToken)
-            ->postJson("/api/office/orders/{$order->id}/approve")
+            ->postJson("/api/office/orders/{$order->id}/approve", [
+                'warehouse_id' => $warehouseId,
+            ])
             ->assertOk()
             ->assertJsonPath('data.status', 'approved');
 
@@ -169,14 +178,31 @@ class BusinessWorkflowTest extends TestCase
         $company = Company::where('code', 'MEDILIFE')->firstOrFail();
         $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
         $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->select('warehouse_id')
+            ->groupBy('warehouse_id')
+            ->havingRaw('SUM(available_base_quantity) >= ?', [1100])
+            ->value('warehouse_id');
         $availableBefore = StockBatch::where('company_id', $company->id)
             ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
             ->sum('available_base_quantity');
+        $reservedBefore = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('reserved_base_quantity');
+        $soldBefore = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('sold_base_quantity');
 
         $response = $this->withToken($this->officeToken)
             ->postJson('/api/office/orders', [
                 'company_id' => $company->id,
                 'customer_id' => $customer->id,
+                'warehouse_id' => $warehouseId,
                 'auto_approve' => true,
                 'items' => [
                     ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 10],
@@ -191,13 +217,154 @@ class BusinessWorkflowTest extends TestCase
         $reservedQuantity = $order->items->sum(fn ($item) => $item->base_unit_quantity + $item->foc_base_unit_quantity);
         $availableAfter = StockBatch::where('company_id', $company->id)
             ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
             ->sum('available_base_quantity');
+        $reservedAfterApproval = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('reserved_base_quantity');
 
         $this->assertEquals($availableBefore - $reservedQuantity, $availableAfter);
+        $this->assertEquals($reservedBefore + $reservedQuantity, $reservedAfterApproval);
         $this->assertDatabaseHas('stock_movements', [
             'reference_type' => SalesOrder::class,
             'reference_id' => $order->id,
             'movement_type' => 'reserve',
+        ]);
+
+        $this->withToken($this->officeToken)
+            ->postJson("/api/office/orders/{$order->id}/generate-invoice")
+            ->assertOk();
+
+        $this->withToken($this->officeToken)
+            ->postJson("/api/office/orders/{$order->id}/deliver")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'delivered');
+
+        $reservedAfterDelivery = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('reserved_base_quantity');
+        $soldAfterDelivery = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('sold_base_quantity');
+
+        $this->assertEquals($reservedBefore, $reservedAfterDelivery);
+        $this->assertEquals($soldBefore + $reservedQuantity, $soldAfterDelivery);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_type' => SalesOrder::class,
+            'reference_id' => $order->id,
+            'movement_type' => 'sale',
+        ]);
+        $this->assertDatabaseHas('delivery_vouchers', [
+            'sales_order_id' => $order->id,
+            'status' => 'delivered',
+        ]);
+    }
+
+    public function test_office_can_transfer_stock_between_warehouses_preserving_batch_and_expiry(): void
+    {
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $secondProduct = Product::where('sku', 'ML-COUGH-100')->firstOrFail();
+        $sourceWarehouse = Warehouse::where('code', 'MAIN')->firstOrFail();
+        $destinationWarehouse = Warehouse::where('code', 'YGN-HUB')->firstOrFail();
+        $sourceBatch = StockBatch::where('company_id', $company->id)
+            ->where('warehouse_id', $sourceWarehouse->id)
+            ->where('product_id', $product->id)
+            ->where('available_base_quantity', '>', 0)
+            ->orderByRaw('expiry_date is null')
+            ->orderBy('expiry_date')
+            ->firstOrFail();
+        $secondSourceBatch = StockBatch::where('company_id', $company->id)
+            ->where('warehouse_id', $sourceWarehouse->id)
+            ->where('product_id', $secondProduct->id)
+            ->where('available_base_quantity', '>', 0)
+            ->orderByRaw('expiry_date is null')
+            ->orderBy('expiry_date')
+            ->firstOrFail();
+        $sourceAvailableBefore = (int) $sourceBatch->available_base_quantity;
+        $secondSourceAvailableBefore = (int) $secondSourceBatch->available_base_quantity;
+        $destinationAvailableBefore = StockBatch::where('company_id', $company->id)
+            ->where('warehouse_id', $destinationWarehouse->id)
+            ->where('product_id', $product->id)
+            ->where('batch_no', $sourceBatch->batch_no)
+            ->where('expiry_date', $sourceBatch->expiry_date)
+            ->sum('available_base_quantity');
+        $secondDestinationAvailableBefore = StockBatch::where('company_id', $company->id)
+            ->where('warehouse_id', $destinationWarehouse->id)
+            ->where('product_id', $secondProduct->id)
+            ->where('batch_no', $secondSourceBatch->batch_no)
+            ->where('expiry_date', $secondSourceBatch->expiry_date)
+            ->sum('available_base_quantity');
+
+        $this->withToken($this->officeToken)
+            ->postJson('/api/office/stock/transfers', [
+                'company_id' => $company->id,
+                'source_warehouse_id' => $sourceWarehouse->id,
+                'destination_warehouse_id' => $destinationWarehouse->id,
+                'items' => [
+                    ['stock_batch_id' => $sourceBatch->id, 'base_unit_quantity' => 500],
+                    ['stock_batch_id' => $secondSourceBatch->id, 'base_unit_quantity' => 12],
+                ],
+                'note' => 'Move stock for Yangon dispatch',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('source_warehouse.id', $sourceWarehouse->id)
+            ->assertJsonPath('destination_warehouse.id', $destinationWarehouse->id);
+
+        $transfer = StockTransfer::latest('id')->firstOrFail();
+        $sourceBatch->refresh();
+        $secondSourceBatch->refresh();
+        $destinationBatch = StockBatch::where('company_id', $company->id)
+            ->where('warehouse_id', $destinationWarehouse->id)
+            ->where('product_id', $product->id)
+            ->where('batch_no', $sourceBatch->batch_no)
+            ->where('expiry_date', $sourceBatch->expiry_date)
+            ->firstOrFail();
+        $secondDestinationBatch = StockBatch::where('company_id', $company->id)
+            ->where('warehouse_id', $destinationWarehouse->id)
+            ->where('product_id', $secondProduct->id)
+            ->where('batch_no', $secondSourceBatch->batch_no)
+            ->where('expiry_date', $secondSourceBatch->expiry_date)
+            ->firstOrFail();
+
+        $this->assertEquals($sourceAvailableBefore - 500, $sourceBatch->available_base_quantity);
+        $this->assertEquals($destinationAvailableBefore + 500, $destinationBatch->available_base_quantity);
+        $this->assertEquals($secondSourceAvailableBefore - 12, $secondSourceBatch->available_base_quantity);
+        $this->assertEquals($secondDestinationAvailableBefore + 12, $secondDestinationBatch->available_base_quantity);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_type' => StockTransfer::class,
+            'reference_id' => $transfer->id,
+            'warehouse_id' => $sourceWarehouse->id,
+            'stock_batch_id' => $sourceBatch->id,
+            'movement_type' => 'transfer',
+            'base_unit_quantity' => -500,
+        ]);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_type' => StockTransfer::class,
+            'reference_id' => $transfer->id,
+            'warehouse_id' => $destinationWarehouse->id,
+            'stock_batch_id' => $destinationBatch->id,
+            'movement_type' => 'transfer',
+            'base_unit_quantity' => 500,
+        ]);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_type' => StockTransfer::class,
+            'reference_id' => $transfer->id,
+            'warehouse_id' => $sourceWarehouse->id,
+            'stock_batch_id' => $secondSourceBatch->id,
+            'movement_type' => 'transfer',
+            'base_unit_quantity' => -12,
+        ]);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_type' => StockTransfer::class,
+            'reference_id' => $transfer->id,
+            'warehouse_id' => $destinationWarehouse->id,
+            'stock_batch_id' => $secondDestinationBatch->id,
+            'movement_type' => 'transfer',
+            'base_unit_quantity' => 12,
         ]);
     }
 
