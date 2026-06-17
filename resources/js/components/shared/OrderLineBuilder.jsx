@@ -113,6 +113,41 @@ function calculatePreview(line, productOptions) {
     };
 }
 
+function stockUnit(product, stockRow) {
+    return product?.base_unit?.abbreviation
+        || product?.base_unit?.name
+        || product?.baseUnit?.abbreviation
+        || product?.baseUnit?.name
+        || stockRow?.product?.base_unit?.abbreviation
+        || stockRow?.product?.base_unit?.name
+        || 'base units';
+}
+
+function calculateLineDemand(line, productOptions) {
+    const product = productOptions.find((option) => String(option.id) === String(line.product_id));
+    const productUnit = getProductUnits(product).find((unit) => String(unit.unit_id) === String(line.unit_id));
+    const quantity = Number(line.quantity || line.orderedQuantity || 0);
+
+    if (!product || !productUnit || quantity <= 0) {
+        return null;
+    }
+
+    const conversion = Number(productUnit.conversion_factor_to_base || 1);
+    const orderedQuantity = quantity * conversion;
+    const unitPrice = Number(productUnit.selling_price || 0);
+    const discount = Number(line.discount_percentage ?? product.default_discount_percentage ?? 0);
+    const gross = quantity * unitPrice;
+    const lineTotal = Math.max(0, gross - (gross * (discount / 100)));
+    const focQuantity = calculateFocRewardBaseUnits(product, orderedQuantity, lineTotal);
+
+    return {
+        focQuantity,
+        orderedQuantity,
+        product,
+        requiredQuantity: orderedQuantity + focQuantity,
+    };
+}
+
 function previewFocQuantity(item, productOptions) {
     const product = productOptions.find((option) => String(option.id) === String(item.product_id));
     const productUnit = getProductUnits(product).find((unit) => String(unit.unit_id) === String(item.unit_id));
@@ -129,10 +164,53 @@ function previewFocQuantity(item, productOptions) {
     return calculateFocRewardBaseUnits(product, quantity * conversion, lineTotal);
 }
 
-export default function OrderLineBuilder({ allowFallback = true, disabled = false, lines = [], onChange, productOptions = [], value }) {
+export default function OrderLineBuilder({
+    allowFallback = true,
+    disabled = false,
+    lines = [],
+    onChange,
+    productOptions = [],
+    stockError = '',
+    stockLoading = false,
+    stockRows = [],
+    value,
+    warehouseId = '',
+}) {
     const [items, setItems] = useState(lines.length ? lines : [blankLine]);
     const controlled = Array.isArray(value);
     const activeItems = controlled ? value : items;
+    const stockByProduct = stockRows.reduce((map, row) => {
+        const productId = String(row.product_id || row.product?.id || '');
+
+        if (!productId) {
+            return map;
+        }
+
+        const current = map.get(productId) || { available: 0, row };
+        map.set(productId, {
+            available: current.available + Number(row.available_base_quantity || 0),
+            row: current.row || row,
+        });
+
+        return map;
+    }, new Map());
+    const demandByProduct = activeItems.reduce((map, item) => {
+        const demand = calculateLineDemand(item, productOptions);
+
+        if (!demand) {
+            return map;
+        }
+
+        const productId = String(demand.product.id);
+        const current = map.get(productId) || { focQuantity: 0, orderedQuantity: 0, requiredQuantity: 0 };
+        map.set(productId, {
+            focQuantity: current.focQuantity + demand.focQuantity,
+            orderedQuantity: current.orderedQuantity + demand.orderedQuantity,
+            requiredQuantity: current.requiredQuantity + demand.requiredQuantity,
+        });
+
+        return map;
+    }, new Map());
 
     function updateItems(nextItems) {
         if (!controlled) {
@@ -181,9 +259,17 @@ export default function OrderLineBuilder({ allowFallback = true, disabled = fals
                     const selectedProduct = productOptions.find((product) => String(product.id) === String(item.product_id));
                     const unitOptions = getProductUnits(selectedProduct);
                     const preview = calculatePreview(item, productOptions);
+                    const lineDemand = calculateLineDemand(item, productOptions);
+                    const productDemand = lineDemand ? demandByProduct.get(String(lineDemand.product.id)) : null;
+                    const productStock = lineDemand ? stockByProduct.get(String(lineDemand.product.id)) : null;
+                    const availableQuantity = Number(productStock?.available || 0);
+                    const requiredQuantity = Number(productDemand?.requiredQuantity || 0);
+                    const shortageQuantity = Math.max(0, requiredQuantity - availableQuantity);
+                    const unit = stockUnit(selectedProduct, productStock?.row);
+                    const showStockNote = Boolean(lineDemand && warehouseId);
 
                     return (
-                        <div className="order-line-draft-row" key={item.id}>
+                        <div className={`order-line-draft-row ${shortageQuantity > 0 ? 'has-stock-warning' : ''}`} key={item.id}>
                             <label>
                                 <span>Product</span>
                                 <select
@@ -253,6 +339,20 @@ export default function OrderLineBuilder({ allowFallback = true, disabled = fals
                             <button className="icon-btn small" disabled={disabled || activeItems.length === 1} onClick={() => removeLine(item.id)} title="Remove product" type="button">
                                 <Icon name="trash" size={14} />
                             </button>
+                            {showStockNote && (
+                                <div className={`order-line-stock-note ${shortageQuantity > 0 ? 'is-short' : ''}`}>
+                                    <strong>{shortageQuantity > 0 ? 'Insufficient stock' : 'Stock available'}</strong>
+                                    <span>Required {formatAmount(requiredQuantity)} {unit}</span>
+                                    <span>Available {stockLoading ? '...' : formatAmount(availableQuantity)} {unit}</span>
+                                    <small>
+                                        {stockError
+                                            ? stockError
+                                            : shortageQuantity > 0
+                                                ? `Short ${formatAmount(shortageQuantity)} ${unit}`
+                                                : `Includes ${formatAmount(productDemand?.focQuantity || 0)} FOC ${unit}`}
+                                    </small>
+                                </div>
+                            )}
                         </div>
                     );
                 })}

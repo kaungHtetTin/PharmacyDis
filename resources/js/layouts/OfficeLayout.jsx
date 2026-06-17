@@ -10,37 +10,43 @@ function formatBadgeCount(value) {
     return count > 99 ? '99+' : String(count);
 }
 
-export default function OfficeLayout({ activePage, getPageUrl, onNavigate, onSwitchApp, salesUrl, children }) {
+export default function OfficeLayout({ activePage, getPageUrl, onNavigate, children }) {
     const [theme, setTheme] = useState('light');
-    const [submittedOrderCount, setSubmittedOrderCount] = useState(0);
+    const [actionCounts, setActionCounts] = useState({});
+    const [actionTotal, setActionTotal] = useState(0);
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    const hasSubmittedOrders = submittedOrderCount > 0;
+    const hasActionAlerts = actionTotal > 0;
 
     useEffect(() => {
         let active = true;
 
-        async function loadSubmittedOrderCount() {
+        async function loadActionCounts() {
             try {
-                const response = await api.get('/office/orders?status=submitted&per_page=1');
+                const response = await api.get('/office/dashboard');
+                const counts = response.nav_action_counts || {};
 
                 if (active) {
-                    setSubmittedOrderCount(Number(response.meta?.total ?? response.data?.length ?? 0));
+                    setActionCounts(counts);
+                    setActionTotal(Number(response.total_action_count ?? Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0)));
                 }
             } catch (error) {
                 if (active) {
-                    setSubmittedOrderCount(0);
+                    setActionCounts({});
+                    setActionTotal(0);
                 }
             }
         }
 
-        loadSubmittedOrderCount();
-        const interval = window.setInterval(loadSubmittedOrderCount, 30000);
+        loadActionCounts();
+        const interval = window.setInterval(loadActionCounts, 30000);
 
-        window.addEventListener('office-submitted-orders-changed', loadSubmittedOrderCount);
+        window.addEventListener('office-submitted-orders-changed', loadActionCounts);
+        window.addEventListener('office-operational-actions-changed', loadActionCounts);
 
         return () => {
             active = false;
-            window.removeEventListener('office-submitted-orders-changed', loadSubmittedOrderCount);
+            window.removeEventListener('office-submitted-orders-changed', loadActionCounts);
+            window.removeEventListener('office-operational-actions-changed', loadActionCounts);
             window.clearInterval(interval);
         };
     }, [activePage]);
@@ -53,39 +59,33 @@ export default function OfficeLayout({ activePage, getPageUrl, onNavigate, onSwi
                     {officeNavSections.map((section) => (
                         <div className="nav-section" key={section.label}>
                             <p>{section.label}</p>
-                            {section.items.map(([key, icon, label]) => (
-                                <a
-                                    className={`${activePage === key ? 'active' : ''}${key === 'orders' && hasSubmittedOrders ? ' has-alert' : ''}`.trim()}
-                                    href={getPageUrl(key)}
-                                    key={key}
-                                    onClick={(event) => {
-                                        event.preventDefault();
-                                        onNavigate(key);
-                                    }}
-                                >
-                                    <Icon name={icon} size={17} />
-                                    <span>{label}</span>
-                                    {key === 'orders' && hasSubmittedOrders && (
-                                        <strong aria-label={`${submittedOrderCount} submitted orders need review`} className="nav-alert-badge">
-                                            {formatBadgeCount(submittedOrderCount)}
-                                        </strong>
-                                    )}
-                                </a>
-                            ))}
+                            {section.items.map(([key, icon, label]) => {
+                                const actionCount = Number(actionCounts[key] || 0);
+                                const hasAlert = actionCount > 0;
+
+                                return (
+                                    <a
+                                        className={activePage === key ? 'active' : ''}
+                                        href={getPageUrl(key)}
+                                        key={key}
+                                        onClick={(event) => {
+                                            event.preventDefault();
+                                            onNavigate(key);
+                                        }}
+                                    >
+                                        <Icon name={icon} size={17} />
+                                        <span>{label}</span>
+                                        {hasAlert && (
+                                            <strong aria-label={`${actionCount} ${label} items need action`} className="nav-alert-badge">
+                                                {formatBadgeCount(actionCount)}
+                                            </strong>
+                                        )}
+                                    </a>
+                                );
+                            })}
                         </div>
                     ))}
                 </nav>
-                <a
-                    className="app-switch"
-                    href={salesUrl}
-                    onClick={(event) => {
-                        event.preventDefault();
-                        onSwitchApp();
-                    }}
-                >
-                    <Icon name="user" size={16} />
-                    <span>Sales rep app</span>
-                </a>
                 <div className="admin-profile">
                     <span>AD</span>
                     <div>
@@ -112,9 +112,9 @@ export default function OfficeLayout({ activePage, getPageUrl, onNavigate, onSwi
                         </button>
                         <button className="icon-btn" type="button" title="Notifications">
                             <Icon name="bell" size={17} />
-                            {hasSubmittedOrders && (
-                                <strong aria-label={`${submittedOrderCount} submitted orders need review`} className="topbar-alert-badge">
-                                    {formatBadgeCount(submittedOrderCount)}
+                            {hasActionAlerts && (
+                                <strong aria-label={`${actionTotal} operational items need action`} className="topbar-alert-badge">
+                                    {formatBadgeCount(actionTotal)}
                                 </strong>
                             )}
                         </button>

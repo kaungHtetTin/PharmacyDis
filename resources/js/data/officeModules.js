@@ -160,8 +160,9 @@ export const officeModules = {
     'stock-transfers': {
         eyebrow: 'Warehouse',
         title: 'Stock Transfers',
-        description: 'Move stock between warehouses by selecting available product batches and exact base-unit quantities.',
+        description: 'Review completed warehouse transfers and open a focused transfer form when stock needs to move.',
         primaryAction: 'Create transfer',
+        primaryActionTarget: 'stock-transfer-create',
         showEditAction: false,
         showViewAction: false,
         columns: [
@@ -172,6 +173,16 @@ export const officeModules = {
             { key: 'baseQuantity', label: 'Base Qty' },
             { key: 'date', label: 'Date' },
         ],
+        rows: emptyRows,
+    },
+    'stock-transfer-create': {
+        eyebrow: 'Warehouse',
+        title: 'Create Stock Transfer',
+        description: 'Move stock between warehouses by selecting available product batches and exact base-unit quantities.',
+        primaryAction: 'Create transfer',
+        showEditAction: false,
+        showViewAction: false,
+        columns: [],
         rows: emptyRows,
     },
     receiving: {
@@ -214,6 +225,7 @@ export const officeModules = {
             { key: 'rep', label: 'Sales Rep' },
             { key: 'company', label: 'Company' },
             { key: 'submittedDate', label: 'Date' },
+            { key: 'requestedDeliveryDate', label: 'Requested Delivery' },
             { key: 'baseQuantity', label: 'Base Qty' },
             { key: 'creditStatus', label: 'Credit', type: 'status' },
             { key: 'stockStatus', label: 'Stock', type: 'status' },
@@ -228,11 +240,10 @@ export const officeModules = {
         description: 'Generate invoices from approved order records, then print sales invoices, delivery vouchers, and payment receipts.',
         primaryAction: 'Generate invoice from order',
         primaryActionTarget: 'orders',
-        viewActionLabel: 'View invoice',
+        detailActionLabel: 'View invoice',
+        detailPageKey: 'invoice-detail',
+        showViewAction: false,
         showEditAction: false,
-        rowActions: [
-            { label: 'Print invoice', openDrawer: true },
-        ],
         columns: [
             { key: 'invoice', label: 'Invoice' },
             { key: 'order', label: 'Order' },
@@ -277,6 +288,9 @@ export const officeModules = {
         description: 'Review customer outstanding balances from invoices and payments.',
         primaryAction: 'Record customer payment',
         hidePrimaryAction: true,
+        detailActionLabel: 'View invoice',
+        detailPageKey: 'invoice-detail',
+        showViewAction: false,
         showEditAction: false,
         rowActions: [
             { label: 'Record payment', financeAction: 'customerPayment' },

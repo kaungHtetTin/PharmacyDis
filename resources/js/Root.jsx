@@ -3,6 +3,7 @@ import OfficeLayout from './layouts/OfficeLayout';
 import SalesRepLayout from './layouts/SalesRepLayout';
 import { officeNav, salesNav } from './data/navigation';
 import DashboardPage from './pages/office/DashboardPage';
+import InvoiceDetailPage from './pages/office/InvoiceDetailPage';
 import OfficeLoginPage from './pages/office/OfficeLoginPage';
 import OfficeModulePage from './pages/office/OfficeModulePage';
 import PharmacyDetailPage from './pages/office/PharmacyDetailPage';
@@ -14,7 +15,7 @@ import SalesPharmacyDetailPage from './pages/sales/SalesPharmacyDetailPage';
 import SalesProfilePage from './pages/sales/SalesProfilePage';
 import { useAuth } from './services/auth.jsx';
 
-const officePages = [...officeNav.map(([key]) => key), 'login', 'pharmacies-detail', 'representatives-detail', 'inventory-detail'];
+const officePages = [...officeNav.map(([key]) => key), 'login', 'pharmacies-detail', 'representatives-detail', 'inventory-detail', 'invoice-detail', 'stock-transfer-create'];
 const salesPages = [...salesNav.map(([key]) => key), 'login', 'profile', 'pharmacies-detail'];
 
 const appConfig = window.appConfig || {};
@@ -69,17 +70,15 @@ export default function Root() {
             <SalesRepLayout
                 activePage={page === 'pharmacies-detail' ? 'pharmacies' : page}
                 getPageUrl={(page) => pageUrl('sales', page)}
-                officeUrl={pageUrl('office', 'dashboard')}
-                onNavigate={(page) => navigate('sales', page)}
-                onSwitchApp={() => navigate('office', 'dashboard')}
+                onNavigate={(page, params) => navigate('sales', page, params)}
             >
                 {page === 'dashboard'
                     ? <SalesDashboardPage activePage={page} onNavigate={(page) => navigate('sales', page)} />
                     : page === 'profile'
                         ? <SalesProfilePage onNavigate={(page) => navigate('sales', page)} />
                         : page === 'pharmacies-detail'
-                            ? <SalesPharmacyDetailPage onNavigate={(page) => navigate('sales', page)} />
-                            : <SalesModulePage pageKey={page} onNavigate={(page) => navigate('sales', page)} />}
+                            ? <SalesPharmacyDetailPage onNavigate={(page, params) => navigate('sales', page, params)} />
+                            : <SalesModulePage pageKey={page} onNavigate={(page, params) => navigate('sales', page, params)} />}
             </SalesRepLayout>
         );
     }
@@ -90,16 +89,15 @@ export default function Root() {
 
     return (
         <OfficeLayout
-            activePage={page === 'inventory-detail' ? 'inventory' : page === 'representatives-detail' || page === 'pharmacies-detail' ? page.replace('-detail', '') : page}
+            activePage={page === 'stock-transfer-create' ? 'stock-transfers' : page === 'inventory-detail' ? 'inventory' : page === 'invoice-detail' ? 'invoices' : page === 'representatives-detail' || page === 'pharmacies-detail' ? page.replace('-detail', '') : page}
             getPageUrl={(page) => pageUrl('office', page)}
             onNavigate={(page, params) => navigate('office', page, params)}
-            onSwitchApp={() => navigate('sales', 'dashboard')}
-            salesUrl={pageUrl('sales', 'dashboard')}
         >
             {page === 'dashboard' && <DashboardPage activePage={page} />}
             {page === 'pharmacies-detail' && <PharmacyDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {page === 'representatives-detail' && <RepresentativeDetailPage onNavigate={(page) => navigate('office', page)} />}
-            {page !== 'dashboard' && page !== 'pharmacies-detail' && page !== 'representatives-detail' && (
+            {page === 'invoice-detail' && <InvoiceDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
+            {page !== 'dashboard' && page !== 'pharmacies-detail' && page !== 'representatives-detail' && page !== 'invoice-detail' && (
                 <OfficeModulePage pageKey={page} onNavigate={(page, params) => navigate('office', page, params)} />
             )}
         </OfficeLayout>

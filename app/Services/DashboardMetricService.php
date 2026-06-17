@@ -2,25 +2,32 @@
 
 namespace App\Services;
 
+use App\Models\CompanyPayable;
+use App\Models\CustomerCompanyCreditStatus;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\SalesOrder;
 use App\Models\StockBatch;
+use App\Models\StockReceipt;
 use Illuminate\Support\Facades\DB;
 
 class DashboardMetricService
 {
     public function officeSummary(): array
     {
+        $submittedOrderCount = SalesOrder::where('status', 'submitted')->count();
+        $openInvoiceCount = Invoice::where('balance_amount', '>', 0)->count();
+        $lowStockProductCount = $this->lowStockProductCount();
+        $navActionCounts = $this->navActionCounts($openInvoiceCount, $lowStockProductCount);
+
         return [
-            'pending_orders' => SalesOrder::where('status', 'submitted')->count(),
-            'unpaid_invoices' => Invoice::whereIn('status', ['issued', 'partial'])->count(),
+            'pending_orders' => $submittedOrderCount,
+            'unpaid_invoices' => $openInvoiceCount,
             'monthly_sales' => Invoice::whereMonth('invoice_date', now()->month)->sum('total_amount'),
-            'low_stock_products' => StockBatch::query()
-                ->select('product_id')
-                ->groupBy('product_id')
-                ->havingRaw('SUM(available_base_quantity) <= 0')
-                ->count(),
+            'low_stock_products' => $lowStockProductCount,
+            'nav_action_counts' => $navActionCounts,
+            'total_action_count' => $this->totalActionCount($navActionCounts),
+            'alerts' => $this->operationalAlerts($navActionCounts),
             'top_products' => $this->topProducts(),
             'top_customers' => $this->topCustomers(),
             'top_representatives' => $this->topRepresentatives(),
@@ -41,6 +48,114 @@ class DashboardMetricService
                 ->sum('total_amount'),
             'monthly_performance' => $this->monthlyPerformance($salesRepresentativeId),
         ];
+    }
+
+    private function navActionCounts(int $openInvoiceCount, int $lowStockProductCount): array
+    {
+        $openPayableCount = CompanyPayable::query()
+            ->where('balance_amount', '>', 0)
+            ->where('status', '!=', 'paid')
+            ->count();
+        $creditAttentionCount = CustomerCompanyCreditStatus::query()
+            ->whereIn('credit_status', ['warning', 'blocked'])
+            ->distinct('customer_id')
+            ->count('customer_id');
+        $ordersNeedingActionCount = SalesOrder::query()
+            ->whereIn('status', ['submitted', 'approved', 'invoiced'])
+            ->count();
+        $receivingPaymentAttentionCount = StockReceipt::query()
+            ->whereHas('payable', fn ($query) => $query
+                ->where('balance_amount', '>', 0)
+                ->where('status', '!=', 'paid'))
+            ->count();
+
+        return [
+            'pharmacies' => $creditAttentionCount,
+            'orders' => $ordersNeedingActionCount,
+            'invoices' => $openInvoiceCount,
+            'receivables' => $openInvoiceCount,
+            'receiving' => $receivingPaymentAttentionCount,
+            'inventory' => $lowStockProductCount,
+            'payables' => $openPayableCount,
+        ];
+    }
+
+    private function totalActionCount(array $navActionCounts): int
+    {
+        return (int) (
+            ($navActionCounts['pharmacies'] ?? 0)
+            + ($navActionCounts['orders'] ?? 0)
+            + ($navActionCounts['receivables'] ?? 0)
+            + ($navActionCounts['inventory'] ?? 0)
+            + ($navActionCounts['payables'] ?? 0)
+        );
+    }
+
+    private function operationalAlerts(array $navActionCounts): array
+    {
+        $alerts = [];
+        $overdueReceivableCount = Invoice::query()
+            ->where('balance_amount', '>', 0)
+            ->whereDate('due_date', '<', now()->toDateString())
+            ->count();
+        $overduePayableCount = CompanyPayable::query()
+            ->where('balance_amount', '>', 0)
+            ->where('status', '!=', 'paid')
+            ->whereDate('due_date', '<', now()->toDateString())
+            ->count();
+
+        if (($navActionCounts['orders'] ?? 0) > 0) {
+            $alerts[] = [
+                'title' => 'Orders need office action',
+                'detail' => "{$navActionCounts['orders']} orders are waiting for approval, invoicing, or delivery.",
+                'status' => 'Warning',
+            ];
+        }
+
+        if ($overdueReceivableCount > 0) {
+            $alerts[] = [
+                'title' => 'Overdue receivables',
+                'detail' => "{$overdueReceivableCount} customer invoices are past due.",
+                'status' => 'Blocked',
+            ];
+        }
+
+        if ($overduePayableCount > 0) {
+            $alerts[] = [
+                'title' => 'Overdue payables',
+                'detail' => "{$overduePayableCount} supplier payables are past due.",
+                'status' => 'Warning',
+            ];
+        }
+
+        if (($navActionCounts['inventory'] ?? 0) > 0) {
+            $alerts[] = [
+                'title' => 'Low stock products',
+                'detail' => "{$navActionCounts['inventory']} products are at or below their reorder threshold.",
+                'status' => 'Warning',
+            ];
+        }
+
+        if (($navActionCounts['pharmacies'] ?? 0) > 0) {
+            $alerts[] = [
+                'title' => 'Pharmacy credit attention',
+                'detail' => "{$navActionCounts['pharmacies']} pharmacies have warning or blocked company credit.",
+                'status' => 'Warning',
+            ];
+        }
+
+        return array_slice($alerts, 0, 5);
+    }
+
+    private function lowStockProductCount(): int
+    {
+        return StockBatch::query()
+            ->join('products', 'products.id', '=', 'stock_batches.product_id')
+            ->select('stock_batches.product_id')
+            ->groupBy('stock_batches.product_id')
+            ->havingRaw('SUM(stock_batches.available_base_quantity) <= MAX(products.low_stock_threshold_base_units)')
+            ->get()
+            ->count();
     }
 
     private function topProducts(): array

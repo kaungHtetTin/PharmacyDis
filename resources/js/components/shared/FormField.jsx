@@ -1,7 +1,7 @@
 import Icon from './Icon';
 
-export default function FormField({ accept = '', error = '', helperText = '', label, name, onChange, options = [], placeholder, required = false, type = 'text', value = '', ...inputProps }) {
-    const fieldClassName = `form-field${error ? ' has-error' : ''}`;
+export default function FormField({ accept = '', className = '', error = '', helperText = '', label, name, onChange, options = [], placeholder, required = false, type = 'text', value = '', ...inputProps }) {
+    const fieldClassName = `form-field${className ? ` ${className}` : ''}${error ? ' has-error' : ''}`;
     const valueProps = onChange ? { onChange, value } : { defaultValue: value };
 
     if (type === 'textarea') {

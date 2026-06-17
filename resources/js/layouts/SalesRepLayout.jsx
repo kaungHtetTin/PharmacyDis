@@ -10,7 +10,7 @@ const quickActions = [
     { label: 'Stock', href: 'stock', icon: 'box' },
 ];
 
-export default function SalesRepLayout({ activePage, getPageUrl, officeUrl, onNavigate, onSwitchApp, children }) {
+export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, children }) {
     const { user } = useAuth();
     const [profileOpen, setProfileOpen] = useState(false);
     const profileMenuRef = useRef(null);
@@ -125,16 +125,6 @@ export default function SalesRepLayout({ activePage, getPageUrl, officeUrl, onNa
                             </div>
                         )}
                     </div>
-                    <a
-                        className="btn secondary"
-                        href={officeUrl}
-                        onClick={(event) => {
-                            event.preventDefault();
-                            onSwitchApp();
-                        }}
-                    >
-                        Office
-                    </a>
                 </div>
             </header>
 

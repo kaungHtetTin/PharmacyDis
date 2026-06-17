@@ -4,7 +4,6 @@ import DataTable from '../../components/shared/DataTable';
 import Drawer from '../../components/shared/Drawer';
 import FinanceReview from '../../components/shared/FinanceReview';
 import FormField from '../../components/shared/FormField';
-import InvoiceDetailDrawer from '../../components/shared/InvoiceDetailDrawer';
 import Modal from '../../components/shared/Modal';
 import OrderLineBuilder from '../../components/shared/OrderLineBuilder';
 import { isBlockedCredit } from '../../components/shared/OrderCreditGate';
@@ -30,6 +29,10 @@ function titleCase(value) {
 
 function dateOnly(value) {
     return value ? String(value).slice(0, 10) : '-';
+}
+
+function notifyOperationalActionsChanged() {
+    window.dispatchEvent(new Event('office-operational-actions-changed'));
 }
 
 function PaymentDetailDrawer({ onClose, open, payment }) {
@@ -139,6 +142,9 @@ function PharmacyOrderModal({
     productsLoading = false,
     representatives = [],
     representativesLoading = false,
+    stockError = '',
+    stockLoading = false,
+    stockRows = [],
     submitting = false,
     warehouses = [],
     warehousesLoading = false,
@@ -168,14 +174,14 @@ function PharmacyOrderModal({
                         </div>
                     </div>
                     <div className="sales-order-context-grid">
-                        <label className="form-field">
+                        <label className="form-field order-route-company">
                             <span>Company</span>
                             <select disabled={submitting} name="company_id" onChange={onChange} required value={form.company_id}>
                                 <option value="" disabled>Select company</option>
                                 {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
                             </select>
                         </label>
-                        <label className="form-field">
+                        <label className="form-field order-route-sales">
                             <span>Sales representative</span>
                             <select disabled={!form.company_id || representativesLoading || submitting} name="sales_representative_id" onChange={onChange} value={form.sales_representative_id}>
                                 <option value="">{representativesLoading ? 'Loading representatives' : 'No representative'}</option>
@@ -186,7 +192,7 @@ function PharmacyOrderModal({
                                 ))}
                             </select>
                         </label>
-                        <label className="form-field">
+                        <label className="form-field order-route-warehouse">
                             <span>Reserve from warehouse</span>
                             <select disabled={warehousesLoading || submitting} name="warehouse_id" onChange={onChange} required value={form.warehouse_id}>
                                 <option value="" disabled>{warehousesLoading ? 'Loading warehouses' : 'Select warehouse'}</option>
@@ -197,7 +203,7 @@ function PharmacyOrderModal({
                                 ))}
                             </select>
                         </label>
-                        <FormField label="Requested delivery date" name="requested_delivery_date" onChange={onChange} type="date" value={form.requested_delivery_date} />
+                        <FormField className="order-route-date" label="Requested delivery date" name="requested_delivery_date" onChange={onChange} type="date" value={form.requested_delivery_date} />
                         <article className={`order-credit-summary ${blocked ? 'is-blocked' : ''}`}>
                             <div>
                                 <span>Company credit</span>
@@ -219,7 +225,11 @@ function PharmacyOrderModal({
                     disabled={!form.company_id || blocked || productsLoading || submitting}
                     onChange={onLineChange}
                     productOptions={products}
+                    stockError={stockError}
+                    stockLoading={stockLoading}
+                    stockRows={stockRows}
                     value={lines}
+                    warehouseId={form.warehouse_id}
                 />
                 <p className="helper-copy">
                     This order is approved immediately. Stock is reserved from the selected warehouse by nearest expiry date.
@@ -249,7 +259,6 @@ export default function PharmacyDetailPage({ onNavigate }) {
     const [approvalForm, setApprovalForm] = useState({ warehouse_id: '' });
     const [approvalError, setApprovalError] = useState('');
     const [approvalSubmitting, setApprovalSubmitting] = useState(false);
-    const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [selectedPayment, setSelectedPayment] = useState(null);
     const [orderPage, setOrderPage] = useState(1);
     const [invoicePage, setInvoicePage] = useState(1);
@@ -260,6 +269,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
     const warehousesResource = useApiResource(orderModalOpen || approvalModalOpen ? '/office/warehouses?per_page=100' : '');
     const productsResource = useApiResource(orderModalOpen && orderForm.company_id ? `/lookups/products?company_id=${orderForm.company_id}` : '');
     const representativesResource = useApiResource(orderModalOpen && orderForm.company_id ? `/lookups/sales-representatives?company_id=${orderForm.company_id}` : '');
+    const stockResource = useApiResource(orderModalOpen && orderForm.company_id && orderForm.warehouse_id ? `/office/stock/current?company_id=${orderForm.company_id}&warehouse_id=${orderForm.warehouse_id}&per_page=100` : '', { keepPreviousData: true });
     const detail = detailResource.data || {};
     const customer = detail.customer || {};
     const orders = detail.orders ? mapOrders({ data: detail.orders }) : [];
@@ -283,7 +293,15 @@ export default function PharmacyDetailPage({ onNavigate }) {
     const warehouses = unwrapCollection(warehousesResource.data);
     const products = unwrapCollection(productsResource.data);
     const representatives = unwrapCollection(representativesResource.data);
+    const stockRows = unwrapCollection(stockResource.data);
     const goToPage = (setter) => (page) => setter(Math.max(1, page));
+    const openInvoiceDetail = (invoice) => {
+        if (!invoice?.id) {
+            return;
+        }
+
+        onNavigate?.('invoice-detail', { invoice_id: invoice.id });
+    };
     const approveOrder = async (record) => {
         if (!record?.id || actionBusy) {
             return;
@@ -327,7 +345,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
             await api.post(`/office/orders/${approvalOrder.id}/approve`, {
                 warehouse_id: approvalForm.warehouse_id,
             });
-            window.dispatchEvent(new Event('office-submitted-orders-changed'));
+            notifyOperationalActionsChanged();
             detailResource.refresh();
             closeApprovalModal(true);
         } catch (error) {
@@ -354,6 +372,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
         try {
             const invoice = await api.post(`/office/orders/${record.id}/generate-invoice`);
             rememberGeneratedInvoice(invoice);
+            notifyOperationalActionsChanged();
             detailResource.refresh();
         } catch (error) {
             setActionError(error.message);
@@ -430,6 +449,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
                         quantity: Number(line.quantity || line.orderedQuantity || 1),
                     })),
             });
+            notifyOperationalActionsChanged();
             detailResource.refresh();
             setOrderModalOpen(false);
         } catch (error) {
@@ -526,7 +546,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
 
             <HistorySection
                 actions={[
-                    { label: 'View invoice', icon: 'V', onClick: setSelectedInvoice },
+                    { label: 'View invoice', icon: 'V', onClick: openInvoiceDetail },
                     { label: 'Open order detail', icon: 'cart', onClick: (record) => record.sales_order_id && onNavigate?.('orders', { order_id: record.sales_order_id }) },
                 ]}
                 columns={[
@@ -542,7 +562,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 error={detailResource.error}
                 loading={detailResource.loading}
                 onPageChange={goToPage(setInvoicePage)}
-                onRowClick={setSelectedInvoice}
+                onRowClick={openInvoiceDetail}
                 page={invoicePage}
                 rows={invoices}
                 title="Invoice history"
@@ -564,21 +584,6 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 page={paymentPage}
                 rows={payments}
                 title="Payment history"
-            />
-
-            <InvoiceDetailDrawer
-                actions={(
-                    <>
-                        {selectedInvoice?.sales_order_id && (
-                            <button className="btn secondary" onClick={() => onNavigate?.('orders', { order_id: selectedInvoice.sales_order_id })} type="button">Open order detail</button>
-                        )}
-                        <button className="btn primary" onClick={() => setSelectedInvoice(null)} type="button">Done</button>
-                    </>
-                )}
-                customerName={customer.name}
-                invoice={selectedInvoice}
-                onClose={() => setSelectedInvoice(null)}
-                open={Boolean(selectedInvoice)}
             />
 
             <PaymentDetailDrawer
@@ -635,6 +640,9 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 productsLoading={productsResource.loading}
                 representatives={representatives}
                 representativesLoading={representativesResource.loading}
+                stockError={stockResource.error}
+                stockLoading={stockResource.loading}
+                stockRows={stockRows}
                 submitting={orderSubmitting}
                 warehouses={warehouses}
                 warehousesLoading={warehousesResource.loading}

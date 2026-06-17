@@ -103,7 +103,7 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
 
     function openRecord(record) {
         if (screen.detailPageKey) {
-            onNavigate?.(screen.detailPageKey);
+            onNavigate?.(screen.detailPageKey, { customer_id: record?.id || '' });
             return;
         }
 
