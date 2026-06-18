@@ -23,6 +23,7 @@ class User extends Authenticatable
         'name',
         'email',
         'phone',
+        'profile_image_path',
         'user_type',
         'status',
         'password',
@@ -56,5 +57,19 @@ class User extends Authenticatable
     public function salesRepresentative()
     {
         return $this->hasOne(SalesRepresentative::class);
+    }
+
+    public function permissions(): array
+    {
+        return $this->role?->permissions ?? [];
+    }
+
+    public function hasPermission(string $permission): bool
+    {
+        if ($this->user_type === 'office' && in_array($this->role?->name, ['admin', 'super_admin'], true)) {
+            return true;
+        }
+
+        return $this->role?->hasPermission($permission) ?? false;
     }
 }

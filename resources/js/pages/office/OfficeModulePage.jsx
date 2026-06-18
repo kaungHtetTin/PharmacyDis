@@ -5,9 +5,11 @@ import DataTable from '../../components/shared/DataTable';
 import DocumentPreviewSet from '../../components/shared/DocumentPreviewSet';
 import Drawer from '../../components/shared/Drawer';
 import FilterToolbar from '../../components/shared/FilterToolbar';
+import FinanceReportOverview from '../../components/shared/FinanceReportOverview';
 import FinanceReview from '../../components/shared/FinanceReview';
 import FormField from '../../components/shared/FormField';
 import Icon from '../../components/shared/Icon';
+import { invoicePrintPageUrl } from '../../components/shared/InvoiceDetailDrawer';
 import Modal from '../../components/shared/Modal';
 import OrderCreateForm from '../../components/shared/OrderCreateForm';
 import { getCompanyCreditStatus, isBlockedCredit, normalizeCreditStatuses } from '../../components/shared/OrderCreditGate';
@@ -20,6 +22,7 @@ import ProductUnitGrid from '../../components/shared/ProductUnitGrid';
 import RepAssignmentGrid from '../../components/shared/RepAssignmentGrid';
 import ReportsWorkspace from '../../components/shared/ReportsWorkspace';
 import RuleSetupPreview from '../../components/shared/RuleSetupPreview';
+import SalesReportSummary from '../../components/shared/SalesReportSummary';
 import SalesOrderDetail from '../../components/shared/SalesOrderDetail';
 import SettingsWorkspace from '../../components/shared/SettingsWorkspace';
 import StatusBadge from '../../components/shared/StatusBadge';
@@ -160,6 +163,25 @@ const blankCompanyPaymentForm = {
     payment_method: 'cash',
     reference_no: '',
     note: '',
+};
+
+const blankFinanceTransactionForm = {
+    direction: 'income',
+    category: 'sales_collection',
+    transaction_date: '',
+    amount: '',
+    payment_method: 'cash',
+    reference_no: '',
+    description: '',
+    status: 'recorded',
+};
+
+const blankFinanceCategoryForm = {
+    name: '',
+    code: '',
+    direction: 'income',
+    description: '',
+    status: 'active',
 };
 
 const blankApprovalForm = {
@@ -595,6 +617,33 @@ function ProductCategoryForm({ form, onChange, parentOptions = [], selectedId = 
                     </select>
                 </label>
             </div>
+        </div>
+    );
+}
+
+function FinanceCategoryForm({ form, onChange }) {
+    return (
+        <div className="company-form-layout">
+            <div className="crud-grid">
+                <FormField label="Category name" name="name" onChange={onChange} required value={form.name} />
+                <FormField label="Category code" name="code" onChange={onChange} placeholder="Auto-generated if empty" value={form.code} />
+                <label className="form-field">
+                    <span>Type</span>
+                    <select name="direction" onChange={onChange} required value={form.direction}>
+                        <option value="income">Income</option>
+                        <option value="outcome">Outcome</option>
+                        <option value="both">Both</option>
+                    </select>
+                </label>
+                <label className="form-field">
+                    <span>Status</span>
+                    <select name="status" onChange={onChange} value={form.status}>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </label>
+            </div>
+            <FormField label="Description" name="description" onChange={onChange} type="textarea" value={form.description} />
         </div>
     );
 }
@@ -1209,6 +1258,51 @@ function CompanyPaymentForm({ companies = [], form, onChange, record }) {
     );
 }
 
+function FinanceTransactionForm({ categories: categoryOptions = fallbackFinanceCategoryOptions, form, onChange }) {
+    const categories = categoryOptions.filter((category) => !category.direction || category.direction === 'both' || category.direction === form.direction);
+
+    return (
+        <div className="company-form-layout">
+            <div className="crud-grid">
+                <label className="form-field">
+                    <span>Type</span>
+                    <select name="direction" onChange={onChange} required value={form.direction}>
+                        <option value="income">Income</option>
+                        <option value="outcome">Outcome</option>
+                    </select>
+                </label>
+                <label className="form-field">
+                    <span>Category</span>
+                    <select name="category" onChange={onChange} required value={form.category}>
+                        {categories.map((category) => (
+                            <option key={category.value} value={category.value}>{category.label}</option>
+                        ))}
+                    </select>
+                </label>
+                <FormField label="Date" name="transaction_date" onChange={onChange} type="date" value={form.transaction_date} />
+                <FormField label="Amount" min="1" name="amount" onChange={onChange} required type="number" value={form.amount} />
+                <label className="form-field">
+                    <span>Payment method</span>
+                    <select name="payment_method" onChange={onChange} value={form.payment_method}>
+                        {paymentMethodOptions.map((method) => (
+                            <option key={method.value} value={method.value}>{method.label}</option>
+                        ))}
+                    </select>
+                </label>
+                <FormField label="Reference no." name="reference_no" onChange={onChange} value={form.reference_no} />
+                <label className="form-field">
+                    <span>Status</span>
+                    <select name="status" onChange={onChange} value={form.status}>
+                        <option value="recorded">Recorded</option>
+                        <option value="void">Void</option>
+                    </select>
+                </label>
+            </div>
+            <FormField label="Description" name="description" onChange={onChange} placeholder="Short finance note" type="textarea" value={form.description} />
+        </div>
+    );
+}
+
 function OfficeOrderForm({
     companies = [],
     customers = [],
@@ -1791,7 +1885,6 @@ function Details({ defaultUnitBusy = false, onDefaultSalesUnitChange, record, sc
             )}
             {record?.orderItems && (
                 <SalesOrderDetail
-                    approvalCards={record.approvalCards}
                     focItems={record.focItems}
                     orderItems={record.orderItems}
                     totals={record.totals}
@@ -1913,6 +2006,28 @@ function getRecordTitle(record, fallback = 'Selected record') {
     return record?.name || record?.order || record?.invoice || record?.receipt || record?.setting || record?.company || fallback;
 }
 
+function OperationListModeSwitch({ actionOnly, onChange }) {
+    return (
+        <div className="operation-list-mode">
+            <div>
+                <span>List mode</span>
+                <strong>{actionOnly ? 'Need action only' : 'All records'}</strong>
+                <small>{actionOnly ? 'Showing records that need office follow-up.' : 'Showing every record in this module.'}</small>
+            </div>
+            <div aria-label="List mode" className="operation-mode-segment" role="group">
+                <button aria-pressed={actionOnly} className={actionOnly ? 'active' : ''} onClick={() => onChange(true)} type="button">
+                    <Icon name="bell" size={14} />
+                    <span>Need action</span>
+                </button>
+                <button aria-pressed={!actionOnly} className={actionOnly ? '' : 'active'} onClick={() => onChange(false)} type="button">
+                    <Icon name="grid" size={14} />
+                    <span>Show all</span>
+                </button>
+            </div>
+        </div>
+    );
+}
+
 const blankProductListFilters = {
     company_id: '',
     page: 1,
@@ -1920,7 +2035,26 @@ const blankProductListFilters = {
     status: '',
 };
 
+const blankCompanyListFilters = {
+    page: 1,
+    search: '',
+    status: '',
+};
+
+const blankProductCategoryListFilters = {
+    page: 1,
+    search: '',
+    status: '',
+};
+
+const blankUnitListFilters = {
+    page: 1,
+    search: '',
+    status: '',
+};
+
 const blankPharmacyListFilters = {
+    action_only: true,
     page: 1,
     search: '',
     status: '',
@@ -1940,6 +2074,7 @@ const blankWarehouseListFilters = {
 };
 
 const blankReceivingListFilters = {
+    action_only: true,
     company_id: '',
     page: 1,
     payment_status: '',
@@ -1948,7 +2083,16 @@ const blankReceivingListFilters = {
     warehouse_id: '',
 };
 
+const blankStockTransferListFilters = {
+    company_id: '',
+    destination_warehouse_id: '',
+    page: 1,
+    search: '',
+    source_warehouse_id: '',
+};
+
 const blankInventoryListFilters = {
+    action_only: true,
     company_id: '',
     page: 1,
     search: '',
@@ -1957,6 +2101,7 @@ const blankInventoryListFilters = {
 };
 
 const blankReceivableListFilters = {
+    action_only: true,
     aging: '',
     company_id: '',
     page: 1,
@@ -1965,10 +2110,44 @@ const blankReceivableListFilters = {
 };
 
 const blankPayableListFilters = {
+    action_only: true,
     company_id: '',
     page: 1,
     search: '',
     status: '',
+};
+
+const blankFinanceTransactionListFilters = {
+    category: '',
+    direction: '',
+    page: 1,
+    payment_method: '',
+    search: '',
+    status: '',
+};
+
+const blankFinanceCategoryListFilters = {
+    direction: '',
+    page: 1,
+    search: '',
+    status: '',
+};
+
+const blankOrderListFilters = {
+    action_only: true,
+    page: 1,
+};
+
+const blankInvoiceListFilters = {
+    action_only: true,
+    page: 1,
+};
+
+const blankSalesReportFilters = {
+    company_id: '',
+    duration: 'month',
+    month: String(new Date().getMonth() + 1),
+    year: String(new Date().getFullYear()),
 };
 
 const blankInventoryDetailFilters = {
@@ -1999,11 +2178,66 @@ function buildProductListEndpoint(filters) {
     return `/office/products?${params.toString()}`;
 }
 
+function buildCompanyListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/companies?${params.toString()}`;
+}
+
+function buildProductCategoryListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/product-categories?${params.toString()}`;
+}
+
+function buildUnitListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/units?${params.toString()}`;
+}
+
 function buildPharmacyListEndpoint(filters) {
     const params = new URLSearchParams({
         page: String(filters.page || 1),
         per_page: '15',
     });
+
+    if (filters.action_only) {
+        params.set('action_only', '1');
+    }
 
     if (filters.search) {
         params.set('search', filters.search);
@@ -2060,6 +2294,10 @@ function buildReceivingListEndpoint(filters) {
         per_page: '15',
     });
 
+    if (filters.action_only) {
+        params.set('action_only', '1');
+    }
+
     if (filters.search) {
         params.set('search', filters.search);
     }
@@ -2083,11 +2321,40 @@ function buildReceivingListEndpoint(filters) {
     return `/office/stock-receipts?${params.toString()}`;
 }
 
+function buildStockTransferListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    if (filters.source_warehouse_id) {
+        params.set('source_warehouse_id', filters.source_warehouse_id);
+    }
+
+    if (filters.destination_warehouse_id) {
+        params.set('destination_warehouse_id', filters.destination_warehouse_id);
+    }
+
+    return `/office/stock/transfers?${params.toString()}`;
+}
+
 function buildInventoryListEndpoint(filters) {
     const params = new URLSearchParams({
         page: String(filters.page || 1),
         per_page: '15',
     });
+
+    if (filters.action_only) {
+        params.set('action_only', '1');
+    }
 
     if (filters.search) {
         params.set('search', filters.search);
@@ -2110,6 +2377,7 @@ function buildInventoryListEndpoint(filters) {
 
 function buildReceivableListEndpoint(filters) {
     const params = new URLSearchParams({
+        action_only: filters.action_only ? '1' : '0',
         page: String(filters.page || 1),
         per_page: '15',
     });
@@ -2139,6 +2407,10 @@ function buildPayableListEndpoint(filters) {
         per_page: '15',
     });
 
+    if (filters.action_only) {
+        params.set('action_only', '1');
+    }
+
     if (filters.search) {
         params.set('search', filters.search);
     }
@@ -2154,10 +2426,65 @@ function buildPayableListEndpoint(filters) {
     return `/office/payables?${params.toString()}`;
 }
 
-function buildOrderListEndpoint(orderId = '') {
+function buildFinanceTransactionListEndpoint(filters) {
     const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.direction) {
+        params.set('direction', filters.direction);
+    }
+
+    if (filters.category) {
+        params.set('category', filters.category);
+    }
+
+    if (filters.payment_method) {
+        params.set('payment_method', filters.payment_method);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/finance/transactions?${params.toString()}`;
+}
+
+function buildFinanceCategoryListEndpoint(filters) {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
+        per_page: '15',
+    });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.direction) {
+        params.set('direction', filters.direction);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `/office/finance-categories?${params.toString()}`;
+}
+
+function buildOrderListEndpoint(filters, orderId = '') {
+    const params = new URLSearchParams({
+        page: String(filters.page || 1),
         per_page: '25',
     });
+
+    if (filters.action_only && !orderId) {
+        params.set('action_only', '1');
+    }
 
     if (orderId) {
         params.set('order_id', orderId);
@@ -2166,10 +2493,15 @@ function buildOrderListEndpoint(orderId = '') {
     return `/office/orders?${params.toString()}`;
 }
 
-function buildInvoiceListEndpoint(invoiceId = '') {
+function buildInvoiceListEndpoint(filters, invoiceId = '') {
     const params = new URLSearchParams({
+        page: String(filters.page || 1),
         per_page: '25',
     });
+
+    if (filters.action_only && !invoiceId) {
+        params.set('action_only', '1');
+    }
 
     if (invoiceId) {
         params.set('invoice_id', invoiceId);
@@ -2178,9 +2510,71 @@ function buildInvoiceListEndpoint(invoiceId = '') {
     return `/office/invoices?${params.toString()}`;
 }
 
+function buildSalesReportEndpoint(filters) {
+    const params = new URLSearchParams({
+        duration: filters.duration || 'month',
+        month: filters.month || String(new Date().getMonth() + 1),
+        year: filters.year || String(new Date().getFullYear()),
+    });
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    return `/office/reports/sales/top-representatives?${params.toString()}`;
+}
+
+function buildPharmacyReportEndpoint(filters) {
+    const params = new URLSearchParams({
+        duration: filters.duration || 'month',
+        month: filters.month || String(new Date().getMonth() + 1),
+        year: filters.year || String(new Date().getFullYear()),
+    });
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    return `/office/reports/pharmacies/top-sales?${params.toString()}`;
+}
+
+function buildFinanceReportEndpoint(filters) {
+    const params = new URLSearchParams({
+        duration: filters.duration || 'month',
+        month: filters.month || String(new Date().getMonth() + 1),
+        year: filters.year || String(new Date().getFullYear()),
+    });
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    return `/office/reports/finance/overview?${params.toString()}`;
+}
+
 function orderStatusValue(record) {
     return String(record?.status_value || record?.status || '').toLowerCase();
 }
+
+const fallbackFinanceCategoryOptions = [
+    { label: 'Sales collection', value: 'sales_collection', direction: 'income' },
+    { label: 'Owner capital', value: 'owner_capital', direction: 'income' },
+    { label: 'Other income', value: 'other_income', direction: 'income' },
+    { label: 'Supplier payment', value: 'supplier_payment', direction: 'outcome' },
+    { label: 'Operating expense', value: 'operating_expense', direction: 'outcome' },
+    { label: 'Salary', value: 'salary', direction: 'outcome' },
+    { label: 'Transport', value: 'transport', direction: 'outcome' },
+    { label: 'Other outcome', value: 'other_outcome', direction: 'outcome' },
+    { label: 'Adjustment', value: 'adjustment', direction: 'both' },
+];
+
+const paymentMethodOptions = [
+    { label: 'Cash', value: 'cash' },
+    { label: 'Bank transfer', value: 'bank_transfer' },
+    { label: 'Cheque', value: 'cheque' },
+    { label: 'Mobile money', value: 'mobile_money' },
+    { label: 'Other', value: 'other' },
+];
 
 function buildInventoryDetailEndpoint(productId, filters) {
     if (!productId) {
@@ -2217,12 +2611,20 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const isProductCategoriesPage = pageKey === 'product-categories';
     const isProductsPage = pageKey === 'products';
     const isPayablesPage = pageKey === 'payables';
+    const isFinanceCategoriesPage = pageKey === 'finance-categories';
+    const isFinanceTransactionsPage = pageKey === 'finance';
     const isReceivingPage = pageKey === 'receiving';
     const isReceivablesPage = pageKey === 'receivables';
     const isOrdersPage = pageKey === 'orders';
     const isStockTransfersPage = pageKey === 'stock-transfers';
     const isStockTransferCreatePage = pageKey === 'stock-transfer-create';
-    const isFinancePage = isReceivablesPage || isPayablesPage;
+    const isSalesReportsPage = pageKey === 'reports-representatives';
+    const isPharmacyReportsPage = pageKey === 'reports-pharmacies';
+    const isFinanceReportsPage = pageKey === 'reports-finance';
+    const isRankedSalesReportPage = isSalesReportsPage || isPharmacyReportsPage;
+    const isLiveReportPage = isRankedSalesReportPage || isFinanceReportsPage;
+    const isFinanceBalancePage = isReceivablesPage || isPayablesPage;
+    const isFinancePage = isFinanceTransactionsPage || isFinanceBalancePage;
     const isRepresentativesPage = pageKey === 'representatives';
     const isUnitsPage = pageKey === 'units';
     const isWarehousesPage = pageKey === 'warehouses';
@@ -2237,45 +2639,72 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const transferProductName = routeSearchParams.get('product_name') || '';
     const transferCompanyId = routeSearchParams.get('company_id') || '';
     const transferSourceWarehouseId = routeSearchParams.get('source_warehouse_id') || routeSearchParams.get('warehouse_id') || '';
+    const [companyListFilters, setCompanyListFilters] = useState(blankCompanyListFilters);
+    const [productCategoryListFilters, setProductCategoryListFilters] = useState(blankProductCategoryListFilters);
+    const [unitListFilters, setUnitListFilters] = useState(blankUnitListFilters);
     const [inventoryListFilters, setInventoryListFilters] = useState(blankInventoryListFilters);
+    const [financeTransactionListFilters, setFinanceTransactionListFilters] = useState(blankFinanceTransactionListFilters);
+    const [financeCategoryListFilters, setFinanceCategoryListFilters] = useState(blankFinanceCategoryListFilters);
+    const [orderListFilters, setOrderListFilters] = useState(blankOrderListFilters);
+    const [invoiceListFilters, setInvoiceListFilters] = useState(blankInvoiceListFilters);
     const [receivableListFilters, setReceivableListFilters] = useState(blankReceivableListFilters);
     const [payableListFilters, setPayableListFilters] = useState(blankPayableListFilters);
+    const [salesReportFilters, setSalesReportFilters] = useState(blankSalesReportFilters);
+    const [pharmacyReportFilters, setPharmacyReportFilters] = useState(blankSalesReportFilters);
+    const [financeReportFilters, setFinanceReportFilters] = useState(blankSalesReportFilters);
     const [inventoryDetailFilters, setInventoryDetailFilters] = useState({
         ...blankInventoryDetailFilters,
         warehouse_id: inventoryDetailWarehouseId,
     });
     const [receivingListFilters, setReceivingListFilters] = useState(blankReceivingListFilters);
+    const [stockTransferListFilters, setStockTransferListFilters] = useState(blankStockTransferListFilters);
     const [representativeListFilters, setRepresentativeListFilters] = useState(blankRepresentativeListFilters);
     const [warehouseListFilters, setWarehouseListFilters] = useState(blankWarehouseListFilters);
     const baseScreen = officeModules[pageKey] || officeModules.companies;
     const liveEndpoint = isProductsPage
         ? buildProductListEndpoint(productListFilters)
-        : isPharmaciesPage
-            ? buildPharmacyListEndpoint(pharmacyListFilters)
-            : isRepresentativesPage
-                ? buildRepresentativeListEndpoint(representativeListFilters)
-                : isWarehousesPage
-                    ? buildWarehouseListEndpoint(warehouseListFilters)
-                    : isReceivingPage
-                        ? buildReceivingListEndpoint(receivingListFilters)
-                        : isInventoryPage
-                            ? buildInventoryListEndpoint(inventoryListFilters)
-                            : isInventoryDetailPage
-                                ? buildInventoryDetailEndpoint(inventoryDetailProductId, inventoryDetailFilters)
-                                : isReceivablesPage
-                                    ? buildReceivableListEndpoint(receivableListFilters)
-                                        : isPayablesPage
-                                            ? buildPayableListEndpoint(payableListFilters)
-                                            : isOrdersPage
-                                                ? buildOrderListEndpoint(selectedOrderId)
-                                                : isInvoicesPage
-                                                    ? buildInvoiceListEndpoint()
-                                                    : getOfficeEndpoint(pageKey);
+        : isCompaniesPage
+            ? buildCompanyListEndpoint(companyListFilters)
+            : isProductCategoriesPage
+                ? buildProductCategoryListEndpoint(productCategoryListFilters)
+                : isFinanceCategoriesPage
+                    ? buildFinanceCategoryListEndpoint(financeCategoryListFilters)
+                    : isUnitsPage
+                        ? buildUnitListEndpoint(unitListFilters)
+                        : isPharmaciesPage
+                            ? buildPharmacyListEndpoint(pharmacyListFilters)
+                            : isRepresentativesPage
+                                ? buildRepresentativeListEndpoint(representativeListFilters)
+                                : isWarehousesPage
+                                    ? buildWarehouseListEndpoint(warehouseListFilters)
+                                    : isReceivingPage
+                                        ? buildReceivingListEndpoint(receivingListFilters)
+                                        : isStockTransfersPage
+                                            ? buildStockTransferListEndpoint(stockTransferListFilters)
+                                            : isInventoryPage
+                                                ? buildInventoryListEndpoint(inventoryListFilters)
+                                                : isInventoryDetailPage
+                                                    ? buildInventoryDetailEndpoint(inventoryDetailProductId, inventoryDetailFilters)
+                                                        : isFinanceTransactionsPage
+                                                            ? buildFinanceTransactionListEndpoint(financeTransactionListFilters)
+                                                            : isReceivablesPage
+                                                                ? buildReceivableListEndpoint(receivableListFilters)
+                                                                    : isPayablesPage
+                                                                        ? buildPayableListEndpoint(payableListFilters)
+                                                                        : isOrdersPage
+                                                                            ? buildOrderListEndpoint(orderListFilters, selectedOrderId)
+                                                                            : isInvoicesPage
+                                                                                ? buildInvoiceListEndpoint(invoiceListFilters)
+                                                                                : getOfficeEndpoint(pageKey);
     const liveResource = useApiResource(liveEndpoint);
-    const productCompaniesResource = useApiResource(isProductsPage || isPharmaciesPage || isReceivingPage || isStockWorkspacePage || isStockTransferCreatePage || isFinancePage || isOrdersPage ? '/lookups/companies' : isRepresentativesPage ? '/office/companies?per_page=100' : '');
-    const productCategoriesResource = useApiResource(isProductsPage ? '/lookups/product-categories' : '');
+    const productCompaniesResource = useApiResource(isProductsPage || isPharmaciesPage || isReceivingPage || isStockTransfersPage || isStockWorkspacePage || isStockTransferCreatePage || isFinanceBalancePage || isOrdersPage || isLiveReportPage ? '/lookups/companies' : isRepresentativesPage ? '/office/companies?per_page=100' : '');
+    const productCategoriesResource = useApiResource(isProductsPage || isProductCategoriesPage ? '/lookups/product-categories' : '');
     const productUnitsResource = useApiResource(isProductsPage ? '/lookups/units' : '');
-    const receivingWarehousesResource = useApiResource(isReceivingPage || isStockWorkspacePage || isStockTransferCreatePage || isOrdersPage ? '/office/warehouses?per_page=100' : '');
+    const receivingWarehousesResource = useApiResource(isReceivingPage || isStockTransfersPage || isStockWorkspacePage || isStockTransferCreatePage || isOrdersPage ? '/office/warehouses?per_page=100' : '');
+    const salesReportResource = useApiResource(isSalesReportsPage ? buildSalesReportEndpoint(salesReportFilters) : '');
+    const pharmacyReportResource = useApiResource(isPharmacyReportsPage ? buildPharmacyReportEndpoint(pharmacyReportFilters) : '');
+    const financeReportResource = useApiResource(isFinanceReportsPage ? buildFinanceReportEndpoint(financeReportFilters) : '');
+    const financeCategoriesResource = useApiResource(isFinanceTransactionsPage ? '/office/finance-categories?status=active&per_page=100' : '');
     const liveRows = liveResource.data ? mapOfficeRows(pageKey, liveResource.data) : [];
     const visibleLiveRows = isInvoicesPage ? mergeGeneratedInvoiceRows(liveRows) : liveRows;
     const hasRowsToDisplay = Boolean(liveResource.data) || (isInvoicesPage && visibleLiveRows.length > 0);
@@ -2285,7 +2714,31 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const inventoryDetailSummary = liveResource.data?.summary;
     const inventoryDetailUnit = inventoryDetailProduct?.base_unit?.abbreviation || inventoryDetailProduct?.base_unit?.name || 'base units';
     const financeSummary = liveResource.data?.summary;
-    const screen = isFinancePage ? {
+    const screen = isFinanceTransactionsPage ? {
+        ...liveScreen,
+        summaries: financeSummary ? [
+            {
+                label: 'Income',
+                value: formatAmount(financeSummary.income_amount || 0),
+                note: 'Recorded income',
+            },
+            {
+                label: 'Outcome',
+                value: formatAmount(financeSummary.outcome_amount || 0),
+                note: 'Recorded outcome',
+            },
+            {
+                label: 'Net cash',
+                value: formatAmount(Number(financeSummary.income_amount || 0) - Number(financeSummary.outcome_amount || 0)),
+                note: 'Income minus outcome',
+            },
+            {
+                label: 'Transactions',
+                value: formatAmount(financeSummary.transaction_count || 0),
+                note: `${formatAmount(financeSummary.void_count || 0)} void`,
+            },
+        ] : null,
+    } : isFinanceBalancePage ? {
         ...liveScreen,
         summaries: financeSummary ? [
             {
@@ -2319,10 +2772,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             { label: 'Nearest expiry', value: inventoryDetailSummary.nearest_expiry_date || '-', note: 'Earliest batch date' },
         ] : null,
     } : liveScreen;
-    const showFilterToolbar = isStockWorkspacePage || isProductsPage || isPharmaciesPage || isReceivingPage || isRepresentativesPage || isWarehousesPage || isFinancePage || screen.showFilterToolbar !== false;
+    const showFilterToolbar = isStockWorkspacePage || isCompaniesPage || isProductCategoriesPage || isProductsPage || isUnitsPage || isPharmaciesPage || isReceivingPage || isRepresentativesPage || isWarehousesPage || isFinancePage || screen.showFilterToolbar !== false;
     const showViewAction = !isStockWorkspacePage && !isRepresentativesPage && screen.showViewAction !== false;
+    const disableRowDetailDialog = isCompaniesPage || isFinanceCategoriesPage || isProductCategoriesPage || isUnitsPage || isWarehousesPage;
     const showEditAction = !isStockWorkspacePage && screen.showEditAction !== false;
-    const isManagedCrudPage = isCompaniesPage || isPharmaciesPage || isProductCategoriesPage || isProductsPage || isReceivingPage || isRepresentativesPage || isUnitsPage || isWarehousesPage;
+    const isManagedCrudPage = isCompaniesPage || isFinanceCategoriesPage || isFinanceTransactionsPage || isPharmaciesPage || isProductCategoriesPage || isProductsPage || isReceivingPage || isRepresentativesPage || isUnitsPage || isWarehousesPage;
     const recordLabel = getRecordLabel(screen);
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
@@ -2342,6 +2796,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [productCategoryForm, setProductCategoryForm] = useState(blankProductCategoryForm);
     const [productCategoryError, setProductCategoryError] = useState('');
     const [productCategorySubmitting, setProductCategorySubmitting] = useState(false);
+    const [financeCategoryForm, setFinanceCategoryForm] = useState(blankFinanceCategoryForm);
+    const [financeCategoryError, setFinanceCategoryError] = useState('');
+    const [financeCategorySubmitting, setFinanceCategorySubmitting] = useState(false);
     const [unitForm, setUnitForm] = useState(blankUnitForm);
     const [unitError, setUnitError] = useState('');
     const [unitSubmitting, setUnitSubmitting] = useState(false);
@@ -2370,6 +2827,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [companyPaymentForm, setCompanyPaymentForm] = useState(blankCompanyPaymentForm);
     const [companyPaymentError, setCompanyPaymentError] = useState('');
     const [companyPaymentSubmitting, setCompanyPaymentSubmitting] = useState(false);
+    const [financeTransactionForm, setFinanceTransactionForm] = useState(blankFinanceTransactionForm);
+    const [financeTransactionError, setFinanceTransactionError] = useState('');
+    const [financeTransactionSubmitting, setFinanceTransactionSubmitting] = useState(false);
     const [officeOrderForm, setOfficeOrderForm] = useState(blankOfficeOrderForm);
     const [officeOrderLines, setOfficeOrderLines] = useState([{ ...blankOfficeOrderLine }]);
     const [officeOrderError, setOfficeOrderError] = useState('');
@@ -2398,7 +2858,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         || productCategoriesResource.loading
         || productUnitsResource.loading
     );
-    const modalBusy = companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || deliverySubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || stockTransferSubmitting || unitSubmitting || warehouseSubmitting;
+    const modalBusy = companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || deliverySubmitting || financeCategorySubmitting || financeTransactionSubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || stockTransferSubmitting || unitSubmitting || warehouseSubmitting;
     const approvalBusy = approvalSubmitting || receivingWarehousesResource.loading;
     const orderCreditStatuses = normalizeCreditStatuses(selectedRecord?.creditStatuses || modalScreen.creditStatuses || []);
     const selectedCreditStatus = getCompanyCreditStatus(orderCreditStatuses, selectedOrderCompany);
@@ -2416,6 +2876,175 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const primaryAction = {
         label: screen.primaryAction,
         target: screen.primaryActionTarget,
+    };
+    const isActionListPage = isPharmaciesPage || isOrdersPage || isInvoicesPage || isReceivingPage || isInventoryPage || isReceivablesPage || isPayablesPage;
+    const actionListMode = isPharmaciesPage
+        ? pharmacyListFilters.action_only
+        : isOrdersPage
+            ? orderListFilters.action_only
+            : isInvoicesPage
+                ? invoiceListFilters.action_only
+                : isReceivingPage
+                    ? receivingListFilters.action_only
+                    : isInventoryPage
+                        ? inventoryListFilters.action_only
+                        : isReceivablesPage
+                            ? receivableListFilters.action_only
+                            : isPayablesPage
+                                ? payableListFilters.action_only
+                                : false;
+    const updateActionListMode = (actionOnly) => {
+        const updateMode = (setter) => setter((current) => ({ ...current, action_only: actionOnly, page: 1 }));
+
+        if (isPharmaciesPage) {
+            updateMode(setPharmacyListFilters);
+        } else if (isOrdersPage) {
+            updateMode(setOrderListFilters);
+        } else if (isInvoicesPage) {
+            updateMode(setInvoiceListFilters);
+        } else if (isReceivingPage) {
+            updateMode(setReceivingListFilters);
+        } else if (isInventoryPage) {
+            updateMode(setInventoryListFilters);
+        } else if (isReceivablesPage) {
+            updateMode(setReceivableListFilters);
+        } else if (isPayablesPage) {
+            updateMode(setPayableListFilters);
+        }
+    };
+    const financeTransactionPagination = isFinanceTransactionsPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const financeCategoryPagination = isFinanceCategoriesPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const orderPagination = isOrdersPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 25),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const invoicePagination = isInvoicesPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 25),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const goToOrderPage = (page) => {
+        setOrderListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const goToInvoicePage = (page) => {
+        setInvoiceListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const companyPagination = isCompaniesPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const companyListFilterControls = [
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Active', value: 'active' },
+                { label: 'Inactive', value: 'inactive' },
+            ],
+            placeholder: 'All statuses',
+            value: companyListFilters.status,
+        },
+    ];
+    const updateCompanyListSearch = (value) => {
+        setCompanyListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateCompanyListFilter = (key, value) => {
+        setCompanyListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetCompanyListFilters = () => {
+        setCompanyListFilters(blankCompanyListFilters);
+    };
+    const goToCompanyPage = (page) => {
+        setCompanyListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const productCategoryPagination = isProductCategoriesPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const productCategoryListFilterControls = [
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Active', value: 'active' },
+                { label: 'Inactive', value: 'inactive' },
+            ],
+            placeholder: 'All statuses',
+            value: productCategoryListFilters.status,
+        },
+    ];
+    const updateProductCategoryListSearch = (value) => {
+        setProductCategoryListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateProductCategoryListFilter = (key, value) => {
+        setProductCategoryListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetProductCategoryListFilters = () => {
+        setProductCategoryListFilters(blankProductCategoryListFilters);
+    };
+    const goToProductCategoryPage = (page) => {
+        setProductCategoryListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const unitPagination = isUnitsPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const unitListFilterControls = [
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Active', value: 'active' },
+                { label: 'Inactive', value: 'inactive' },
+            ],
+            placeholder: 'All statuses',
+            value: unitListFilters.status,
+        },
+    ];
+    const updateUnitListSearch = (value) => {
+        setUnitListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateUnitListFilter = (key, value) => {
+        setUnitListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetUnitListFilters = () => {
+        setUnitListFilters(blankUnitListFilters);
+    };
+    const goToUnitPage = (page) => {
+        setUnitListFilters((current) => ({ ...current, page: Math.max(1, page) }));
     };
     const pharmacyPagination = isPharmaciesPage && liveResource.data ? {
         currentPage: Number(liveResource.data.current_page || 1),
@@ -2450,6 +3079,256 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setPharmacyListFilters((current) => ({ ...current, page: Math.max(1, page) }));
     };
     const productCompanies = unwrapCollection(productCompaniesResource.data);
+    const financeCategoryOptions = (unwrapCollection(financeCategoriesResource.data).length
+        ? unwrapCollection(financeCategoriesResource.data).map((category) => ({
+            label: category.name,
+            value: category.code,
+            direction: category.direction,
+        }))
+        : fallbackFinanceCategoryOptions);
+    const financeTransactionFilterControls = [
+        {
+            key: 'direction',
+            label: 'Type',
+            options: [
+                { label: 'Income', value: 'income' },
+                { label: 'Outcome', value: 'outcome' },
+            ],
+            placeholder: 'All types',
+            value: financeTransactionListFilters.direction,
+        },
+        {
+            key: 'category',
+            label: 'Category',
+            options: financeCategoryOptions.map((category) => ({ label: category.label, value: category.value })),
+            placeholder: 'All categories',
+            value: financeTransactionListFilters.category,
+        },
+        {
+            key: 'payment_method',
+            label: 'Method',
+            options: paymentMethodOptions,
+            placeholder: 'All methods',
+            value: financeTransactionListFilters.payment_method,
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Recorded', value: 'recorded' },
+                { label: 'Void', value: 'void' },
+            ],
+            placeholder: 'All statuses',
+            value: financeTransactionListFilters.status,
+        },
+    ];
+    const updateFinanceTransactionListSearch = (value) => {
+        setFinanceTransactionListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateFinanceTransactionListFilter = (key, value) => {
+        setFinanceTransactionListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetFinanceTransactionListFilters = () => {
+        setFinanceTransactionListFilters(blankFinanceTransactionListFilters);
+    };
+    const goToFinanceTransactionPage = (page) => {
+        setFinanceTransactionListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const financeCategoryListFilterControls = [
+        {
+            key: 'direction',
+            label: 'Type',
+            options: [
+                { label: 'Income', value: 'income' },
+                { label: 'Outcome', value: 'outcome' },
+                { label: 'Both', value: 'both' },
+            ],
+            placeholder: 'All types',
+            value: financeCategoryListFilters.direction,
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Active', value: 'active' },
+                { label: 'Inactive', value: 'inactive' },
+            ],
+            placeholder: 'All statuses',
+            value: financeCategoryListFilters.status,
+        },
+    ];
+    const updateFinanceCategoryListSearch = (value) => {
+        setFinanceCategoryListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateFinanceCategoryListFilter = (key, value) => {
+        setFinanceCategoryListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetFinanceCategoryListFilters = () => {
+        setFinanceCategoryListFilters(blankFinanceCategoryListFilters);
+    };
+    const goToFinanceCategoryPage = (page) => {
+        setFinanceCategoryListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const reportYearOptions = Array.from({ length: 7 }, (_, index) => {
+        const year = new Date().getFullYear() - 3 + index;
+
+        return { label: String(year), value: String(year) };
+    });
+    const reportMonthOptions = [
+        { label: 'Jan', value: '1' },
+        { label: 'Feb', value: '2' },
+        { label: 'Mar', value: '3' },
+        { label: 'Apr', value: '4' },
+        { label: 'May', value: '5' },
+        { label: 'Jun', value: '6' },
+        { label: 'Jul', value: '7' },
+        { label: 'Aug', value: '8' },
+        { label: 'Sep', value: '9' },
+        { label: 'Oct', value: '10' },
+        { label: 'Nov', value: '11' },
+        { label: 'Dec', value: '12' },
+    ];
+    const salesReportFilterControls = [
+        {
+            key: 'duration',
+            label: 'Duration',
+            options: [
+                { label: 'Today', value: 'today' },
+                { label: 'This week', value: 'week' },
+                { label: 'Month', value: 'month' },
+                { label: 'Year', value: 'year' },
+            ],
+            placeholder: 'Duration',
+            value: salesReportFilters.duration,
+        },
+        ...(['month', 'year'].includes(salesReportFilters.duration) ? [
+            {
+                key: 'year',
+                label: 'Year',
+                options: reportYearOptions,
+                placeholder: 'Year',
+                value: salesReportFilters.year,
+            },
+        ] : []),
+        ...(salesReportFilters.duration === 'month' ? [
+            {
+                key: 'month',
+                label: 'Month',
+                options: reportMonthOptions,
+                placeholder: 'Month',
+                value: salesReportFilters.month,
+            },
+        ] : []),
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: salesReportFilters.company_id,
+        },
+    ];
+    const pharmacyReportFilterControls = [
+        {
+            key: 'duration',
+            label: 'Duration',
+            options: [
+                { label: 'Today', value: 'today' },
+                { label: 'This week', value: 'week' },
+                { label: 'Month', value: 'month' },
+                { label: 'Year', value: 'year' },
+            ],
+            placeholder: 'Duration',
+            value: pharmacyReportFilters.duration,
+        },
+        ...(['month', 'year'].includes(pharmacyReportFilters.duration) ? [
+            {
+                key: 'year',
+                label: 'Year',
+                options: reportYearOptions,
+                placeholder: 'Year',
+                value: pharmacyReportFilters.year,
+            },
+        ] : []),
+        ...(pharmacyReportFilters.duration === 'month' ? [
+            {
+                key: 'month',
+                label: 'Month',
+                options: reportMonthOptions,
+                placeholder: 'Month',
+                value: pharmacyReportFilters.month,
+            },
+        ] : []),
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: pharmacyReportFilters.company_id,
+        },
+    ];
+    const financeReportFilterControls = [
+        {
+            key: 'duration',
+            label: 'Duration',
+            options: [
+                { label: 'Month', value: 'month' },
+                { label: 'Year', value: 'year' },
+            ],
+            placeholder: 'Duration',
+            value: financeReportFilters.duration,
+        },
+        {
+            key: 'year',
+            label: 'Year',
+            options: reportYearOptions,
+            placeholder: 'Year',
+            value: financeReportFilters.year,
+        },
+        ...(financeReportFilters.duration === 'month' ? [
+            {
+                key: 'month',
+                label: 'Month',
+                options: reportMonthOptions,
+                placeholder: 'Month',
+                value: financeReportFilters.month,
+            },
+        ] : []),
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: financeReportFilters.company_id,
+        },
+    ];
+    const updateSalesReportFilter = (key, value) => {
+        setSalesReportFilters((current) => ({
+            ...current,
+            [key]: value || blankSalesReportFilters[key] || '',
+        }));
+    };
+    const resetSalesReportFilters = () => {
+        setSalesReportFilters(blankSalesReportFilters);
+    };
+    const updatePharmacyReportFilter = (key, value) => {
+        setPharmacyReportFilters((current) => ({
+            ...current,
+            [key]: value || blankSalesReportFilters[key] || '',
+        }));
+    };
+    const resetPharmacyReportFilters = () => {
+        setPharmacyReportFilters(blankSalesReportFilters);
+    };
+    const updateFinanceReportFilter = (key, value) => {
+        setFinanceReportFilters((current) => ({
+            ...current,
+            [key]: value || blankSalesReportFilters[key] || '',
+        }));
+    };
+    const resetFinanceReportFilters = () => {
+        setFinanceReportFilters(blankSalesReportFilters);
+    };
+    const productCategories = unwrapCollection(productCategoriesResource.data);
     const receivingWarehouses = unwrapCollection(receivingWarehousesResource.data);
     const receivingProducts = unwrapCollection(receivingProductsResource.data);
     const stockAdjustmentProducts = unwrapCollection(stockAdjustmentProductsResource.data);
@@ -2469,6 +3348,14 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     ), 0);
     const stockTransferMissingItems = isStockTransferCreatePage && stockTransferSelectedQuantity <= 0;
     const receivingPagination = isReceivingPage && liveResource.data ? {
+        currentPage: Number(liveResource.data.current_page || 1),
+        from: Number(liveResource.data.from || 0),
+        lastPage: Number(liveResource.data.last_page || 1),
+        perPage: Number(liveResource.data.per_page || 15),
+        to: Number(liveResource.data.to || 0),
+        total: Number(liveResource.data.total || 0),
+    } : null;
+    const stockTransferPagination = isStockTransfersPage && liveResource.data ? {
         currentPage: Number(liveResource.data.current_page || 1),
         from: Number(liveResource.data.from || 0),
         lastPage: Number(liveResource.data.last_page || 1),
@@ -2558,6 +3445,41 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     };
     const goToReceivingPage = (page) => {
         setReceivingListFilters((current) => ({ ...current, page: Math.max(1, page) }));
+    };
+    const stockTransferListFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: productCompanies.map((company) => ({ label: company.name, value: String(company.id) })),
+            placeholder: productCompaniesResource.loading ? 'Loading companies' : 'All companies',
+            value: stockTransferListFilters.company_id,
+        },
+        {
+            key: 'source_warehouse_id',
+            label: 'From',
+            options: receivingWarehouses.map((warehouse) => ({ label: warehouse.name, value: String(warehouse.id) })),
+            placeholder: receivingWarehousesResource.loading ? 'Loading warehouses' : 'Any source',
+            value: stockTransferListFilters.source_warehouse_id,
+        },
+        {
+            key: 'destination_warehouse_id',
+            label: 'To',
+            options: receivingWarehouses.map((warehouse) => ({ label: warehouse.name, value: String(warehouse.id) })),
+            placeholder: receivingWarehousesResource.loading ? 'Loading warehouses' : 'Any destination',
+            value: stockTransferListFilters.destination_warehouse_id,
+        },
+    ];
+    const updateStockTransferListSearch = (value) => {
+        setStockTransferListFilters((current) => ({ ...current, page: 1, search: value }));
+    };
+    const updateStockTransferListFilter = (key, value) => {
+        setStockTransferListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+    };
+    const resetStockTransferListFilters = () => {
+        setStockTransferListFilters(blankStockTransferListFilters);
+    };
+    const goToStockTransferPage = (page) => {
+        setStockTransferListFilters((current) => ({ ...current, page: Math.max(1, page) }));
     };
     const inventoryListFilterControls = [
         {
@@ -2858,16 +3780,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             return;
         }
 
-        const linkedOrder = screen.rows.find((row) => String(row.id) === String(selectedOrderId));
-
-        if (!linkedOrder) {
-            return;
-        }
-
-        setSelectedRecord(linkedOrder);
-        setDrawerOpen(true);
+        onNavigate?.('order-detail', { order_id: selectedOrderId });
         setOpenedLinkedOrderId(selectedOrderId);
-    }, [isOrdersPage, openedLinkedOrderId, screen.rows, selectedOrderId]);
+    }, [isOrdersPage, onNavigate, openedLinkedOrderId, screen.rows.length, selectedOrderId]);
     const closeWorkflowModal = () => {
         setModalOpen(false);
         setModalScreenKey(null);
@@ -2877,9 +3792,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setCompanyError('');
         setPharmacyError('');
         setProductCategoryError('');
+        setFinanceCategoryError('');
         setProductError('');
         setCompanyPaymentError('');
         setCustomerPaymentError('');
+        setFinanceTransactionError('');
         setOfficeOrderError('');
         setSalesRepresentativeError('');
         setStockAdjustmentError('');
@@ -3061,6 +3978,62 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             setProductCategoryError(requestError.message);
         } finally {
             setProductCategorySubmitting(false);
+        }
+    };
+    const openFinanceCategoryForm = (record = null) => {
+        const nextForm = record ? {
+            name: record.name || '',
+            code: record.code || '',
+            direction: record.direction_value || String(record.direction || 'income').toLowerCase(),
+            description: record.description || '',
+            status: String(record.status || 'active').toLowerCase(),
+        } : blankFinanceCategoryForm;
+
+        setSelectedRecord(record || {});
+        setFinanceCategoryForm(nextForm);
+        setModalScreenKey(null);
+        setModalTitleOverride(record ? 'Edit financial category' : 'Add financial category');
+        setModalSubmitLabelOverride(record ? 'Save category' : 'Add category');
+        setFinanceCategoryError('');
+        setModalOpen(true);
+    };
+    const updateFinanceCategoryForm = (event) => {
+        setFinanceCategoryForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+        setFinanceCategoryError('');
+    };
+    const submitFinanceCategoryForm = async () => {
+        setFinanceCategorySubmitting(true);
+        setFinanceCategoryError('');
+
+        try {
+            if (selectedRecord?.id) {
+                await api.put(`/office/finance-categories/${selectedRecord.id}`, financeCategoryForm);
+            } else {
+                await api.post('/office/finance-categories', financeCategoryForm);
+            }
+
+            liveResource.refresh();
+            financeCategoriesResource.refresh?.();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setFinanceCategoryError(requestError.message);
+        } finally {
+            setFinanceCategorySubmitting(false);
+        }
+    };
+    const deleteFinanceCategory = async (record) => {
+        setFinanceCategorySubmitting(true);
+        setFinanceCategoryError('');
+
+        try {
+            await api.delete(`/office/finance-categories/${record.id}`);
+            liveResource.refresh();
+            financeCategoriesResource.refresh?.();
+            closeConfirmAction();
+        } catch (requestError) {
+            setFinanceCategoryError(requestError.message);
+        } finally {
+            setFinanceCategorySubmitting(false);
         }
     };
     const openUnitForm = (record = null) => {
@@ -4013,6 +4986,86 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             setProductSubmitting(false);
         }
     };
+    const openFinanceTransactionForm = (record = null) => {
+        const direction = record?.direction_value || record?.direction?.toLowerCase?.() || blankFinanceTransactionForm.direction;
+        const category = record?.category_value || (direction === 'outcome' ? 'operating_expense' : 'sales_collection');
+
+        setSelectedRecord(record || {});
+        setFinanceTransactionForm({
+            ...blankFinanceTransactionForm,
+            direction,
+            category,
+            transaction_date: record?.transaction_date || '',
+            amount: record?.amount_value ? String(record.amount_value) : '',
+            payment_method: record?.payment_method || 'cash',
+            reference_no: record?.reference_no || '',
+            description: record?.description || '',
+            status: record?.status_value || 'recorded',
+        });
+        setModalScreenKey(null);
+        setModalTitleOverride(record?.id ? 'Edit finance transaction' : 'Add finance transaction');
+        setModalSubmitLabelOverride(record?.id ? 'Save transaction' : 'Add transaction');
+        setFinanceTransactionError('');
+        setModalOpen(true);
+    };
+    const updateFinanceTransactionForm = (event) => {
+        const { name, value } = event.target;
+
+        setFinanceTransactionForm((current) => {
+            if (name === 'direction') {
+                const nextCategory = financeCategoryOptions.find((category) => category.direction === value)?.value || 'adjustment';
+
+                return {
+                    ...current,
+                    direction: value,
+                    category: nextCategory,
+                };
+            }
+
+            return { ...current, [name]: value };
+        });
+        setFinanceTransactionError('');
+    };
+    const financeTransactionPayload = () => ({
+        ...financeTransactionForm,
+        company_id: null,
+        transaction_date: financeTransactionForm.transaction_date || null,
+        reference_no: financeTransactionForm.reference_no || null,
+        description: financeTransactionForm.description || null,
+    });
+    const submitFinanceTransactionForm = async () => {
+        setFinanceTransactionSubmitting(true);
+        setFinanceTransactionError('');
+
+        try {
+            if (selectedRecord?.id) {
+                await api.put(`/office/finance/transactions/${selectedRecord.id}`, financeTransactionPayload());
+            } else {
+                await api.post('/office/finance/transactions', financeTransactionPayload());
+            }
+
+            notifyOperationalActionsChanged();
+            liveResource.refresh();
+            closeWorkflowModal();
+        } catch (requestError) {
+            setFinanceTransactionError(requestError.message);
+        } finally {
+            setFinanceTransactionSubmitting(false);
+        }
+    };
+    const deleteFinanceTransaction = async (record) => {
+        setFinanceTransactionSubmitting(true);
+
+        try {
+            await api.delete(`/office/finance/transactions/${record.id}`);
+            liveResource.refresh();
+            closeConfirmAction();
+        } catch (requestError) {
+            setFinanceTransactionError(requestError.message);
+        } finally {
+            setFinanceTransactionSubmitting(false);
+        }
+    };
     const openCustomerPaymentForm = (record = null) => {
         const nextForm = {
             ...blankCustomerPaymentForm,
@@ -4297,13 +5350,34 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             return;
         }
 
-        const params = screen.detailPageKey === 'pharmacies-detail'
-            ? { customer_id: record?.id || '' }
-            : screen.detailPageKey === 'invoice-detail'
-                ? { invoice_id: record?.id || record?.invoice_id || '' }
-                : { record_id: record?.id || '' };
+        let params = { record_id: record?.id || '' };
+
+        if (screen.detailPageKey === 'pharmacies-detail') {
+            params = { customer_id: record?.id || '' };
+        } else if (screen.detailPageKey === 'invoice-detail') {
+            params = { invoice_id: record?.id || record?.invoice_id || '' };
+        } else if (screen.detailPageKey === 'order-detail') {
+            params = { order_id: record?.id || record?.order_id || '' };
+        } else if (screen.detailPageKey === 'payable-detail') {
+            params = { payable_id: record?.id || record?.payable_id || '' };
+        } else if (screen.detailPageKey === 'payment-detail') {
+            params = { payment_id: record?.id || record?.payment_id || '' };
+        } else if (screen.detailPageKey === 'product-detail') {
+            params = { product_id: record?.id || record?.product_id || '' };
+        } else if (screen.detailPageKey === 'receiving-detail') {
+            params = { receipt_id: record?.id || record?.receipt_id || '' };
+        } else if (screen.detailPageKey === 'stock-transfer-detail') {
+            params = { transfer_id: record?.id || record?.transfer_id || '' };
+        }
 
         onNavigate?.(screen.detailPageKey, params);
+    };
+    const openInvoicePrintPage = (record) => {
+        const printUrl = invoicePrintPageUrl(record?.id || record?.invoice_id || '');
+
+        if (printUrl) {
+            window.location.href = printUrl;
+        }
     };
     const closeConfirmAction = () => setConfirmAction(null);
     const inventoryRowActions = isStockWorkspacePage ? [
@@ -4365,6 +5439,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     return;
                 }
 
+                if (action.invoiceAction === 'print') {
+                    openInvoicePrintPage(record);
+                    return;
+                }
+
                 if (action.orderAction === 'approve') {
                     approveOfficeOrder(record);
                     return;
@@ -4418,7 +5497,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 ) : isStockTransfersPage ? (
                     <button className="btn primary" onClick={() => onNavigate?.('stock-transfer-create')} type="button">Create transfer</button>
                 ) : screen.hidePrimaryAction ? null : (
-                    <button className="btn primary" onClick={isCompaniesPage ? () => openCompanyForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isWarehousesPage ? () => openWarehouseForm() : isProductsPage ? () => openProductForm() : isReceivingPage ? () => openStockReceiptForm() : isInventoryPage ? () => openStockAdjustmentForm(selectedRecord) : isReceivablesPage ? () => openCustomerPaymentForm(selectedRecord) : isPayablesPage ? () => openCompanyPaymentForm(null) : isRepresentativesPage ? () => openSalesRepresentativeForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{screen.primaryAction}</button>
+                    <button className="btn primary" onClick={isCompaniesPage ? () => openCompanyForm() : isFinanceCategoriesPage ? () => openFinanceCategoryForm() : isFinanceTransactionsPage ? () => openFinanceTransactionForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isWarehousesPage ? () => openWarehouseForm() : isProductsPage ? () => openProductForm() : isReceivingPage ? () => openStockReceiptForm() : isInventoryPage ? () => openStockAdjustmentForm(selectedRecord) : isReceivablesPage ? () => openCustomerPaymentForm(selectedRecord) : isPayablesPage ? () => openCompanyPaymentForm(null) : isRepresentativesPage ? () => openSalesRepresentativeForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{screen.primaryAction}</button>
                 )}
                 description={screen.description}
                 eyebrow={screen.eyebrow}
@@ -4450,19 +5529,90 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 </div>
             )}
 
-            {(screen.reportChart || screen.reportSummary) && (
+            {(isLiveReportPage || screen.reportChart || screen.reportSummary) && (
                 <Panel eyebrow="Report Dashboard" title={`${screen.title} Summary`}>
-                    <ReportsWorkspace
-                        categories={screen.reportCategories || []}
-                        chart={screen.reportChart}
-                        metrics={screen.reportMetrics || []}
-                        summary={screen.reportSummary || []}
-                    />
+                    {isSalesReportsPage ? (
+                        <SalesReportSummary
+                            data={salesReportResource.data}
+                            error={salesReportResource.error}
+                            filterControls={salesReportFilterControls}
+                            loading={salesReportResource.loading}
+                            onFilterChange={updateSalesReportFilter}
+                            onReset={resetSalesReportFilters}
+                        />
+                    ) : isPharmacyReportsPage ? (
+                        <SalesReportSummary
+                            data={pharmacyReportResource.data}
+                            error={pharmacyReportResource.error}
+                            filterControls={pharmacyReportFilterControls}
+                            loading={pharmacyReportResource.loading}
+                            onFilterChange={updatePharmacyReportFilter}
+                            onReset={resetPharmacyReportFilters}
+                        />
+                    ) : isFinanceReportsPage ? (
+                        <FinanceReportOverview
+                            data={financeReportResource.data}
+                            error={financeReportResource.error}
+                            filterControls={financeReportFilterControls}
+                            loading={financeReportResource.loading}
+                            onFilterChange={updateFinanceReportFilter}
+                            onReset={resetFinanceReportFilters}
+                        />
+                    ) : (
+                        <ReportsWorkspace
+                            categories={screen.reportCategories || []}
+                            chart={screen.reportChart}
+                            metrics={screen.reportMetrics || []}
+                            summary={screen.reportSummary || []}
+                        />
+                    )}
                 </Panel>
             )}
 
-            {!isStockTransferCreatePage && <Panel eyebrow="Workspace" title={`${screen.title} List`}>
-                {showFilterToolbar && (isProductsPage ? (
+            {!isStockTransferCreatePage && !isLiveReportPage && <Panel eyebrow="Workspace" title={`${screen.title} List`}>
+                {isActionListPage && (
+                    <OperationListModeSwitch
+                        actionOnly={Boolean(actionListMode)}
+                        onChange={updateActionListMode}
+                    />
+                )}
+                {showFilterToolbar && (isCompaniesPage ? (
+                    <FilterToolbar
+                        filters={companyListFilterControls}
+                        onFilterChange={updateCompanyListFilter}
+                        onReset={resetCompanyListFilters}
+                        onSearch={updateCompanyListSearch}
+                        searchPlaceholder="Search company name or code"
+                        searchValue={companyListFilters.search}
+                    />
+                ) : isProductCategoriesPage ? (
+                    <FilterToolbar
+                        filters={productCategoryListFilterControls}
+                        onFilterChange={updateProductCategoryListFilter}
+                        onReset={resetProductCategoryListFilters}
+                        onSearch={updateProductCategoryListSearch}
+                        searchPlaceholder="Search category name or code"
+                        searchValue={productCategoryListFilters.search}
+                    />
+                ) : isFinanceCategoriesPage ? (
+                    <FilterToolbar
+                        filters={financeCategoryListFilterControls}
+                        onFilterChange={updateFinanceCategoryListFilter}
+                        onReset={resetFinanceCategoryListFilters}
+                        onSearch={updateFinanceCategoryListSearch}
+                        searchPlaceholder="Search financial category, code, or note"
+                        searchValue={financeCategoryListFilters.search}
+                    />
+                ) : isUnitsPage ? (
+                    <FilterToolbar
+                        filters={unitListFilterControls}
+                        onFilterChange={updateUnitListFilter}
+                        onReset={resetUnitListFilters}
+                        onSearch={updateUnitListSearch}
+                        searchPlaceholder="Search unit name or abbreviation"
+                        searchValue={unitListFilters.search}
+                    />
+                ) : isProductsPage ? (
                     <FilterToolbar
                         filters={productListFilterControls}
                         onFilterChange={updateProductListFilter}
@@ -4507,6 +5657,15 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         searchPlaceholder="Search receipt, invoice, company, or warehouse"
                         searchValue={receivingListFilters.search}
                     />
+                ) : isStockTransfersPage ? (
+                    <FilterToolbar
+                        filters={stockTransferListFilterControls}
+                        onFilterChange={updateStockTransferListFilter}
+                        onReset={resetStockTransferListFilters}
+                        onSearch={updateStockTransferListSearch}
+                        searchPlaceholder="Search transfer, company, or warehouse"
+                        searchValue={stockTransferListFilters.search}
+                    />
                 ) : isInventoryPage ? (
                     <FilterToolbar
                         filters={inventoryListFilterControls}
@@ -4524,6 +5683,15 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         onSearch={updateInventoryDetailSearch}
                         searchPlaceholder="Search batch number"
                         searchValue={inventoryDetailFilters.search}
+                    />
+                ) : isFinanceTransactionsPage ? (
+                    <FilterToolbar
+                        filters={financeTransactionFilterControls}
+                        onFilterChange={updateFinanceTransactionListFilter}
+                        onReset={resetFinanceTransactionListFilters}
+                        onSearch={updateFinanceTransactionListSearch}
+                        searchPlaceholder="Search transaction, reference, company, or note"
+                        searchValue={financeTransactionListFilters.search}
                     />
                 ) : isReceivablesPage ? (
                     <FilterToolbar
@@ -4556,7 +5724,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         ...(showEditAction ? [
                             {
                                 label: screen.editActionLabel || `Edit ${recordLabel}`,
-                                onClick: (record) => isCompaniesPage ? openCompanyForm(record) : isPharmaciesPage ? openPharmacyForm(record) : isProductCategoriesPage ? openProductCategoryForm(record) : isUnitsPage ? openUnitForm(record) : isWarehousesPage ? openWarehouseForm(record) : isProductsPage ? openProductForm(record) : isReceivingPage ? openStockReceiptForm(record) : isRepresentativesPage ? openSalesRepresentativeForm(record) : openWorkflowModal(null, record, {
+                                onClick: (record) => isCompaniesPage ? openCompanyForm(record) : isFinanceCategoriesPage ? openFinanceCategoryForm(record) : isFinanceTransactionsPage ? openFinanceTransactionForm(record) : isPharmaciesPage ? openPharmacyForm(record) : isProductCategoriesPage ? openProductCategoryForm(record) : isUnitsPage ? openUnitForm(record) : isWarehousesPage ? openWarehouseForm(record) : isProductsPage ? openProductForm(record) : isReceivingPage ? openStockReceiptForm(record) : isRepresentativesPage ? openSalesRepresentativeForm(record) : openWorkflowModal(null, record, {
                                     submitLabel: screen.editSubmitLabel || `Save ${recordLabel}`,
                                     title: screen.editActionLabel || `Edit ${recordLabel}`,
                                 }),
@@ -4564,11 +5732,11 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         ] : []),
                         ...(isManagedCrudPage ? [
                             {
-                                label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isWarehousesPage ? 'Delete warehouse' : isReceivingPage ? 'Delete receiving' : isPharmaciesPage ? 'Delete pharmacy' : isRepresentativesPage ? 'Delete sales rep' : 'Delete company',
+                                label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isFinanceCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isWarehousesPage ? 'Delete warehouse' : isReceivingPage ? 'Delete receiving' : isFinanceTransactionsPage ? 'Delete transaction' : isPharmaciesPage ? 'Delete pharmacy' : isRepresentativesPage ? 'Delete sales rep' : 'Delete company',
                                 variant: 'danger',
                                 onClick: (record) => {
                                     setSelectedRecord(record);
-                                    setConfirmAction({ action: { label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isWarehousesPage ? 'Delete warehouse' : isReceivingPage ? 'Delete receiving' : isPharmaciesPage ? 'Delete pharmacy' : isRepresentativesPage ? 'Delete sales rep' : 'Delete company', categoryDelete: isProductCategoriesPage, companyDelete: isCompaniesPage, pharmacyDelete: isPharmaciesPage, productDelete: isProductsPage, receiptDelete: isReceivingPage, representativeDelete: isRepresentativesPage, unitDelete: isUnitsPage, warehouseDelete: isWarehousesPage }, record });
+                                    setConfirmAction({ action: { label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isFinanceCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isWarehousesPage ? 'Delete warehouse' : isReceivingPage ? 'Delete receiving' : isFinanceTransactionsPage ? 'Delete transaction' : isPharmaciesPage ? 'Delete pharmacy' : isRepresentativesPage ? 'Delete sales rep' : 'Delete company', categoryDelete: isProductCategoriesPage, companyDelete: isCompaniesPage, financeCategoryDelete: isFinanceCategoriesPage, financeTransactionDelete: isFinanceTransactionsPage, pharmacyDelete: isPharmaciesPage, productDelete: isProductsPage, receiptDelete: isReceivingPage, representativeDelete: isRepresentativesPage, unitDelete: isUnitsPage, warehouseDelete: isWarehousesPage }, record });
                                 },
                             },
                         ] : []),
@@ -4576,7 +5744,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     columns={screen.columns}
                     error={liveResource.error}
                     loading={liveResource.loading}
-                    onRowClick={isInventoryDetailPage ? undefined : (record) => {
+                    onRowClick={isInventoryDetailPage || disableRowDetailDialog ? undefined : (record) => {
                         setSelectedRecord(record);
                         if (isRepresentativesPage) {
                             openDetailPage(record);
@@ -4599,6 +5767,97 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         <span>Total payable due</span>
                         <strong>{formatAmount(liveResource.data.summary.due_amount)}</strong>
                     </div>
+                )}
+                {isFinanceTransactionsPage && financeTransactionPagination && (
+                    <PaginationBar
+                        currentPage={financeTransactionPagination.currentPage}
+                        emptyLabel="No finance transactions to show"
+                        from={financeTransactionPagination.from}
+                        lastPage={financeTransactionPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToFinanceTransactionPage(financeTransactionPagination.currentPage + 1)}
+                        onPrevious={() => goToFinanceTransactionPage(financeTransactionPagination.currentPage - 1)}
+                        to={financeTransactionPagination.to}
+                        total={financeTransactionPagination.total}
+                    />
+                )}
+                {isFinanceCategoriesPage && financeCategoryPagination && (
+                    <PaginationBar
+                        currentPage={financeCategoryPagination.currentPage}
+                        emptyLabel="No financial categories to show"
+                        from={financeCategoryPagination.from}
+                        lastPage={financeCategoryPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToFinanceCategoryPage(financeCategoryPagination.currentPage + 1)}
+                        onPrevious={() => goToFinanceCategoryPage(financeCategoryPagination.currentPage - 1)}
+                        to={financeCategoryPagination.to}
+                        total={financeCategoryPagination.total}
+                    />
+                )}
+                {isOrdersPage && orderPagination && (
+                    <PaginationBar
+                        currentPage={orderPagination.currentPage}
+                        emptyLabel="No orders to show"
+                        from={orderPagination.from}
+                        lastPage={orderPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToOrderPage(orderPagination.currentPage + 1)}
+                        onPrevious={() => goToOrderPage(orderPagination.currentPage - 1)}
+                        to={orderPagination.to}
+                        total={orderPagination.total}
+                    />
+                )}
+                {isInvoicesPage && invoicePagination && (
+                    <PaginationBar
+                        currentPage={invoicePagination.currentPage}
+                        emptyLabel="No invoices to show"
+                        from={invoicePagination.from}
+                        lastPage={invoicePagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToInvoicePage(invoicePagination.currentPage + 1)}
+                        onPrevious={() => goToInvoicePage(invoicePagination.currentPage - 1)}
+                        to={invoicePagination.to}
+                        total={invoicePagination.total}
+                    />
+                )}
+                {isCompaniesPage && companyPagination && (
+                    <PaginationBar
+                        currentPage={companyPagination.currentPage}
+                        emptyLabel="No companies to show"
+                        from={companyPagination.from}
+                        lastPage={companyPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToCompanyPage(companyPagination.currentPage + 1)}
+                        onPrevious={() => goToCompanyPage(companyPagination.currentPage - 1)}
+                        to={companyPagination.to}
+                        total={companyPagination.total}
+                    />
+                )}
+                {isProductCategoriesPage && productCategoryPagination && (
+                    <PaginationBar
+                        currentPage={productCategoryPagination.currentPage}
+                        emptyLabel="No product categories to show"
+                        from={productCategoryPagination.from}
+                        lastPage={productCategoryPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToProductCategoryPage(productCategoryPagination.currentPage + 1)}
+                        onPrevious={() => goToProductCategoryPage(productCategoryPagination.currentPage - 1)}
+                        to={productCategoryPagination.to}
+                        total={productCategoryPagination.total}
+                    />
+                )}
+                {isUnitsPage && unitPagination && (
+                    <PaginationBar
+                        currentPage={unitPagination.currentPage}
+                        emptyLabel="No units to show"
+                        from={unitPagination.from}
+                        lastPage={unitPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToUnitPage(unitPagination.currentPage + 1)}
+                        onPrevious={() => goToUnitPage(unitPagination.currentPage - 1)}
+                        to={unitPagination.to}
+                        total={unitPagination.total}
+                    />
                 )}
                 {isProductsPage && productPagination && (
                     <PaginationBar
@@ -4665,6 +5924,19 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         total={receivingPagination.total}
                     />
                 )}
+                {isStockTransfersPage && stockTransferPagination && (
+                    <PaginationBar
+                        currentPage={stockTransferPagination.currentPage}
+                        emptyLabel="No stock transfers to show"
+                        from={stockTransferPagination.from}
+                        lastPage={stockTransferPagination.lastPage}
+                        loading={liveResource.loading}
+                        onNext={() => goToStockTransferPage(stockTransferPagination.currentPage + 1)}
+                        onPrevious={() => goToStockTransferPage(stockTransferPagination.currentPage - 1)}
+                        to={stockTransferPagination.to}
+                        total={stockTransferPagination.total}
+                    />
+                )}
                 {isInventoryPage && inventoryPagination && (
                     <PaginationBar
                         currentPage={inventoryPagination.currentPage}
@@ -4729,9 +6001,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 busy={modalBusy}
                 open={modalOpen}
                 onClose={closeWorkflowModal}
-                onSubmit={officeOrderModalOpen ? submitOfficeOrderForm : isCompaniesPage && !modalScreenKey ? submitCompanyForm : isPharmaciesPage && !modalScreenKey ? submitPharmacyForm : isProductCategoriesPage && !modalScreenKey ? submitProductCategoryForm : isUnitsPage && !modalScreenKey ? submitUnitForm : isWarehousesPage && !modalScreenKey ? submitWarehouseForm : isProductsPage && !modalScreenKey ? submitProductForm : isReceivingPage && !modalScreenKey ? submitStockReceiptForm : isStockWorkspacePage && !modalScreenKey ? submitStockAdjustmentForm : isReceivablesPage && !modalScreenKey ? submitCustomerPaymentForm : isPayablesPage && !modalScreenKey ? submitCompanyPaymentForm : isRepresentativesPage && !modalScreenKey ? submitSalesRepresentativeForm : closeWorkflowModal}
-                submitDisabled={orderCreateBlocked || officeOrderBlocked || officeOrderMissingWarehouse || companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting}
-                submitDisabledReason={companyError || companyPaymentError || customerPaymentError || officeOrderError || pharmacyError || productCategoryError || productError || salesRepresentativeError || stockAdjustmentError || stockReceiptError || unitError || warehouseError || (orderCreateBlocked || officeOrderBlocked ? 'Company credit is blocked. Order creation is not allowed.' : '') || (officeOrderMissingWarehouse ? 'Select a warehouse before creating the approved order.' : '')}
+                onSubmit={officeOrderModalOpen ? submitOfficeOrderForm : isCompaniesPage && !modalScreenKey ? submitCompanyForm : isFinanceCategoriesPage && !modalScreenKey ? submitFinanceCategoryForm : isFinanceTransactionsPage && !modalScreenKey ? submitFinanceTransactionForm : isPharmaciesPage && !modalScreenKey ? submitPharmacyForm : isProductCategoriesPage && !modalScreenKey ? submitProductCategoryForm : isUnitsPage && !modalScreenKey ? submitUnitForm : isWarehousesPage && !modalScreenKey ? submitWarehouseForm : isProductsPage && !modalScreenKey ? submitProductForm : isReceivingPage && !modalScreenKey ? submitStockReceiptForm : isStockWorkspacePage && !modalScreenKey ? submitStockAdjustmentForm : isReceivablesPage && !modalScreenKey ? submitCustomerPaymentForm : isPayablesPage && !modalScreenKey ? submitCompanyPaymentForm : isRepresentativesPage && !modalScreenKey ? submitSalesRepresentativeForm : closeWorkflowModal}
+                submitDisabled={orderCreateBlocked || officeOrderBlocked || officeOrderMissingWarehouse || companyPaymentSubmitting || companySubmitting || customerPaymentSubmitting || financeCategorySubmitting || financeTransactionSubmitting || officeOrderSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockAdjustmentSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting}
+                submitDisabledReason={companyError || companyPaymentError || customerPaymentError || financeCategoryError || financeTransactionError || officeOrderError || pharmacyError || productCategoryError || productError || salesRepresentativeError || stockAdjustmentError || stockReceiptError || unitError || warehouseError || (orderCreateBlocked || officeOrderBlocked ? 'Company credit is blocked. Order creation is not allowed.' : '') || (officeOrderMissingWarehouse ? 'Select a warehouse before creating the approved order.' : '')}
                 submitLabel={modalSubmitLabel}
                 title={modalTitle}
             >
@@ -4761,6 +6033,16 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     )
                     : isCompaniesPage && !modalScreenKey
                     ? <CompanyForm form={companyForm} onChange={updateCompanyForm} />
+                    : isFinanceCategoriesPage && !modalScreenKey
+                        ? <FinanceCategoryForm form={financeCategoryForm} onChange={updateFinanceCategoryForm} />
+                    : isFinanceTransactionsPage && !modalScreenKey
+                        ? (
+                            <FinanceTransactionForm
+                                categories={financeCategoryOptions}
+                                form={financeTransactionForm}
+                                onChange={updateFinanceTransactionForm}
+                            />
+                        )
                     : isPharmaciesPage && !modalScreenKey
                         ? <PharmacyForm form={pharmacyForm} onChange={updatePharmacyForm} />
                     : isProductCategoriesPage && !modalScreenKey
@@ -4768,7 +6050,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                             <ProductCategoryForm
                                 form={productCategoryForm}
                                 onChange={updateProductCategoryForm}
-                                parentOptions={screen.rows}
+                                parentOptions={productCategories}
                                 selectedId={selectedRecord?.id}
                             />
                         )
@@ -4821,7 +6103,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     : isProductsPage && !modalScreenKey
                         ? productLookupsLoading ? <ProductFormSkeleton /> : (
                             <ProductForm
-                                categories={unwrapCollection(productCategoriesResource.data)}
+                                categories={productCategories}
                                 companies={productCompanies}
                                 form={productForm}
                                 onAddUnit={addProductUnit}
@@ -4880,7 +6162,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     actions={(
                         <>
                             <button className="btn secondary" disabled={modalBusy} onClick={closeConfirmAction} type="button">Cancel</button>
-                            <button className="btn primary" disabled={companySubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting} onClick={() => confirmAction.action.companyDelete ? deleteCompany(confirmAction.record) : confirmAction.action.pharmacyDelete ? deletePharmacy(confirmAction.record) : confirmAction.action.categoryDelete ? deleteProductCategory(confirmAction.record) : confirmAction.action.unitDelete ? deleteUnit(confirmAction.record) : confirmAction.action.warehouseDelete ? deleteWarehouse(confirmAction.record) : confirmAction.action.receiptDelete ? deleteStockReceipt(confirmAction.record) : confirmAction.action.productDelete ? deleteProduct(confirmAction.record) : confirmAction.action.representativeDelete ? deleteSalesRepresentative(confirmAction.record) : closeConfirmAction()} type="button">{confirmAction.action.label}</button>
+                            <button className="btn primary" disabled={companySubmitting || financeCategorySubmitting || financeTransactionSubmitting || pharmacySubmitting || productCategorySubmitting || productSubmitting || salesRepresentativeSubmitting || stockReceiptSubmitting || unitSubmitting || warehouseSubmitting} onClick={() => confirmAction.action.companyDelete ? deleteCompany(confirmAction.record) : confirmAction.action.financeCategoryDelete ? deleteFinanceCategory(confirmAction.record) : confirmAction.action.financeTransactionDelete ? deleteFinanceTransaction(confirmAction.record) : confirmAction.action.pharmacyDelete ? deletePharmacy(confirmAction.record) : confirmAction.action.categoryDelete ? deleteProductCategory(confirmAction.record) : confirmAction.action.unitDelete ? deleteUnit(confirmAction.record) : confirmAction.action.warehouseDelete ? deleteWarehouse(confirmAction.record) : confirmAction.action.receiptDelete ? deleteStockReceipt(confirmAction.record) : confirmAction.action.productDelete ? deleteProduct(confirmAction.record) : confirmAction.action.representativeDelete ? deleteSalesRepresentative(confirmAction.record) : closeConfirmAction()} type="button">{confirmAction.action.label}</button>
                         </>
                     )}
                     open
@@ -4948,7 +6230,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                 </button>
                             )}
                             {showEditAction && (
-                                <button className="btn secondary" onClick={() => isCompaniesPage ? openCompanyForm(selectedRecord) : isPharmaciesPage ? openPharmacyForm(selectedRecord) : isProductCategoriesPage ? openProductCategoryForm(selectedRecord) : isUnitsPage ? openUnitForm(selectedRecord) : isWarehousesPage ? openWarehouseForm(selectedRecord) : isProductsPage ? openProductForm(selectedRecord) : isReceivingPage ? openStockReceiptForm(selectedRecord) : isRepresentativesPage ? openSalesRepresentativeForm(selectedRecord) : openWorkflowModal(null, selectedRecord, { submitLabel: `Save ${recordLabel}`, title: `Edit ${recordLabel}` })} type="button">Edit {recordLabel}</button>
+                                <button className="btn secondary" onClick={() => isCompaniesPage ? openCompanyForm(selectedRecord) : isFinanceCategoriesPage ? openFinanceCategoryForm(selectedRecord) : isFinanceTransactionsPage ? openFinanceTransactionForm(selectedRecord) : isPharmaciesPage ? openPharmacyForm(selectedRecord) : isProductCategoriesPage ? openProductCategoryForm(selectedRecord) : isUnitsPage ? openUnitForm(selectedRecord) : isWarehousesPage ? openWarehouseForm(selectedRecord) : isProductsPage ? openProductForm(selectedRecord) : isReceivingPage ? openStockReceiptForm(selectedRecord) : isRepresentativesPage ? openSalesRepresentativeForm(selectedRecord) : openWorkflowModal(null, selectedRecord, { submitLabel: `Save ${recordLabel}`, title: `Edit ${recordLabel}` })} type="button">Edit {recordLabel}</button>
                             )}
                             <button className={isOrdersPage ? 'btn secondary' : 'btn primary'} onClick={() => setDrawerOpen(false)} type="button">Done</button>
                         </>

@@ -23,6 +23,13 @@ class PaymentController extends Controller
         return PaymentResource::collection($payments);
     }
 
+    public function show(Payment $payment)
+    {
+        $payment->load(['company', 'customer', 'allocations.invoice']);
+
+        return new PaymentResource($payment);
+    }
+
     public function store(StorePaymentRequest $request, PaymentAllocationService $paymentAllocationService)
     {
         $payment = $paymentAllocationService->recordCustomerPayment($request->validated(), $request->user());

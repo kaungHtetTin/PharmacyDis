@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import CreditStatusGrid from '../../components/shared/CreditStatusGrid';
 import DataTable from '../../components/shared/DataTable';
-import Drawer from '../../components/shared/Drawer';
-import FinanceReview from '../../components/shared/FinanceReview';
 import FormField from '../../components/shared/FormField';
 import Modal from '../../components/shared/Modal';
 import OrderLineBuilder from '../../components/shared/OrderLineBuilder';
@@ -33,46 +31,6 @@ function dateOnly(value) {
 
 function notifyOperationalActionsChanged() {
     window.dispatchEvent(new Event('office-operational-actions-changed'));
-}
-
-function PaymentDetailDrawer({ onClose, open, payment }) {
-    if (!payment) {
-        return null;
-    }
-
-    return (
-        <Drawer
-            actions={<button className="btn primary" onClick={onClose} type="button">Done</button>}
-            eyebrow="Payment Detail"
-            onClose={onClose}
-            open={open}
-            title={payment.payment}
-        >
-            <div className="detail-stack">
-                <section className="drawer-section">
-                    <p className="eyebrow">Payment overview</p>
-                    <div className="fact-grid">
-                        {[
-                            ['Payment no.', payment.payment],
-                            ['Customer', payment.pharmacy],
-                            ['Company', payment.company],
-                            ['Payment date', payment.date],
-                            ['Amount', payment.amount],
-                            ['Method', payment.method],
-                            ['Reference no.', payment.referenceNo],
-                            ['Status', payment.status],
-                        ].map(([label, value]) => (
-                            <div key={label}>
-                                <span>{label}</span>
-                                <strong>{value || '-'}</strong>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-                <FinanceReview allocations={payment.allocations || []} />
-            </div>
-        </Drawer>
-    );
 }
 
 const historyPageSize = 5;
@@ -259,7 +217,6 @@ export default function PharmacyDetailPage({ onNavigate }) {
     const [approvalForm, setApprovalForm] = useState({ warehouse_id: '' });
     const [approvalError, setApprovalError] = useState('');
     const [approvalSubmitting, setApprovalSubmitting] = useState(false);
-    const [selectedPayment, setSelectedPayment] = useState(null);
     const [orderPage, setOrderPage] = useState(1);
     const [invoicePage, setInvoicePage] = useState(1);
     const [paymentPage, setPaymentPage] = useState(1);
@@ -301,6 +258,13 @@ export default function PharmacyDetailPage({ onNavigate }) {
         }
 
         onNavigate?.('invoice-detail', { invoice_id: invoice.id });
+    };
+    const openPaymentDetail = (payment) => {
+        if (!payment?.id) {
+            return;
+        }
+
+        onNavigate?.('payment-detail', { payment_id: payment.id });
     };
     const approveOrder = async (record) => {
         if (!record?.id || actionBusy) {
@@ -522,7 +486,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
 
             <HistorySection
                 actions={[
-                    { label: 'Open order detail', icon: 'V', onClick: (record) => onNavigate?.('orders', { order_id: record.id }) },
+                    { label: 'Open order detail', icon: 'V', onClick: (record) => onNavigate?.('order-detail', { order_id: record.id }) },
                     { label: 'Approve order', icon: 'A', onClick: approveOrder },
                     { label: 'Generate invoice', icon: 'I', onClick: generateInvoice },
                 ]}
@@ -538,7 +502,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 error={detailResource.error}
                 loading={detailResource.loading}
                 onPageChange={goToPage(setOrderPage)}
-                onRowClick={(record) => onNavigate?.('orders', { order_id: record.id })}
+                onRowClick={(record) => onNavigate?.('order-detail', { order_id: record.id })}
                 page={orderPage}
                 rows={orders}
                 title="Order history"
@@ -547,7 +511,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
             <HistorySection
                 actions={[
                     { label: 'View invoice', icon: 'V', onClick: openInvoiceDetail },
-                    { label: 'Open order detail', icon: 'cart', onClick: (record) => record.sales_order_id && onNavigate?.('orders', { order_id: record.sales_order_id }) },
+                    { label: 'Open order detail', icon: 'cart', onClick: (record) => record.sales_order_id && onNavigate?.('order-detail', { order_id: record.sales_order_id }) },
                 ]}
                 columns={[
                     { key: 'invoice', label: 'Invoice' },
@@ -580,16 +544,10 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 error={detailResource.error}
                 loading={detailResource.loading}
                 onPageChange={goToPage(setPaymentPage)}
-                onRowClick={setSelectedPayment}
+                onRowClick={openPaymentDetail}
                 page={paymentPage}
                 rows={payments}
                 title="Payment history"
-            />
-
-            <PaymentDetailDrawer
-                onClose={() => setSelectedPayment(null)}
-                open={Boolean(selectedPayment)}
-                payment={selectedPayment}
             />
 
             <Modal

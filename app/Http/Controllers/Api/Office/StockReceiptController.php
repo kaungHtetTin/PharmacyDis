@@ -31,6 +31,11 @@ class StockReceiptController extends Controller
         return response()->json($stockReceivingService->postReceipt($request->validated(), $request->user()), 201);
     }
 
+    public function show(StockReceipt $stockReceipt)
+    {
+        return $stockReceipt->load(['company', 'warehouse', 'items.product.baseUnit', 'items.unit', 'items.focUnit', 'payable']);
+    }
+
     public function update(StoreStockReceiptRequest $request, StockReceipt $stockReceipt, StockReceivingService $stockReceivingService)
     {
         return $stockReceivingService->replaceReceipt($stockReceipt, $request->validated(), $request->user());
@@ -59,6 +64,9 @@ class StockReceiptController extends Controller
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->warehouse_id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
+            ->when($request->boolean('action_only'), fn ($query) => $query->whereHas('payable', fn ($payableQuery) => $payableQuery
+                ->where('balance_amount', '>', 0)
+                ->where('status', '!=', 'paid')))
             ->when($request->filled('payment_status'), function ($query) use ($request) {
                 if ($request->payment_status === 'overdue') {
                     $query->whereHas('payable', function ($payableQuery) {

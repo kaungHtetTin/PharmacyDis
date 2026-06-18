@@ -17,20 +17,30 @@ class InvoiceService
     ) {
     }
 
-    public function generateFromOrder(SalesOrder $order, ?User $actor = null): Invoice
+    public function generateFromOrder(SalesOrder $order, ?User $actor = null, bool $allowSubmitted = false): Invoice
     {
-        return DB::transaction(function () use ($order, $actor) {
+        return DB::transaction(function () use ($order, $actor, $allowSubmitted) {
             $order->load('items');
 
-            if (! in_array($order->status, ['approved', 'invoiced', 'delivered'], true)) {
+            $allowedStatuses = $allowSubmitted
+                ? ['submitted', 'approved', 'invoiced', 'delivered']
+                : ['approved', 'invoiced', 'delivered'];
+
+            if (! in_array($order->status, $allowedStatuses, true)) {
                 throw ValidationException::withMessages([
-                    'order' => 'Only approved orders can generate invoices.',
+                    'order' => $allowSubmitted
+                        ? 'Only submitted or approved orders can generate invoices.'
+                        : 'Only approved orders can generate invoices.',
                 ]);
             }
 
             $existingInvoice = $order->invoices()->with('items')->latest('id')->first();
 
             if ($existingInvoice) {
+                if (! in_array($order->status, ['submitted', 'invoiced', 'delivered'], true)) {
+                    $order->update(['status' => 'invoiced']);
+                }
+
                 $this->customerBalanceService->refresh((int) $existingInvoice->customer_id, (int) $existingInvoice->company_id);
 
                 return $existingInvoice->fresh([
@@ -83,7 +93,7 @@ class InvoiceService
                 ]);
             }
 
-            if ($order->status !== 'delivered') {
+            if (! in_array($order->status, ['submitted', 'delivered'], true)) {
                 $order->update(['status' => 'invoiced']);
             }
             $this->customerBalanceService->refresh((int) $invoice->customer_id, (int) $invoice->company_id);

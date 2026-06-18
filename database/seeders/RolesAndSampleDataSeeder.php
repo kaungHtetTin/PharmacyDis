@@ -38,12 +38,12 @@ class RolesAndSampleDataSeeder extends Seeder
     {
         $adminRole = Role::updateOrCreate(
             ['name' => 'admin'],
-            ['display_name' => 'Admin', 'description' => 'Office administrator']
+            ['display_name' => 'Admin', 'description' => 'Office administrator', 'permissions' => ['*']]
         );
 
         $salesRole = Role::updateOrCreate(
             ['name' => 'sales_representative'],
-            ['display_name' => 'Sales Representative', 'description' => 'Mobile sales app user']
+            ['display_name' => 'Sales Representative', 'description' => 'Mobile sales app user', 'permissions' => ['sales.app']]
         );
 
         $adminUser = User::updateOrCreate(

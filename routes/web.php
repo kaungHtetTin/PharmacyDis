@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Office\InvoicePrintController;
 
 /*
 |--------------------------------------------------------------------------
@@ -18,12 +19,14 @@ Route::get('/', function () {
 });
 
 Route::view('/office', 'welcome')->name('office.index');
+Route::get('/office/invoices/{invoice}/print', InvoicePrintController::class)->name('office.invoices.print');
 Route::view('/office/{page}', 'welcome')
     ->whereIn('page', [
         'dashboard',
         'login',
         'companies',
         'products',
+        'product-detail',
         'units',
         'pharmacies',
         'pharmacies-detail',
@@ -32,17 +35,27 @@ Route::view('/office/{page}', 'welcome')
         'inventory',
         'inventory-detail',
         'receiving',
+        'receiving-detail',
         'stock-transfers',
         'stock-transfer-create',
+        'stock-transfer-detail',
         'orders',
+        'order-detail',
         'invoices',
         'invoice-detail',
+        'finance',
+        'finance-categories',
         'payments',
+        'payment-detail',
         'receivables',
         'payables',
+        'payable-detail',
+        'profile',
         'reports-representatives',
         'reports-pharmacies',
         'reports-finance',
+        'users',
+        'activity-logs',
         'settings',
     ])
     ->name('office.page');
@@ -56,6 +69,8 @@ Route::view('/sales/{page}', 'welcome')
         'pharmacies',
         'pharmacies-detail',
         'new-order',
+        'order-detail',
+        'order-submitted',
         'orders',
         'profile',
     ])

@@ -19,6 +19,7 @@ class SalesOrderController extends Controller
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
+            ->when($request->boolean('action_only'), fn ($query) => $query->whereIn('status', ['submitted', 'approved', 'invoiced']))
             ->latest()
             ->paginate($request->integer('per_page', 15));
 

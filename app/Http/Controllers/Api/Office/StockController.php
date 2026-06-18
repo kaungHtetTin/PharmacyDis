@@ -47,6 +47,18 @@ class StockController extends Controller
             ->paginate($request->integer('per_page', 15));
     }
 
+    public function transferDetail(StockTransfer $stockTransfer)
+    {
+        return $stockTransfer->load([
+            'company',
+            'sourceWarehouse',
+            'destinationWarehouse',
+            'movements.product.baseUnit',
+            'movements.stockBatch',
+            'movements.warehouse',
+        ]);
+    }
+
     public function current(Request $request)
     {
         $query = StockBatch::query()
@@ -76,6 +88,10 @@ class StockController extends Controller
                 $request->filled('warehouse_id') ? 'warehouse_id' : null,
                 'product_id',
             ]));
+
+        if ($request->boolean('action_only')) {
+            $query->havingRaw('SUM(available_base_quantity) <= COALESCE((select low_stock_threshold_base_units from products where products.id = stock_batches.product_id), 0)');
+        }
 
         match ($request->input('status')) {
             'available' => $query->havingRaw('SUM(available_base_quantity) > 0'),

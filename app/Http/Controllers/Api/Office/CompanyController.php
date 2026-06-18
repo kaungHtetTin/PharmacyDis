@@ -14,9 +14,12 @@ class CompanyController extends Controller
     {
         return Company::query()
             ->withCount('products')
+            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
             ->when($request->filled('search'), function ($query) use ($request) {
-                $query->where('name', 'like', "%{$request->search}%")
-                    ->orWhere('code', 'like', "%{$request->search}%");
+                $query->where(function ($searchQuery) use ($request) {
+                    $searchQuery->where('name', 'like', "%{$request->search}%")
+                        ->orWhere('code', 'like', "%{$request->search}%");
+                });
             })
             ->orderBy('name')
             ->paginate($request->integer('per_page', 15));

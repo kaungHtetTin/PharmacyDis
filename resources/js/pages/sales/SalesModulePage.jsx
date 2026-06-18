@@ -3,12 +3,15 @@ import DataTable from '../../components/shared/DataTable';
 import Drawer from '../../components/shared/Drawer';
 import FilterToolbar from '../../components/shared/FilterToolbar';
 import FormField from '../../components/shared/FormField';
+import Icon from '../../components/shared/Icon';
 import Modal from '../../components/shared/Modal';
 import PageHeader from '../../components/shared/PageHeader';
 import PaginationBar from '../../components/shared/PaginationBar';
 import Panel from '../../components/shared/Panel';
+import { getOrderStockStatus } from '../../components/shared/OrderLineBuilder';
 import SalesOrderCreateForm from '../../components/shared/SalesOrderCreateForm';
 import SalesWorkspacePreview from '../../components/shared/SalesWorkspacePreview';
+import StatusBadge from '../../components/shared/StatusBadge';
 import SummaryCard from '../../components/shared/SummaryCard';
 import Tabs from '../../components/shared/Tabs';
 import { isBlockedCredit } from '../../components/shared/OrderCreditGate';
@@ -16,7 +19,94 @@ import { salesModules } from '../../data/salesModules';
 import useApiResource from '../../hooks/useApiResource';
 import { useAuth } from '../../services/auth.jsx';
 import { api } from '../../services/apiClient';
-import { applyLiveRows, getSalesEndpoint, mapSalesRows, unwrapCollection } from '../../services/screenAdapters';
+import { applyLiveRows, getSalesEndpoint, mapOrders, mapSalesRows, unwrapCollection } from '../../services/screenAdapters';
+
+function readSubmittedOrderSnapshot() {
+    try {
+        return JSON.parse(window.sessionStorage.getItem('sales:last-submitted-order') || 'null');
+    } catch {
+        return null;
+    }
+}
+
+function SubmittedOrderPage({ onNavigate }) {
+    const routeSearchParams = new URLSearchParams(window.location.search);
+    const orderId = routeSearchParams.get('order_id') || '';
+    const ordersResource = useApiResource(orderId ? '/sales/orders?per_page=25' : '');
+    const mappedOrders = ordersResource.data ? mapOrders(ordersResource.data) : [];
+    const liveOrder = mappedOrders.find((order) => String(order.id) === String(orderId));
+    const snapshot = readSubmittedOrderSnapshot();
+    const order = liveOrder || (String(snapshot?.id || '') === String(orderId) ? snapshot : null);
+    const orderNo = order?.order || snapshot?.order || 'Submitted order';
+    const pharmacy = order?.pharmacy || snapshot?.pharmacy || 'Selected pharmacy';
+    const total = order?.total || snapshot?.total || '-';
+    const invoiceNo = order?.invoice || snapshot?.invoice || '-';
+    const invoiceBalance = order?.invoiceBalance || snapshot?.invoiceBalance || total;
+    const submittedDate = order?.submittedDate || snapshot?.submittedDate || new Date().toISOString().slice(0, 10);
+    const status = order?.status || snapshot?.status || 'Submitted';
+
+    return (
+        <div className="sales-page">
+            <PageHeader
+                action={(
+                    <div className="page-heading-actions">
+                        <button className="btn secondary" onClick={() => onNavigate?.('orders')} type="button">Order history</button>
+                        <button className="btn primary" onClick={() => onNavigate?.('new-order')} type="button">New order</button>
+                    </div>
+                )}
+                description="An unpaid invoice has been generated and the order is waiting for office approval and stock reservation."
+                eyebrow="Order Submitted"
+                title="Order submitted successfully"
+            />
+
+            <Panel eyebrow="Submitted" title={orderNo}>
+                {ordersResource.error && <span className="error-text">{ordersResource.error}</span>}
+                {ordersResource.loading && <span className="muted">Refreshing submitted order...</span>}
+                <section className="sales-order-submitted-card">
+                    <div className="submitted-order-mark">
+                        <Icon name="check" size={28} />
+                    </div>
+                    <div>
+                        <p className="eyebrow">Office approval queue</p>
+                        <h2>{orderNo}</h2>
+                        <p>{pharmacy}</p>
+                    </div>
+                    <StatusBadge value={status} />
+                </section>
+                <div className="state-grid submitted-order-summary">
+                    <article>
+                        <small>Invoice</small>
+                        <strong>{invoiceNo}</strong>
+                    </article>
+                    <article>
+                        <small>Balance due</small>
+                        <strong>{invoiceBalance}</strong>
+                    </article>
+                    <article>
+                        <small>Order total</small>
+                        <strong>{total}</strong>
+                    </article>
+                    <article>
+                        <small>Submitted date</small>
+                        <strong>{submittedDate}</strong>
+                    </article>
+                    <article>
+                        <small>Invoice status</small>
+                        <strong>Unpaid</strong>
+                    </article>
+                    <article>
+                        <small>Next step</small>
+                        <strong>Office approval</strong>
+                    </article>
+                </div>
+                <div className="submitted-order-actions">
+                    <button className="btn secondary" onClick={() => onNavigate?.('orders')} type="button">View order history</button>
+                    <button className="btn primary" onClick={() => onNavigate?.('new-order')} type="button">Create another order</button>
+                </div>
+            </Panel>
+        </div>
+    );
+}
 
 function SalesDetails({ record, screen }) {
     const tabs = screen.tabs?.map((tab) => ({
@@ -62,6 +152,7 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     });
     const customersResource = useApiResource(pageKey === 'new-order' ? `/lookups/customers?${customerLookupQuery.toString()}` : '');
     const productsResource = useApiResource(pageKey === 'new-order' ? '/lookups/products' : '');
+    const stockResource = useApiResource(pageKey === 'new-order' ? '/sales/stock/current?per_page=100' : '', { keepPreviousData: true });
     const liveRows = liveResource.data ? mapSalesRows(pageKey, liveResource.data) : [];
     const screen = liveEndpoint ? applyLiveRows(baseScreen, liveRows) : baseScreen;
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -81,6 +172,7 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const salesOrderBlocked = pageKey === 'new-order' && isBlockedCredit(screen.salesOrderContext?.creditStatus);
     const customers = unwrapCollection(customersResource.data);
     const products = unwrapCollection(productsResource.data);
+    const stockRows = unwrapCollection(stockResource.data);
     const assignedContext = {
         ...screen.salesOrderContext,
         representative: user?.name || screen.salesOrderContext?.representative,
@@ -101,7 +193,20 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
         return () => window.clearTimeout(timeout);
     }, [pharmacySearch]);
 
+    if (pageKey === 'order-submitted') {
+        return <SubmittedOrderPage onNavigate={onNavigate} />;
+    }
+
     function openRecord(record) {
+        if (pageKey === 'stock') {
+            return;
+        }
+
+        if (pageKey === 'orders') {
+            onNavigate?.('order-detail', { order_id: record?.id || '' });
+            return;
+        }
+
         if (screen.detailPageKey) {
             onNavigate?.(screen.detailPageKey, { customer_id: record?.id || '' });
             return;
@@ -112,6 +217,11 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     }
 
     function runPrimaryAction() {
+        if (pageKey === 'stock') {
+            liveResource.refresh?.();
+            return;
+        }
+
         if (screen.primaryActionTarget) {
             onNavigate?.(screen.primaryActionTarget);
             return;
@@ -128,6 +238,25 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
 
     async function submitSalesOrder(event) {
         event.preventDefault();
+        const stockStatus = getOrderStockStatus(orderLines, products, stockRows);
+
+        if (stockResource.loading) {
+            setSubmitError('Checking available stock. Please wait a moment before submitting.');
+            return;
+        }
+
+        if (stockResource.error) {
+            setSubmitError(stockResource.error);
+            return;
+        }
+
+        if (stockStatus.hasShortage) {
+            const firstShortage = stockStatus.shortages[0];
+            const productName = firstShortage?.demand?.product?.name || 'selected product';
+            setSubmitError(`${productName} does not have enough available stock for ordered and FOC quantity.`);
+            return;
+        }
+
         setSubmitting(true);
         setSubmitError('');
         setSubmitSuccess('');
@@ -142,11 +271,15 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                 })),
             };
 
-            await api.post('/sales/orders', payload);
-            setSubmitSuccess('Order submitted for office approval.');
+            const response = await api.post('/sales/orders', payload);
+            const [submittedOrder] = mapOrders({ data: [response.data || response] });
+            if (submittedOrder) {
+                window.sessionStorage.setItem('sales:last-submitted-order', JSON.stringify(submittedOrder));
+            }
             setOrderForm({ customer_id: '', requested_delivery_date: '', note: '' });
             setPharmacySearch('');
             setOrderLines([{ id: `draft-line-${Date.now()}`, product_id: '', unit_id: '', quantity: '' }]);
+            onNavigate?.('order-submitted', { order_id: submittedOrder?.id || response.data?.id || response.id || '' });
         } catch (requestError) {
             setSubmitError(requestError.message);
         } finally {
@@ -160,7 +293,7 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                 <PageHeader
                     action={(
                         <div className="page-heading-actions">
-                            {(customersResource.loading || productsResource.loading) && <span className="submit-disabled-note">Loading assigned records...</span>}
+                            {(customersResource.loading || productsResource.loading || stockResource.loading) && <span className="submit-disabled-note">Loading assigned records...</span>}
                             {salesOrderBlocked && <span className="submit-disabled-note">Company credit is blocked. Order creation is not allowed.</span>}
                         </div>
                     )}
@@ -182,6 +315,9 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     pharmacyLoading={customersResource.loading}
                     pharmacySearch={pharmacySearch}
                     productOptions={products}
+                    stockError={stockResource.error}
+                    stockLoading={stockResource.loading}
+                    stockRows={stockRows}
                     submitting={submitting}
                     success={submitSuccess}
                 />
@@ -192,7 +328,7 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     return (
         <div className="sales-page">
             <PageHeader
-                action={<button className="btn primary" onClick={runPrimaryAction} type="button">{screen.primaryAction}</button>}
+                action={screen.primaryAction ? <button className="btn primary" onClick={runPrimaryAction} type="button">{screen.primaryAction}</button> : null}
                 description={screen.description}
                 eyebrow={screen.eyebrow}
                 title={screen.title}
@@ -216,7 +352,7 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     columns={screen.columns}
                     error={liveResource.error}
                     loading={liveResource.loading}
-                    onRowClick={openRecord}
+                    onRowClick={pageKey === 'stock' ? undefined : openRecord}
                     rows={visibleRows}
                 />
                 <PaginationBar

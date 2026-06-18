@@ -1,5 +1,5 @@
 import FormField from './FormField';
-import OrderLineBuilder from './OrderLineBuilder';
+import OrderLineBuilder, { getOrderStockStatus } from './OrderLineBuilder';
 import PharmacyStorePicker from './PharmacyStorePicker';
 import StatusBadge from './StatusBadge';
 import { isBlockedCredit } from './OrderCreditGate';
@@ -23,6 +23,9 @@ export default function SalesOrderCreateForm({
     pharmacyLoading = false,
     pharmacySearch = '',
     productOptions = [],
+    stockError = '',
+    stockLoading = false,
+    stockRows = [],
     submitting = false,
     success = '',
 }) {
@@ -30,6 +33,15 @@ export default function SalesOrderCreateForm({
     const selectedCredit = selectedCustomer?.credit_statuses?.[0];
     const creditStatus = selectedCredit ? titleCase(selectedCredit.credit_status) : context?.creditStatus || 'Ready';
     const blocked = isBlockedCredit(creditStatus);
+    const stockStatus = getOrderStockStatus(lines, productOptions, stockRows);
+    const stockBlocked = stockStatus.hasDemand && (stockLoading || Boolean(stockError) || stockStatus.hasShortage);
+    const stockBlockedReason = stockLoading
+        ? 'Checking available stock...'
+        : stockError
+            ? stockError
+            : stockStatus.hasShortage
+                ? 'Some order quantities are higher than current available stock.'
+                : '';
 
     return (
         <form className="order-create-form sales-order-create-form" onSubmit={onSubmit}>
@@ -90,15 +102,20 @@ export default function SalesOrderCreateForm({
                 lines={lines}
                 onChange={onLineChange}
                 productOptions={productOptions}
+                showStockAvailability
+                stockError={stockError}
+                stockLoading={stockLoading}
+                stockRows={stockRows}
                 value={lines}
             />
             {error && <span className="error-text">{error}</span>}
             {success && <span className="success-text">{success}</span>}
+            {stockBlockedReason && <span className={stockStatus.hasShortage || stockError ? 'error-text' : 'muted'}>{stockBlockedReason}</span>}
             <div className="order-submit-row">
                 <p className="helper-copy">
-                    Company and sales representative are fixed by the signed-in sales account. If company credit is blocked, the order cannot be submitted.
+                    Company and sales representative are fixed by the signed-in sales account. Stock availability includes ordered and FOC base quantities.
                 </p>
-                <button className="btn primary" disabled={blocked || submitting} type="submit">
+                <button className="btn primary" disabled={blocked || stockBlocked || submitting} type="submit">
                     {submitting ? 'Submitting order...' : 'Submit order'}
                 </button>
             </div>

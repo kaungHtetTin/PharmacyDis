@@ -16,8 +16,9 @@ class SalesOrderController extends Controller
         $salesRepresentative = $request->user()->salesRepresentative;
 
         $orders = SalesOrder::query()
-            ->with(['company', 'customer', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule'])
+            ->with(['company', 'customer', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'invoices'])
             ->where('sales_representative_id', $salesRepresentative?->id)
+            ->when($request->filled('order_id'), fn ($query) => $query->whereKey($request->integer('order_id')))
             ->latest()
             ->paginate($request->integer('per_page', 15));
 

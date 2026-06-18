@@ -164,21 +164,7 @@ function previewFocQuantity(item, productOptions) {
     return calculateFocRewardBaseUnits(product, quantity * conversion, lineTotal);
 }
 
-export default function OrderLineBuilder({
-    allowFallback = true,
-    disabled = false,
-    lines = [],
-    onChange,
-    productOptions = [],
-    stockError = '',
-    stockLoading = false,
-    stockRows = [],
-    value,
-    warehouseId = '',
-}) {
-    const [items, setItems] = useState(lines.length ? lines : [blankLine]);
-    const controlled = Array.isArray(value);
-    const activeItems = controlled ? value : items;
+export function getOrderStockStatus(lines = [], productOptions = [], stockRows = []) {
     const stockByProduct = stockRows.reduce((map, row) => {
         const productId = String(row.product_id || row.product?.id || '');
 
@@ -194,7 +180,7 @@ export default function OrderLineBuilder({
 
         return map;
     }, new Map());
-    const demandByProduct = activeItems.reduce((map, item) => {
+    const demandByProduct = lines.reduce((map, item) => {
         const demand = calculateLineDemand(item, productOptions);
 
         if (!demand) {
@@ -202,15 +188,56 @@ export default function OrderLineBuilder({
         }
 
         const productId = String(demand.product.id);
-        const current = map.get(productId) || { focQuantity: 0, orderedQuantity: 0, requiredQuantity: 0 };
+        const current = map.get(productId) || { focQuantity: 0, orderedQuantity: 0, product: demand.product, requiredQuantity: 0 };
         map.set(productId, {
             focQuantity: current.focQuantity + demand.focQuantity,
             orderedQuantity: current.orderedQuantity + demand.orderedQuantity,
+            product: current.product || demand.product,
             requiredQuantity: current.requiredQuantity + demand.requiredQuantity,
         });
 
         return map;
     }, new Map());
+    const shortages = Array.from(demandByProduct.entries()).map(([productId, demand]) => {
+        const stock = stockByProduct.get(productId);
+        const availableQuantity = Number(stock?.available || 0);
+        const shortageQuantity = Math.max(0, Number(demand.requiredQuantity || 0) - availableQuantity);
+
+        return {
+            availableQuantity,
+            demand,
+            productId,
+            shortageQuantity,
+            stock,
+        };
+    }).filter((item) => item.shortageQuantity > 0);
+
+    return {
+        demandByProduct,
+        hasDemand: demandByProduct.size > 0,
+        hasShortage: shortages.length > 0,
+        shortages,
+        stockByProduct,
+    };
+}
+
+export default function OrderLineBuilder({
+    allowFallback = true,
+    disabled = false,
+    lines = [],
+    onChange,
+    productOptions = [],
+    stockError = '',
+    stockLoading = false,
+    stockRows = [],
+    value,
+    warehouseId = '',
+    showStockAvailability = false,
+}) {
+    const [items, setItems] = useState(lines.length ? lines : [blankLine]);
+    const controlled = Array.isArray(value);
+    const activeItems = controlled ? value : items;
+    const { demandByProduct, stockByProduct } = getOrderStockStatus(activeItems, productOptions, stockRows);
 
     function updateItems(nextItems) {
         if (!controlled) {
@@ -266,7 +293,7 @@ export default function OrderLineBuilder({
                     const requiredQuantity = Number(productDemand?.requiredQuantity || 0);
                     const shortageQuantity = Math.max(0, requiredQuantity - availableQuantity);
                     const unit = stockUnit(selectedProduct, productStock?.row);
-                    const showStockNote = Boolean(lineDemand && warehouseId);
+                    const showStockNote = Boolean(lineDemand && (warehouseId || showStockAvailability));
 
                     return (
                         <div className={`order-line-draft-row ${shortageQuantity > 0 ? 'has-stock-warning' : ''}`} key={item.id}>

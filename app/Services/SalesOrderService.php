@@ -10,6 +10,7 @@ use App\Models\SalesOrder;
 use App\Models\SalesOrderFocItem;
 use App\Models\SalesOrderItem;
 use App\Models\SalesRepresentative;
+use App\Models\StockBatch;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -20,6 +21,7 @@ class SalesOrderService
         private ProductUnitConversionService $conversionService,
         private CreditControlService $creditControlService,
         private FocCalculationService $focCalculationService,
+        private InvoiceService $invoiceService,
         private NumberGeneratorService $numberGeneratorService,
         private StockMovementService $stockMovementService,
     ) {
@@ -38,7 +40,19 @@ class SalesOrderService
         $data['company_id'] = $salesRepresentative->company_id;
         $data['sales_representative_id'] = $salesRepresentative->id;
 
-        return $this->create($data, $user);
+        $order = $this->create($data, $user);
+        $this->invoiceService->generateFromOrder($order, $user, allowSubmitted: true);
+
+        return $order->fresh([
+            'company',
+            'customer',
+            'salesRepresentative.user',
+            'items.product',
+            'items.unit',
+            'focItems.product',
+            'focItems.focRule',
+            'invoices',
+        ]);
     }
 
     public function create(array $data, ?User $actor = null): SalesOrder
@@ -201,6 +215,7 @@ class SalesOrderService
         $subtotal = 0;
         $discountTotal = 0;
         $focValueTotal = 0;
+        $requiredStockByProduct = [];
 
         foreach ($items as $index => $itemData) {
             $product = Product::where('company_id', $company->id)->findOrFail($itemData['product_id']);
@@ -214,10 +229,26 @@ class SalesOrderService
                 : (float) $product->default_discount_percentage;
             $discountAmount = round($gross * ($discountPercentage / 100), 2);
             $lineTotal = $gross - $discountAmount;
+            $foc = $this->focCalculationService->calculate($company, $product, $baseUnitQuantity, $lineTotal);
+            $focBaseUnitQuantity = (int) ($foc['reward_base_unit_quantity'] ?? 0);
+            $requiredBaseUnitQuantity = $baseUnitQuantity + $focBaseUnitQuantity;
 
             if ($quantity <= 0) {
                 throw ValidationException::withMessages([
                     "items.$index.quantity" => 'Quantity must be greater than zero.',
+                ]);
+            }
+
+            $productKey = (int) $product->id;
+            $requiredStockByProduct[$productKey] = ($requiredStockByProduct[$productKey] ?? 0) + $requiredBaseUnitQuantity;
+            $availableBaseUnitQuantity = (int) StockBatch::query()
+                ->where('company_id', $company->id)
+                ->where('product_id', $product->id)
+                ->sum('available_base_quantity');
+
+            if ($requiredStockByProduct[$productKey] > $availableBaseUnitQuantity) {
+                throw ValidationException::withMessages([
+                    "items.$index.quantity" => "{$product->name} has only {$availableBaseUnitQuantity} available base units. Ordered and FOC quantity requires {$requiredStockByProduct[$productKey]}.",
                 ]);
             }
 
@@ -236,10 +267,8 @@ class SalesOrderService
                 'commission_amount' => round($lineTotal * ((float) $product->commission_rate_percentage / 100), 2),
             ]);
 
-            $foc = $this->focCalculationService->calculate($company, $product, $baseUnitQuantity, $lineTotal);
-
             if ($foc) {
-                $orderItem->update(['foc_base_unit_quantity' => $foc['reward_base_unit_quantity']]);
+                $orderItem->update(['foc_base_unit_quantity' => $focBaseUnitQuantity]);
                 foreach ($foc['allocations'] as $allocation) {
                     SalesOrderFocItem::create([
                         'sales_order_id' => $order->id,

@@ -10,6 +10,21 @@ const quickActions = [
     { label: 'Stock', href: 'stock', icon: 'box' },
 ];
 
+function storageUrl(path) {
+    if (!path) {
+        return '';
+    }
+
+    if (/^(https?:)?\/\//.test(path) || path.startsWith('data:') || path.startsWith('blob:')) {
+        return path;
+    }
+
+    const baseUrl = String(window.appConfig?.baseUrl || '').replace(/\/+$/g, '');
+    const normalizedPath = String(path).replace(/^\/+/, '').replace(/^storage\//, '');
+
+    return `${baseUrl}/storage/${normalizedPath}`;
+}
+
 export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, children }) {
     const { user } = useAuth();
     const [profileOpen, setProfileOpen] = useState(false);
@@ -19,6 +34,7 @@ export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, chi
     const initials = profileName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'SR';
     const assignedCompany = representative?.company;
     const region = representative?.region || 'Sales Representative';
+    const profileImageUrl = storageUrl(user?.profile_image_path);
 
     useEffect(() => {
         function closeProfileMenu(event) {
@@ -42,9 +58,6 @@ export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, chi
             <header className="sales-topbar glass">
                 <Logo compact />
                 <div className="sales-topbar-actions">
-                    <button className="icon-btn" type="button" title="Notifications">
-                        <Icon name="bell" size={17} />
-                    </button>
                     <div className="sales-profile-menu" ref={profileMenuRef}>
                         <button
                             aria-expanded={profileOpen}
@@ -52,7 +65,7 @@ export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, chi
                             onClick={() => setProfileOpen((open) => !open)}
                             type="button"
                         >
-                            <span>{initials}</span>
+                            <span>{profileImageUrl ? <img alt="" src={profileImageUrl} /> : initials}</span>
                             <div>
                                 <strong>{profileName}</strong>
                                 <small>Sales Rep</small>
@@ -63,7 +76,7 @@ export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, chi
                                 <section>
                                     <p className="eyebrow">Profile</p>
                                     <div className="profile-menu-head">
-                                        <span>{initials}</span>
+                                        <span>{profileImageUrl ? <img alt="" src={profileImageUrl} /> : initials}</span>
                                         <div>
                                             <strong>{profileName}</strong>
                                             <small>{region} / Sales Representative</small>

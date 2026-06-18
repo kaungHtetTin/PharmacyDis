@@ -12,6 +12,7 @@ const paths = {
     bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7M13.73 21a2 2 0 0 1-3.46 0',
     moon: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z',
     plus: 'M12 5v14M5 12h14',
+    minus: 'M5 12h14',
     sun: 'M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
     close: 'M18 6 6 18M6 6l12 12',
     user: 'M20 21a8 8 0 1 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
@@ -27,6 +28,7 @@ const paths = {
     check: 'M20 6 9 17l-5-5',
     arrowRight: 'M5 12h14M13 5l7 7-7 7',
     save: 'M5 3h14l2 2v16H3V3h2ZM7 3v6h10V3M7 21v-8h10v8',
+    logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
 };
 
 export default function Icon({ name, size = 18 }) {

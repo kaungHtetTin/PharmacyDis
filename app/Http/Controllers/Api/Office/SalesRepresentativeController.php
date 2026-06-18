@@ -66,15 +66,14 @@ class SalesRepresentativeController extends Controller
         return response()->json($salesRepresentative->load(['company', 'user:id,name,email,phone,status']), 201);
     }
 
-    public function detail(SalesRepresentative $salesRepresentative)
+    public function detail(Request $request, SalesRepresentative $salesRepresentative)
     {
         $salesRepresentative->load(['company', 'user:id,name,email,phone,status']);
 
         $orders = $salesRepresentative->salesOrders()
             ->with(['company:id,name', 'customer:id,name', 'items.product'])
             ->latest('order_date')
-            ->limit(25)
-            ->get();
+            ->paginate($request->integer('sales_per_page', 10), ['*'], 'sales_page');
 
         $monthlyOrders = $salesRepresentative->salesOrders()
             ->whereYear('order_date', now()->year)
@@ -92,12 +91,10 @@ class SalesRepresentativeController extends Controller
             ->whereMonth('invoice_date', now()->copy()->subMonth()->month)
             ->sum('total_amount');
 
-        $commissionPreview = (float) DB::table('sales_order_items')
-            ->join('sales_orders', 'sales_orders.id', '=', 'sales_order_items.sales_order_id')
-            ->where('sales_orders.sales_representative_id', $salesRepresentative->id)
-            ->whereYear('sales_orders.order_date', now()->year)
-            ->whereMonth('sales_orders.order_date', now()->month)
-            ->sum('sales_order_items.commission_amount');
+        $yearlySales = (float) Invoice::query()
+            ->where('sales_representative_id', $salesRepresentative->id)
+            ->whereYear('invoice_date', now()->year)
+            ->sum('total_amount');
 
         return response()->json([
             'profile' => [
@@ -117,33 +114,28 @@ class SalesRepresentativeController extends Controller
                     'note' => $this->salesChangeNote($monthlySales, $lastMonthSales),
                 ],
                 [
+                    'label' => 'Yearly sales',
+                    'value' => number_format($yearlySales),
+                    'note' => now()->year . ' invoice total',
+                ],
+                [
                     'label' => 'Orders',
                     'value' => (string) (clone $monthlyOrders)->count(),
                     'note' => (clone $monthlyOrders)->whereDate('order_date', today())->count() . ' submitted today',
                 ],
-                [
-                    'label' => 'Delivered',
-                    'value' => (string) (clone $monthlyOrders)->where('status', 'delivered')->count(),
-                    'note' => 'This month',
-                ],
-                [
-                    'label' => 'Commission preview',
-                    'value' => number_format($commissionPreview),
-                    'note' => 'Product-rate estimate',
-                ],
             ],
             'performanceChart' => $this->weeklyPerformance($salesRepresentative),
-            'salesHistoryRows' => $orders->map(fn ($order) => [
-                'id' => $order->id,
-                'order' => $order->order_no,
-                'pharmacy' => $order->customer?->name ?: "Customer #{$order->customer_id}",
-                'company' => $order->company?->name ?: "Company #{$order->company_id}",
-                'date' => optional($order->order_date)->toDateString(),
-                'amount' => number_format((float) $order->total_amount),
-                'status' => $this->titleCase($order->status),
-            ])->values(),
-            'topProducts' => $this->topProducts($salesRepresentative),
-            'pharmacyRanking' => $this->pharmacyRanking($salesRepresentative),
+            'monthlySalesChart' => $this->monthlySalesChart($salesRepresentative),
+            'yearlySalesChart' => $this->yearlySalesChart($salesRepresentative),
+            'salesHistoryRows' => $this->salesHistoryRows($orders->getCollection()),
+            'salesHistoryPagination' => [
+                'currentPage' => $orders->currentPage(),
+                'from' => $orders->firstItem() ?? 0,
+                'lastPage' => $orders->lastPage(),
+                'perPage' => $orders->perPage(),
+                'to' => $orders->lastItem() ?? 0,
+                'total' => $orders->total(),
+            ],
         ]);
     }
 
@@ -258,53 +250,69 @@ class SalesRepresentativeController extends Controller
         ])->values()->all();
     }
 
-    private function topProducts(SalesRepresentative $salesRepresentative): array
+    private function monthlySalesChart(SalesRepresentative $salesRepresentative): array
     {
-        return DB::table('invoice_items')
-            ->join('invoices', 'invoices.id', '=', 'invoice_items.invoice_id')
-            ->join('products', 'products.id', '=', 'invoice_items.product_id')
-            ->where('invoices.sales_representative_id', $salesRepresentative->id)
-            ->whereYear('invoices.invoice_date', now()->year)
-            ->whereMonth('invoices.invoice_date', now()->month)
-            ->select([
-                'products.name as label',
-                DB::raw('COUNT(DISTINCT invoices.id) as orders'),
-                DB::raw('SUM(invoice_items.line_total) as sales'),
-            ])
-            ->groupBy('products.id', 'products.name')
-            ->orderByDesc('sales')
-            ->limit(5)
-            ->get()
-            ->map(fn ($row) => [
-                'label' => $row->label,
-                'value' => "{$row->orders} orders",
-                'note' => number_format((float) $row->sales) . ' sales',
-            ])
-            ->values()
-            ->all();
+        $rows = collect(range(1, 12))->map(function ($month) use ($salesRepresentative) {
+            $date = now()->copy()->startOfYear()->addMonths($month - 1);
+            $value = (float) Invoice::query()
+                ->where('sales_representative_id', $salesRepresentative->id)
+                ->whereYear('invoice_date', $date->year)
+                ->whereMonth('invoice_date', $date->month)
+                ->sum('total_amount');
+
+            return [
+                'label' => $date->format('M'),
+                'value' => $value,
+                'note' => $date->format('Y-m'),
+            ];
+        });
+
+        return $this->formatVerticalChartRows($rows);
     }
 
-    private function pharmacyRanking(SalesRepresentative $salesRepresentative): array
+    private function yearlySalesChart(SalesRepresentative $salesRepresentative): array
     {
-        return Invoice::query()
-            ->join('customers', 'customers.id', '=', 'invoices.customer_id')
-            ->where('invoices.sales_representative_id', $salesRepresentative->id)
-            ->whereYear('invoices.invoice_date', now()->year)
-            ->whereMonth('invoices.invoice_date', now()->month)
-            ->select([
-                'customers.name as label',
-                DB::raw('SUM(invoices.total_amount) as sales'),
-                DB::raw('COUNT(invoices.id) as invoice_count'),
-            ])
-            ->groupBy('customers.id', 'customers.name')
-            ->orderByDesc('sales')
-            ->limit(5)
-            ->get()
-            ->map(fn ($row) => [
-                'label' => $row->label,
-                'value' => number_format((float) $row->sales),
-                'note' => "{$row->invoice_count} invoices this month",
-            ])
+        $currentYear = (int) now()->year;
+        $rows = collect(range($currentYear - 4, $currentYear))->map(function ($year) use ($salesRepresentative) {
+            $value = (float) Invoice::query()
+                ->where('sales_representative_id', $salesRepresentative->id)
+                ->whereYear('invoice_date', $year)
+                ->sum('total_amount');
+
+            return [
+                'label' => (string) $year,
+                'value' => $value,
+                'note' => "{$year} sales",
+            ];
+        });
+
+        return $this->formatVerticalChartRows($rows);
+    }
+
+    private function formatVerticalChartRows($rows): array
+    {
+        $max = max(1, (float) $rows->max('value'));
+
+        return $rows->map(fn ($row) => [
+            'label' => $row['label'],
+            'value' => number_format((float) $row['value']),
+            'rawValue' => (float) $row['value'],
+            'percent' => (int) round(((float) $row['value'] / $max) * 100),
+            'note' => $row['note'] ?? '',
+        ])->values()->all();
+    }
+
+    private function salesHistoryRows($orders): array
+    {
+        return $orders->map(fn ($order) => [
+            'id' => $order->id,
+            'order' => $order->order_no,
+            'pharmacy' => $order->customer?->name ?: "Customer #{$order->customer_id}",
+            'company' => $order->company?->name ?: "Company #{$order->company_id}",
+            'date' => optional($order->order_date)->toDateString(),
+            'amount' => number_format((float) $order->total_amount),
+            'status' => $this->titleCase($order->status),
+        ])
             ->values()
             ->all();
     }

@@ -1,101 +1,88 @@
 import StatusBadge from './StatusBadge';
 
-function SummaryGrid({ cards = [] }) {
-    if (!cards.length) {
-        return null;
-    }
-
-    return (
-        <div className="order-summary-grid">
-            {cards.map((card) => (
-                <div key={card.label}>
-                    <span>{card.label}</span>
-                    <strong>{card.value}</strong>
-                    <small>{card.note}</small>
-                </div>
-            ))}
-        </div>
-    );
+function buildLineRows(orderItems, focItems) {
+    return [
+        ...orderItems.map((item) => ({
+            id: `order-${item.id}`,
+            type: 'Order',
+            product: item.product,
+            note: item.conversion,
+            quantity: `${item.orderedQuantity} ${item.selectedUnit}`,
+            detail: 'Selected unit',
+            baseOrRule: item.baseQuantity,
+            unitPrice: item.unitPrice,
+            total: item.lineTotal,
+            status: item.stockStatus,
+        })),
+        ...focItems.map((item) => ({
+            id: `foc-${item.id}`,
+            type: 'FOC',
+            product: item.product,
+            note: item.rule,
+            quantity: item.quantity,
+            detail: 'Reward',
+            baseOrRule: item.baseQuantity || item.quantity,
+            unitPrice: '-',
+            total: 'Free',
+            status: 'Ready',
+        })),
+    ];
 }
 
 export default function SalesOrderDetail({
-    approvalCards = [],
     focItems = [],
     orderItems = [],
     totals = [],
     warehouseChecklist = [],
 }) {
+    const lineRows = buildLineRows(orderItems, focItems);
+
     return (
         <div className="sales-order-detail">
             <section className="drawer-section">
-                <p className="eyebrow">Approval review</p>
-                <SummaryGrid cards={approvalCards} />
-            </section>
-
-            <section className="drawer-section">
-                <p className="eyebrow">Ordered items</p>
-                <div className="order-item-card-list">
-                    {orderItems.map((item) => (
-                        <article className="order-item-card" key={item.id}>
-                            <div className="order-item-card-title">
-                                <div>
-                                    <strong>{item.product}</strong>
-                                    <small>{item.company}</small>
-                                </div>
-                                <StatusBadge value={item.stockStatus} />
-                            </div>
-                            <div className="order-item-card-facts">
-                                <div>
-                                    <span>Selected unit</span>
-                                    <strong>{item.orderedQuantity} {item.selectedUnit}</strong>
-                                    <small>{item.conversion}</small>
-                                </div>
-                                <div>
-                                    <span>Base quantity</span>
-                                    <strong>{item.baseQuantity}</strong>
-                                </div>
-                                <div>
-                                    <span>Unit price</span>
-                                    <strong>{item.unitPrice}</strong>
-                                </div>
-                                <div>
-                                    <span>Total</span>
-                                    <strong>{item.lineTotal}</strong>
-                                </div>
-                            </div>
-                        </article>
-                    ))}
-                </div>
-            </section>
-
-            <section className="drawer-section">
-                <p className="eyebrow">FOC items</p>
-                {focItems.length > 0 ? (
-                    <div className="foc-list">
-                        {focItems.map((item) => (
-                            <article key={item.id}>
-                                <div>
-                                    <span>Reward product</span>
-                                    <strong>{item.product}</strong>
-                                </div>
-                                <div>
-                                    <span>Reward</span>
-                                    <strong>{item.quantity}</strong>
-                                </div>
-                                <div>
-                                    <span>Rule</span>
-                                    <small>{item.rule}</small>
-                                </div>
-                            </article>
-                        ))}
+                <p className="eyebrow">Order and FOC items</p>
+                {lineRows.length > 0 ? (
+                    <div className="order-detail-line-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Product</th>
+                                    <th>Quantity</th>
+                                    <th>Base / Rule</th>
+                                    <th>Unit Price</th>
+                                    <th>Total</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {lineRows.map((item) => (
+                                    <tr key={item.id}>
+                                        <td><StatusBadge value={item.type} /></td>
+                                        <td>
+                                            <strong>{item.product}</strong>
+                                            <small>{item.note}</small>
+                                        </td>
+                                        <td>
+                                            <strong>{item.quantity}</strong>
+                                            <small>{item.detail}</small>
+                                        </td>
+                                        <td>{item.baseOrRule}</td>
+                                        <td><strong>{item.unitPrice}</strong></td>
+                                        <td><strong>{item.total}</strong></td>
+                                        <td><StatusBadge value={item.status} /></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 ) : (
-                    <p className="helper-copy">No FOC promotion is applied to this order.</p>
+                    <p className="helper-copy">No order lines or FOC rewards are attached to this order.</p>
                 )}
             </section>
 
             <section className="drawer-section">
-                <p className="eyebrow">Totals and credit impact</p>
+                <p className="eyebrow">Totals</p>
                 <div className="order-total-grid">
                     {totals.map((total) => (
                         <div key={total.label}>

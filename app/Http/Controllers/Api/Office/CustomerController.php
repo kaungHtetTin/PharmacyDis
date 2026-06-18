@@ -16,6 +16,7 @@ class CustomerController extends Controller
         return Customer::query()
             ->with(['creditStatuses.company'])
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
+            ->when($request->boolean('action_only'), fn ($query) => $query->whereHas('creditStatuses', fn ($creditQuery) => $creditQuery->whereIn('credit_status', ['warning', 'blocked'])))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $query->where(function ($searchQuery) use ($request) {
                     $searchQuery->where('name', 'like', "%{$request->search}%")

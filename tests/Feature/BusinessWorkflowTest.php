@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\Customer;
+use App\Models\AuditLog;
 use App\Models\Company;
 use App\Models\CompanyPayable;
 use App\Models\CustomerBalance;
 use App\Models\CustomerCompanyCreditStatus;
 use App\Models\FocRule;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\SalesOrder;
@@ -91,6 +93,26 @@ class BusinessWorkflowTest extends TestCase
         $this->assertCount(2, $order->items);
         $this->assertEquals(100, $order->items()->where('product_id', $paracetamol->id)->first()->foc_base_unit_quantity);
         $this->assertEquals('submitted', $order->status);
+        $this->assertDatabaseHas('invoices', [
+            'sales_order_id' => $order->id,
+            'status' => 'issued',
+            'paid_amount' => 0,
+            'balance_amount' => $order->total_amount,
+        ]);
+        $expectedCustomerBalance = Invoice::query()
+            ->where('customer_id', $order->customer_id)
+            ->where('company_id', $order->company_id)
+            ->where('status', '!=', 'void')
+            ->sum('total_amount')
+            - Payment::query()
+                ->where('customer_id', $order->customer_id)
+                ->where('company_id', $order->company_id)
+                ->sum('amount');
+        $this->assertDatabaseHas('customer_balances', [
+            'customer_id' => $order->customer_id,
+            'company_id' => $order->company_id,
+            'balance_amount' => $expectedCustomerBalance,
+        ]);
     }
 
     public function test_quantity_foc_rules_apply_higher_tiers_then_lower_remainders(): void
@@ -531,6 +553,41 @@ class BusinessWorkflowTest extends TestCase
             'id' => $created['id'],
             'code' => 'NORTHSTAR',
         ]);
+    }
+
+    public function test_office_can_view_and_clear_activity_logs(): void
+    {
+        AuditLog::query()->delete();
+
+        $created = $this->withToken($this->officeToken)
+            ->postJson('/api/office/companies', [
+                'name' => 'Activity Test Pharma',
+                'code' => 'ACTIVITYTEST',
+                'contact_person' => 'Daw Activity',
+                'phone' => '09-777-000010',
+                'status' => 'active',
+            ])
+            ->assertCreated()
+            ->json();
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'created',
+            'auditable_type' => Company::class,
+            'auditable_id' => $created['id'],
+        ]);
+
+        $this->withToken($this->officeToken)
+            ->getJson('/api/office/activity-logs?per_page=25')
+            ->assertOk()
+            ->assertJsonPath('data.0.action', 'created')
+            ->assertJsonPath('data.0.auditable_label', 'Company');
+
+        $this->withToken($this->officeToken)
+            ->deleteJson('/api/office/activity-logs')
+            ->assertOk()
+            ->assertJsonPath('message', 'Activity logs cleared.');
+
+        $this->assertSame(0, AuditLog::count());
     }
 
     public function test_office_can_create_update_and_delete_product(): void

@@ -150,7 +150,6 @@ export default function SalesPharmacyDetailPage({ onNavigate }) {
             <PageHeader
                 action={(
                     <div className="page-heading-actions">
-                        <button className="btn primary" onClick={() => onNavigate?.('new-order')} type="button">Create order</button>
                         <button className="btn secondary" onClick={() => onNavigate?.('pharmacies')} type="button">Back</button>
                     </div>
                 )}

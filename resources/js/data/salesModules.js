@@ -24,7 +24,6 @@ export const salesModules = {
         eyebrow: 'Customers',
         title: 'Pharmacies',
         description: 'Open a pharmacy detail page to review contact information, purchase history, payment history, outstanding balance, and credit restrictions.',
-        primaryAction: 'New order',
         detailPageKey: 'pharmacies-detail',
         searchPlaceholder: 'Search pharmacy, owner, phone',
         filters: [

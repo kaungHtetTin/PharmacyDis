@@ -31,7 +31,13 @@ export function AuthProvider({ children }) {
         }
     }
 
-    const value = useMemo(() => ({ loading, login, logout, user }), [loading, user]);
+    async function refreshUser() {
+        const nextUser = await api.get('/user');
+        setUser(nextUser);
+        return nextUser;
+    }
+
+    const value = useMemo(() => ({ loading, login, logout, refreshUser, setUser, user }), [loading, user]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

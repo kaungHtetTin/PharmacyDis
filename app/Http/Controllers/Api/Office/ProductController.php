@@ -40,6 +40,11 @@ class ProductController extends Controller
         return response()->json($product->fresh(['company', 'category', 'baseUnit', 'productUnits.unit', 'focRules']), 201);
     }
 
+    public function show(Product $product)
+    {
+        return $product->load(['company', 'category', 'baseUnit', 'productUnits.unit', 'focRules' => fn ($query) => $query->where('status', 'active')]);
+    }
+
     public function update(StoreProductRequest $request, Product $product)
     {
         $validated = $request->validated();

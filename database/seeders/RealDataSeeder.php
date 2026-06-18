@@ -42,15 +42,27 @@ class RealDataSeeder extends Seeder
         return [
             'super_admin' => Role::updateOrCreate(
                 ['name' => 'super_admin'],
-                ['display_name' => 'Super Admin', 'description' => 'Full office administration access']
+                ['display_name' => 'Super Admin', 'description' => 'Full office administration access', 'permissions' => ['*']]
             ),
             'admin' => Role::updateOrCreate(
                 ['name' => 'admin'],
-                ['display_name' => 'Admin', 'description' => 'Office administrator']
+                ['display_name' => 'Admin', 'description' => 'Office administrator', 'permissions' => ['*']]
+            ),
+            'office_operator' => Role::updateOrCreate(
+                ['name' => 'office_operator'],
+                ['display_name' => 'Office Operator', 'description' => 'Daily order, customer, product, and stock operation access.', 'permissions' => ['office.dashboard', 'office.operations', 'office.master-data']]
+            ),
+            'finance_manager' => Role::updateOrCreate(
+                ['name' => 'finance_manager'],
+                ['display_name' => 'Finance Manager', 'description' => 'Finance ledger, payment, payable, receivable, and report access.', 'permissions' => ['office.dashboard', 'office.finance', 'office.reports']]
+            ),
+            'inventory_manager' => Role::updateOrCreate(
+                ['name' => 'inventory_manager'],
+                ['display_name' => 'Inventory Manager', 'description' => 'Inventory, receiving, warehouse, product, and transfer access.', 'permissions' => ['office.dashboard', 'office.operations', 'office.master-data']]
             ),
             'sales_representative' => Role::updateOrCreate(
                 ['name' => 'sales_representative'],
-                ['display_name' => 'Sales Representative', 'description' => 'Mobile sales app user']
+                ['display_name' => 'Sales Representative', 'description' => 'Mobile sales app user', 'permissions' => ['sales.app']]
             ),
         ];
     }
@@ -176,6 +188,15 @@ class RealDataSeeder extends Seeder
             $legacySuperAdmin->restore();
         }
 
+        $legacyMayZin = User::withTrashed()
+            ->where('email', 'may.zin@pharmacy-dis.test')
+            ->first();
+
+        if ($legacyMayZin && ! User::withTrashed()->where('email', 'mayzin@paramacy.test')->exists()) {
+            $legacyMayZin->forceFill(['email' => 'mayzin@paramacy.test'])->save();
+            $legacyMayZin->restore();
+        }
+
         User::updateOrCreate(
             ['email' => 'admin@paramacy.test'],
             [
@@ -189,7 +210,7 @@ class RealDataSeeder extends Seeder
         );
 
         $salesUsers = [
-            ['SR-0001', 'May Zin', 'may.zin@pharmacy-dis.test', '09-400-000101', 'Yangon North', 'MEDILIFE'],
+            ['SR-0001', 'May Zin', 'mayzin@paramacy.test', '09-400-000101', 'Yangon North', 'MEDILIFE'],
             ['SR-0002', 'Aung Kyaw', 'aung.kyaw@pharmacy-dis.test', '09-400-000102', 'Mandalay', 'ZENITH'],
             ['SR-0003', 'Thiri Mon', 'thiri.mon@pharmacy-dis.test', '09-400-000103', 'Yangon South', 'APEXMED'],
             ['SR-0004', 'Nyi Nyi', 'nyi.nyi@pharmacy-dis.test', '09-400-000104', 'Naypyidaw', 'NOVA'],

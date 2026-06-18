@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class NumberGeneratorService
 {
@@ -10,8 +11,19 @@ class NumberGeneratorService
     {
         /** @var Model $model */
         $model = new $modelClass();
-        $count = $model->newQuery()->whereDate('created_at', now()->toDateString())->count() + 1;
+        $date = now()->format('Ymd');
+        $query = $model->newQuery();
 
-        return sprintf('%s-%s-%04d', $prefix, now()->format('Ymd'), $count);
+        if (in_array(SoftDeletes::class, class_uses_recursive($modelClass), true)) {
+            $query->withTrashed();
+        }
+
+        $latestNumber = $query
+            ->where($column, 'like', "{$prefix}-{$date}-%")
+            ->orderByDesc($column)
+            ->value($column);
+        $sequence = $latestNumber ? ((int) substr($latestNumber, -4)) + 1 : 1;
+
+        return sprintf('%s-%s-%04d', $prefix, $date, $sequence);
     }
 }

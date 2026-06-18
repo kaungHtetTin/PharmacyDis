@@ -61,54 +61,76 @@ export function unwrapCollection(response) {
 }
 
 export function mapOrders(response) {
-    return unwrapCollection(response).map((order) => ({
-        id: order.id,
-        company_id: order.company_id,
-        customer_id: order.customer_id,
-        sales_representative_id: order.sales_representative_id || '',
-        invoice_id: order.invoices?.[0]?.id || '',
-        status_value: order.status,
-        requested_delivery_date: order.requested_delivery_date || '',
-        note: order.note || '',
-        order: order.order_no,
-        pharmacy: order.customer?.name || `Customer #${order.customer_id}`,
-        rep: order.sales_representative?.user?.name || `Rep #${order.sales_representative_id || '-'}`,
-        company: order.company?.name || `Company #${order.company_id}`,
-        submittedDate: order.order_date,
-        requestedDeliveryDate: dateOnly(order.requested_delivery_date) || '-',
-        baseQuantity: `${(order.items || []).reduce((total, item) => total + Number(item.base_unit_quantity || 0), 0)} units`,
-        creditStatus: 'Ready',
-        stockStatus: order.status === 'delivered' ? 'Delivered' : ['approved', 'invoiced'].includes(order.status) ? 'Reserved' : 'Ready',
-        total: money(order.total_amount),
-        status: titleCase(order.status),
-        orderItems: (order.items || []).map((item) => ({
-            id: item.id,
-            product: item.product?.name || `Product #${item.product_id}`,
+    return unwrapCollection(response).map((order) => {
+        const invoice = order.invoices?.[0] || null;
+        const invoiceStatus = titleCase(invoice?.status || '');
+        const deliveryStatus = order.status === 'delivered'
+            ? 'Delivered'
+            : order.status === 'rejected'
+                ? 'Rejected'
+                : ['approved', 'invoiced'].includes(order.status)
+                    ? 'Preparing'
+                    : 'Pending';
+
+        return {
+            id: order.id,
+            company_id: order.company_id,
+            customer_id: order.customer_id,
+            sales_representative_id: order.sales_representative_id || '',
+            invoice_id: invoice?.id || '',
+            invoice: invoice?.invoice_no || '',
+            invoiceBalance: money(invoice?.balance_amount || 0),
+            invoiceStatus,
+            paymentStatus: invoiceStatus || 'Not invoiced',
+            deliveryStatus,
+            status_value: order.status,
+            requested_delivery_date: order.requested_delivery_date || '',
+            note: order.note || '',
+            order: order.order_no,
+            pharmacy: order.customer?.name || `Customer #${order.customer_id}`,
+            rep: order.sales_representative?.user?.name || `Rep #${order.sales_representative_id || '-'}`,
             company: order.company?.name || `Company #${order.company_id}`,
-            orderedQuantity: item.quantity,
-            selectedUnit: item.unit?.name || `Unit #${item.unit_id}`,
-            conversion: `1 selected unit = ${item.conversion_factor_to_base} base units`,
-            baseQuantity: `${item.base_unit_quantity} base units`,
-            unitPrice: money(item.unit_price),
-            lineTotal: money(item.line_total),
-            stockStatus: 'Ready',
-        })),
-        focItems: (order.foc_items || []).map((item) => ({
-            id: item.id,
-            product: item.product?.name || `Product #${item.product_id}`,
-            quantity: `${money(item.reward_base_unit_quantity)} base units`,
-            baseQuantity: `${money(item.reward_base_unit_quantity)} base units`,
-            rule: item.foc_rule?.rule_type === 'value'
-                ? `Minimum order value ${money(item.foc_rule?.minimum_order_value || 0)}`
-                : `Minimum ${money(item.foc_rule?.minimum_quantity_base_units || 0)} base units`,
-        })),
-        totals: [
-            { label: 'Subtotal', value: money(order.subtotal_amount) },
-            { label: 'Discount', value: money(order.discount_amount) },
-            { label: 'FOC value', value: money(order.foc_value_amount) },
-            { label: 'Total', value: money(order.total_amount) },
-        ],
-    }));
+            submittedDate: order.order_date,
+            requestedDeliveryDate: dateOnly(order.requested_delivery_date) || '-',
+            baseQuantity: `${(order.items || []).reduce((total, item) => total + Number(item.base_unit_quantity || 0), 0)} units`,
+            creditStatus: 'Ready',
+            stockStatus: order.status === 'delivered' ? 'Delivered' : ['approved', 'invoiced'].includes(order.status) ? 'Reserved' : 'Ready',
+            total: money(order.total_amount),
+            status: titleCase(order.status),
+            orderItems: (order.items || []).map((item) => ({
+                id: item.id,
+                product: item.product?.name || `Product #${item.product_id}`,
+                company: order.company?.name || `Company #${order.company_id}`,
+                orderedQuantity: item.quantity,
+                selectedUnit: item.unit?.name || `Unit #${item.unit_id}`,
+                conversion: `1 selected unit = ${item.conversion_factor_to_base} base units`,
+                baseQuantity: `${item.base_unit_quantity} base units`,
+                unitPrice: money(item.unit_price),
+                lineTotal: money(item.line_total),
+                stockStatus: 'Ready',
+            })),
+            focItems: (order.foc_items || []).map((item) => ({
+                id: item.id,
+                product: item.product?.name || `Product #${item.product_id}`,
+                quantity: `${money(item.reward_base_unit_quantity)} base units`,
+                baseQuantity: `${money(item.reward_base_unit_quantity)} base units`,
+                rule: item.foc_rule?.rule_type === 'value'
+                    ? `Minimum order value ${money(item.foc_rule?.minimum_order_value || 0)}`
+                    : `Minimum ${money(item.foc_rule?.minimum_quantity_base_units || 0)} base units`,
+            })),
+            totals: [
+                { label: 'Subtotal', value: money(order.subtotal_amount) },
+                { label: 'Discount', value: money(order.discount_amount) },
+                { label: 'FOC value', value: money(order.foc_value_amount) },
+                { label: 'Total', value: money(order.total_amount) },
+            ],
+            warehouseChecklist: [
+                { id: 'approval', label: 'Order approved', detail: 'Office approval reserves stock for fulfillment.', done: ['approved', 'invoiced', 'delivered'].includes(order.status) },
+                { id: 'invoice', label: 'Invoice generated', detail: 'Invoice can be printed after order approval.', done: Boolean(order.invoices?.length) || ['invoiced', 'delivered'].includes(order.status) },
+                { id: 'delivery', label: 'Delivery completed', detail: 'Delivered orders are ready for payment follow-up.', done: order.status === 'delivered' },
+            ],
+        };
+    });
 }
 
 export function mapInvoices(response) {
@@ -173,6 +195,42 @@ export function mapPayments(response) {
     });
 }
 
+export function mapFinanceTransactions(response) {
+    return unwrapCollection(response).map((transaction) => ({
+        id: transaction.id,
+        transaction: transaction.transaction_no,
+        direction_value: transaction.direction || 'income',
+        direction: titleCase(transaction.direction),
+        category_value: transaction.category || 'other',
+        category: titleCase(transaction.category),
+        date: dateOnly(transaction.transaction_date) || '-',
+        transaction_date: dateOnly(transaction.transaction_date),
+        amount_value: transaction.amount || 0,
+        amount: money(transaction.amount),
+        payment_method: transaction.payment_method || 'cash',
+        method: titleCase(transaction.payment_method),
+        referenceNo: transaction.reference_no || '-',
+        reference_no: transaction.reference_no || '',
+        description: transaction.description || '',
+        source: transaction.source_type ? titleCase(transaction.source_type) : 'Manual',
+        status_value: transaction.status || 'recorded',
+        status: titleCase(transaction.status || 'recorded'),
+    }));
+}
+
+export function mapFinanceCategories(response) {
+    return unwrapCollection(response).map((category) => ({
+        id: category.id,
+        name: category.name,
+        code: category.code || '',
+        direction_value: category.direction || 'both',
+        direction: titleCase(category.direction || 'both'),
+        description: category.description || '',
+        transactionCount: `${category.transactions_count || 0} ${Number(category.transactions_count || 0) === 1 ? 'transaction' : 'transactions'}`,
+        status: titleCase(category.status),
+    }));
+}
+
 export function mapReceivables(response) {
     return unwrapCollection(response).map((invoice) => {
         const dueDate = dateOnly(invoice.due_date);
@@ -233,6 +291,7 @@ export function mapPayables(response) {
             id: payable.id,
             payable: `PAYABLE-${String(payable.id).padStart(4, '0')}`,
             company_id: payable.company_id,
+            stock_receipt_id: payable.stock_receipt_id,
             company: payable.company?.name || `Company #${payable.company_id}`,
             receipt: payable.stock_receipt?.receipt_no || '-',
             supplierInvoice: payable.stock_receipt?.supplier_invoice_no || '-',
@@ -417,6 +476,8 @@ export function mapStockTransfers(response) {
         const outboundMovements = (transfer.movements || []).filter((movement) => Number(movement.base_unit_quantity || 0) < 0);
         const productNames = [...new Set(outboundMovements.map((movement) => movement.product?.name || `Product #${movement.product_id || '-'}`))];
         const baseQuantity = outboundMovements.reduce((sum, movement) => sum + Math.abs(Number(movement.base_unit_quantity || 0)), 0);
+        const sourceWarehouse = transfer.source_warehouse?.name || '-';
+        const destinationWarehouse = transfer.destination_warehouse?.name || '-';
         const lineSummary = outboundMovements
             .slice(0, 3)
             .map((movement) => {
@@ -430,13 +491,30 @@ export function mapStockTransfers(response) {
         return {
             id: transfer.id,
             transfer: transfer.transfer_no || `Transfer #${transfer.id}`,
-            route: `${transfer.source_warehouse?.name || '-'} -> ${transfer.destination_warehouse?.name || '-'}`,
+            route: `${sourceWarehouse} -> ${destinationWarehouse}`,
             company: transfer.company?.name || '-',
+            sourceWarehouse,
+            destinationWarehouse,
             products: productNames.length > 0 ? productNames.join(', ') : '-',
             baseQuantity: money(baseQuantity),
             date: dateOnly(transfer.created_at),
             note: transfer.note || '',
             lineSummary: lineSummary || '-',
+            lineCount: outboundMovements.length,
+            transferItems: outboundMovements.map((movement) => {
+                const unit = movement.product?.base_unit?.abbreviation || movement.product?.base_unit?.name || 'base units';
+
+                return {
+                    id: movement.id,
+                    product: movement.product?.name || `Product #${movement.product_id || '-'}`,
+                    batch: movement.stock_batch?.batch_no || `Batch #${movement.stock_batch_id || '-'}`,
+                    expiry: dateOnly(movement.stock_batch?.expiry_date) || '-',
+                    sourceWarehouse: movement.warehouse?.name || sourceWarehouse,
+                    destinationWarehouse,
+                    quantity: `${money(Math.abs(Number(movement.base_unit_quantity || 0)))} ${unit}`,
+                    note: movement.note || '-',
+                };
+            }),
             status: 'Completed',
         };
     });
@@ -627,6 +705,8 @@ export function getOfficeEndpoint(pageKey) {
         'inventory-detail': '',
         orders: '/office/orders?per_page=25',
         invoices: '/office/invoices?per_page=25',
+        finance: '/office/finance/transactions?per_page=15',
+        'finance-categories': '/office/finance-categories?per_page=15',
         payments: '/office/payments?per_page=25',
         receivables: '/office/receivables?per_page=15',
         payables: '/office/payables?per_page=15',
@@ -650,6 +730,8 @@ export function mapOfficeRows(pageKey, response) {
         'inventory-detail': mapStockBatches,
         orders: mapOrders,
         invoices: mapInvoices,
+        finance: mapFinanceTransactions,
+        'finance-categories': mapFinanceCategories,
         payments: mapPayments,
         receivables: mapReceivables,
         payables: mapPayables,
