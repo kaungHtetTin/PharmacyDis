@@ -1,0 +1,8 @@
+Re arrange the navigation drawer,
+Dashboard,
+Report,
+Quick - operate
+Finance Follow-up
+Customers & Sales
+Master Data
+System

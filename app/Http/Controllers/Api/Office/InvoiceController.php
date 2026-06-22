@@ -22,6 +22,7 @@ class InvoiceController extends Controller
                 'salesOrder.salesRepresentative.user',
                 'salesOrder.items.product',
                 'salesOrder.items.unit',
+                'salesOrder.items.focUnit',
                 'salesOrder.focItems.product',
                 'salesOrder.focItems.focRule',
                 'items.product',
@@ -32,6 +33,19 @@ class InvoiceController extends Controller
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('invoice_date', '>=', $request->date('date_from')->toDateString()))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('invoice_date', '<=', $request->date('date_to')->toDateString()))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = trim((string) $request->input('search'));
+
+                $query->where(function ($nestedQuery) use ($search) {
+                    $nestedQuery
+                        ->where('invoice_no', 'like', "%{$search}%")
+                        ->orWhereHas('company', fn ($companyQuery) => $companyQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('customer', fn ($customerQuery) => $customerQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('salesOrder', fn ($orderQuery) => $orderQuery->where('order_no', 'like', "%{$search}%"));
+                });
+            })
             ->when($request->boolean('action_only'), fn ($query) => $query
                 ->where('balance_amount', '>', 0)
                 ->whereNotIn('status', ['paid', 'void']))
@@ -43,7 +57,15 @@ class InvoiceController extends Controller
 
     public function generateFromOrder(Request $request, SalesOrder $salesOrder, InvoiceService $invoiceService)
     {
-        $invoice = $invoiceService->generateFromOrder($salesOrder, $request->user());
+        $validated = $request->validate([
+            'tax_amount' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $invoice = $invoiceService->generateFromOrder(
+            $salesOrder,
+            $request->user(),
+            taxAmount: array_key_exists('tax_amount', $validated) ? (float) $validated['tax_amount'] : null
+        );
 
         return new InvoiceResource($invoice);
     }

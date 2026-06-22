@@ -46,4 +46,9 @@ class Invoice extends Model
     {
         return $this->hasMany(PaymentAllocation::class);
     }
+
+    public function salesReturns()
+    {
+        return $this->hasMany(SalesReturn::class);
+    }
 }

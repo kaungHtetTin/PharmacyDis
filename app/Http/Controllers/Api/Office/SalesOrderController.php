@@ -14,11 +14,25 @@ class SalesOrderController extends Controller
     public function index(Request $request)
     {
         $orders = SalesOrder::query()
-            ->with(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user', 'invoices:id,sales_order_id,invoice_no'])
+            ->with(['company', 'items.product', 'items.unit', 'items.focUnit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user', 'invoices:id,sales_order_id,invoice_no'])
             ->when($request->filled('order_id'), fn ($query) => $query->whereKey($request->integer('order_id')))
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
             ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('order_date', '>=', $request->date('date_from')->toDateString()))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('order_date', '<=', $request->date('date_to')->toDateString()))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = $request->search;
+
+                $query->where(function ($searchQuery) use ($search) {
+                    $searchQuery->where('order_no', 'like', "%{$search}%")
+                        ->orWhereHas('company', fn ($companyQuery) => $companyQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('customer', fn ($customerQuery) => $customerQuery
+                            ->where('name', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%"))
+                        ->orWhereHas('salesRepresentative.user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$search}%"));
+                });
+            })
             ->when($request->boolean('action_only'), fn ($query) => $query->whereIn('status', ['submitted', 'approved', 'invoiced']))
             ->latest()
             ->paginate($request->integer('per_page', 15));
@@ -34,6 +48,20 @@ class SalesOrderController extends Controller
             : $salesOrderService->create($data, $request->user());
 
         return (new SalesOrderResource($order))->response()->setStatusCode(201);
+    }
+
+    public function update(StoreOfficeSalesOrderRequest $request, SalesOrder $salesOrder, SalesOrderService $salesOrderService)
+    {
+        $order = $salesOrderService->updateBeforeDelivery($salesOrder, $request->validated(), $request->user());
+
+        return new SalesOrderResource($order);
+    }
+
+    public function destroy(Request $request, SalesOrder $salesOrder, SalesOrderService $salesOrderService)
+    {
+        $salesOrderService->deleteBeforeDelivery($salesOrder, $request->user());
+
+        return response()->noContent();
     }
 
     public function approve(Request $request, SalesOrder $salesOrder, SalesOrderService $salesOrderService)
@@ -63,6 +91,6 @@ class SalesOrderController extends Controller
             'rejection_reason' => $request->rejection_reason,
         ]);
 
-        return new SalesOrderResource($salesOrder->fresh(['company', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user']));
+        return new SalesOrderResource($salesOrder->fresh(['company', 'items.product', 'items.unit', 'items.focUnit', 'focItems.product', 'focItems.focRule', 'customer', 'salesRepresentative.user']));
     }
 }

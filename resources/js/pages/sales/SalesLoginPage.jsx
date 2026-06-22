@@ -6,7 +6,7 @@ import { useAuth } from '../../services/auth.jsx';
 export default function SalesLoginPage({ onLogin }) {
     const { login } = useAuth();
     const [credentials, setCredentials] = useState({
-        email: 'mayzin@paramacy.test',
+        email: 'mayzin@pharmacy.test',
         password: 'password',
         user_type: 'sales',
     });

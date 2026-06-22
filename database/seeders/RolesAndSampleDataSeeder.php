@@ -47,7 +47,7 @@ class RolesAndSampleDataSeeder extends Seeder
         );
 
         $adminUser = User::updateOrCreate(
-            ['email' => 'admin@paramacy.test'],
+            ['email' => 'admin@pharmacy.test'],
             [
                 'role_id' => $adminRole->id,
                 'name' => 'Admin User',
@@ -59,7 +59,7 @@ class RolesAndSampleDataSeeder extends Seeder
         );
 
         $salesUser = User::updateOrCreate(
-            ['email' => 'mayzin@paramacy.test'],
+            ['email' => 'mayzin@pharmacy.test'],
             [
                 'role_id' => $salesRole->id,
                 'name' => 'May Zin',

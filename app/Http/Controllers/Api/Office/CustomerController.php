@@ -44,7 +44,7 @@ class CustomerController extends Controller
         $customer->load(['creditStatuses.company']);
 
         $orders = $customer->salesOrders()
-            ->with(['company:id,name', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'salesRepresentative.user:id,name'])
+            ->with(['company:id,name', 'items.product', 'items.unit', 'items.focUnit', 'focItems.product', 'focItems.focRule', 'salesRepresentative.user:id,name'])
             ->latest('order_date')
             ->limit(25)
             ->get();

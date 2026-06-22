@@ -41,6 +41,7 @@ class StoreProductRequest extends FormRequest
             'default_discount_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'commission_rate_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'low_stock_threshold_base_units' => ['nullable', 'integer', 'min:0'],
+            'low_stock_threshold_sales_units' => ['nullable', 'numeric', 'min:0'],
             'base_unit_selling_price' => ['nullable', 'numeric', 'min:0'],
             'product_units' => ['nullable', 'array'],
             'product_units.*.unit_id' => ['required_with:product_units', 'exists:units,id'],

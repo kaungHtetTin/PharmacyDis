@@ -26,7 +26,44 @@ function readCell(row, column, columnIndex) {
     return row[column.key];
 }
 
-function renderCell(value, column, columnIndex) {
+function formatIsoDateValue(value) {
+    if (typeof value !== 'string') {
+        return value;
+    }
+
+    const text = value.trim();
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/);
+
+    if (!match) {
+        return value;
+    }
+
+    const [, datePart, hour = '00', minute = '00', second = '00'] = match;
+
+    if (hour === '00' && minute === '00' && second === '00') {
+        return datePart;
+    }
+
+    const date = new Date(text);
+
+    if (Number.isNaN(date.getTime())) {
+        return datePart;
+    }
+
+    return new Intl.DateTimeFormat('en', {
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    }).format(date);
+}
+
+function renderCell(value, column, columnIndex, row) {
+    if (typeof column.render === 'function') {
+        return column.render(row, value);
+    }
+
     if (column.type === 'image') {
         return (
             <span className="table-image-cell">
@@ -51,7 +88,9 @@ function renderCell(value, column, columnIndex) {
         );
     }
 
-    return columnIndex === 0 ? <strong>{value}</strong> : value;
+    const displayValue = formatIsoDateValue(value);
+
+    return columnIndex === 0 ? <strong>{displayValue}</strong> : displayValue;
 }
 
 function getActionIcon(action) {
@@ -258,12 +297,16 @@ export default function DataTable({
                     )}
                     {!loading && !error && visibleRows.map((row) => {
                         const key = Array.isArray(row) ? row.join('-') : row.id;
+                        const rowClassName = [
+                            onRowClick ? 'clickable-row' : '',
+                            !Array.isArray(row) ? row.rowClassName : '',
+                        ].filter(Boolean).join(' ');
 
                         return (
-                            <tr className={onRowClick ? 'clickable-row' : ''} key={key} onClick={() => onRowClick?.(row)}>
+                            <tr className={rowClassName} key={key} onClick={() => onRowClick?.(row)}>
                                 {normalizedColumns.map((column, index) => (
                                     <td key={`${key}-${column.key}`}>
-                                        {renderCell(readCell(row, column, index), column, index)}
+                                        {renderCell(readCell(row, column, index), column, index, row)}
                                     </td>
                                 ))}
                                 {actions.length > 0 && (

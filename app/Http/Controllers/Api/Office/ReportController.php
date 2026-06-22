@@ -16,8 +16,7 @@ class ReportController extends Controller
             : 'month';
         $year = $this->normalizedYear($request);
         $month = $this->normalizedMonth($request);
-        [$start, $end] = $this->dateRange($duration, $year, $month);
-        $durationLabel = $this->durationLabel($duration, $year, $month);
+        [$start, $end, $durationLabel] = $this->reportDateRange($request, $duration, $year, $month);
         $companyId = $request->filled('company_id') ? $request->query('company_id') : null;
         $companyName = $companyId ? DB::table('companies')->where('id', $companyId)->value('name') : null;
         $includeFreeLedger = ! $companyId;
@@ -44,7 +43,15 @@ class ReportController extends Controller
             ->where('status', 'recorded')
             ->whereBetween('transaction_date', [$start->toDateString(), $end->toDateString()]);
 
+        $salesReturnQuery = DB::table('sales_returns')
+            ->whereNull('deleted_at')
+            ->where('status', 'posted')
+            ->whereBetween('return_date', [$start->toDateString(), $end->toDateString()])
+            ->when($companyId, fn ($query) => $query->where('company_id', $companyId));
+
         $salesTotal = (float) (clone $invoiceQuery)->sum('total_amount');
+        $salesReturnTotal = (float) (clone $salesReturnQuery)->sum('total_amount');
+        $salesReturnCount = (int) (clone $salesReturnQuery)->count();
         $invoiceCount = (int) (clone $invoiceQuery)->count();
         $receivableTotal = (float) (clone $invoiceQuery)->sum('balance_amount');
         $customerIncome = (float) (clone $customerPaymentQuery)->sum('amount');
@@ -59,6 +66,7 @@ class ReportController extends Controller
             ->whereBetween('payable_date', [$start->toDateString(), $end->toDateString()])
             ->when($companyId, fn ($query) => $query->where('company_id', $companyId))
             ->sum('balance_amount');
+        $stockHoldingValue = $this->stockHoldingValue($companyId);
         $collectionRate = $salesTotal > 0 ? round(($incomeTotal / $salesTotal) * 100, 1) : 0;
         $profitMargin = $incomeTotal > 0 ? round(($netCash / $incomeTotal) * 100, 1) : 0;
 
@@ -101,10 +109,12 @@ class ReportController extends Controller
         return [
             'metrics' => [
                 ['label' => 'Invoice sales', 'value' => number_format($salesTotal), 'note' => "{$invoiceCount} invoices in {$durationLabel}"],
+                ['label' => 'Sales returns', 'value' => number_format($salesReturnTotal), 'note' => "{$salesReturnCount} returns posted in {$durationLabel}"],
                 ['label' => 'Cash income', 'value' => number_format($incomeTotal), 'note' => $includeFreeLedger ? 'Customer payments + free ledger income' : 'Customer payments for selected company'],
                 ['label' => 'Outcome', 'value' => number_format($outcomeTotal), 'note' => $includeFreeLedger ? 'Supplier payments + free ledger outcome' : 'Supplier payments for selected company'],
                 ['label' => 'Net cash', 'value' => number_format($netCash), 'note' => 'Income minus outcome'],
                 ['label' => 'Receivable', 'value' => number_format($receivableTotal), 'note' => 'Open invoice balance in period'],
+                ['label' => 'Stock holding value', 'value' => number_format($stockHoldingValue), 'note' => 'Available warehouse stock at receipt cost'],
                 ['label' => 'Profit margin', 'value' => "{$profitMargin}%", 'note' => 'Net cash against income'],
             ],
             'lineChart' => [
@@ -182,8 +192,7 @@ class ReportController extends Controller
             : 'month';
         $year = $this->normalizedYear($request);
         $month = $this->normalizedMonth($request);
-        [$start, $end] = $this->dateRange($duration, $year, $month);
-        $durationLabel = $this->durationLabel($duration, $year, $month);
+        [$start, $end, $durationLabel] = $this->reportDateRange($request, $duration, $year, $month);
 
         $rows = DB::table('invoices')
             ->join('customers', 'customers.id', '=', 'invoices.customer_id')
@@ -307,8 +316,7 @@ class ReportController extends Controller
             : 'month';
         $year = $this->normalizedYear($request);
         $month = $this->normalizedMonth($request);
-        [$start, $end] = $this->dateRange($duration, $year, $month);
-        $durationLabel = $this->durationLabel($duration, $year, $month);
+        [$start, $end, $durationLabel] = $this->reportDateRange($request, $duration, $year, $month);
 
         $rows = DB::table('invoices')
             ->join('sales_representatives', 'sales_representatives.id', '=', 'invoices.sales_representative_id')
@@ -446,6 +454,31 @@ class ReportController extends Controller
         };
     }
 
+    private function reportDateRange(Request $request, string $duration, int $year, int $month): array
+    {
+        [$start, $end] = $this->dateRange($duration, $year, $month);
+        $label = $this->durationLabel($duration, $year, $month);
+
+        if ($request->filled('date_from') || $request->filled('date_to')) {
+            $start = $request->filled('date_from')
+                ? Carbon::parse($request->query('date_from'))->startOfDay()
+                : $start;
+            $end = $request->filled('date_to')
+                ? Carbon::parse($request->query('date_to'))->endOfDay()
+                : $end;
+
+            if ($end->lt($start)) {
+                [$start, $end] = [$end->copy()->startOfDay(), $start->copy()->endOfDay()];
+            }
+
+            $label = $start->isSameDay($end)
+                ? $start->format('M j, Y')
+                : $start->format('M j, Y') . ' - ' . $end->format('M j, Y');
+        }
+
+        return [$start, $end, $label];
+    }
+
     private function normalizedYear(Request $request): int
     {
         $year = (int) $request->query('year', now()->year);
@@ -494,6 +527,41 @@ class ReportController extends Controller
         $value = Carbon::parse($date);
 
         return $duration === 'year' ? $value->format('Y-m') : $value->format('Y-m-d');
+    }
+
+    private function stockHoldingValue(?string $companyId = null): float
+    {
+        $batchCosts = $this->receiptBatchCostSubquery();
+
+        return (float) DB::table('stock_batches')
+            ->leftJoinSub($batchCosts, 'batch_costs', function ($join) {
+                $join->on('batch_costs.company_id', '=', 'stock_batches.company_id')
+                    ->on('batch_costs.product_id', '=', 'stock_batches.product_id')
+                    ->whereRaw("batch_costs.batch_key = COALESCE(stock_batches.batch_no, '')")
+                    ->whereRaw("batch_costs.expiry_key = COALESCE(stock_batches.expiry_date, '1000-01-01')");
+            })
+            ->when($companyId, fn ($query) => $query->where('stock_batches.company_id', $companyId))
+            ->sum(DB::raw('stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0)'));
+    }
+
+    private function receiptBatchCostSubquery()
+    {
+        return DB::table('stock_receipt_items')
+            ->join('stock_receipts', 'stock_receipts.id', '=', 'stock_receipt_items.stock_receipt_id')
+            ->whereNull('stock_receipts.deleted_at')
+            ->selectRaw("
+                stock_receipts.company_id,
+                stock_receipt_items.product_id,
+                COALESCE(stock_receipt_items.batch_no, '') as batch_key,
+                COALESCE(stock_receipt_items.expiry_date, '1000-01-01') as expiry_key,
+                COALESCE(SUM(stock_receipt_items.line_total) / NULLIF(SUM(stock_receipt_items.base_unit_quantity), 0), 0) as base_unit_cost
+            ")
+            ->groupBy(
+                'stock_receipts.company_id',
+                'stock_receipt_items.product_id',
+                DB::raw("COALESCE(stock_receipt_items.batch_no, '')"),
+                DB::raw("COALESCE(stock_receipt_items.expiry_date, '1000-01-01')")
+            );
     }
 
     private function financeTopCompanies(Carbon $start, Carbon $end)

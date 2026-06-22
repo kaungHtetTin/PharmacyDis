@@ -1,6 +1,6 @@
 import { mapInvoices } from './screenAdapters';
 
-const generatedInvoiceRowsKey = 'paramacy_generated_invoice_rows';
+const generatedInvoiceRowsKey = 'pharmacy_generated_invoice_rows';
 
 function normalizeInvoiceResponse(response) {
     return response?.data || response;

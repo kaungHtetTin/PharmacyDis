@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\Office\ProfileController as OfficeProfileController
 use App\Http\Controllers\Api\Office\ReportController as OfficeReportController;
 use App\Http\Controllers\Api\Office\SalesRepresentativeController as OfficeSalesRepresentativeController;
 use App\Http\Controllers\Api\Office\SalesOrderController as OfficeSalesOrderController;
+use App\Http\Controllers\Api\Office\SalesReturnController as OfficeSalesReturnController;
+use App\Http\Controllers\Api\Office\SettingController as OfficeSettingController;
 use App\Http\Controllers\Api\Office\StockController as OfficeStockController;
 use App\Http\Controllers\Api\Office\StockReceiptController as OfficeStockReceiptController;
 use App\Http\Controllers\Api\Office\UnitController as OfficeUnitController;
@@ -84,12 +86,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::middleware('permission:office.operations')->group(function () {
             Route::get('orders', [OfficeSalesOrderController::class, 'index']);
             Route::post('orders', [OfficeSalesOrderController::class, 'store']);
+            Route::put('orders/{salesOrder}', [OfficeSalesOrderController::class, 'update']);
+            Route::delete('orders/{salesOrder}', [OfficeSalesOrderController::class, 'destroy']);
             Route::post('orders/{salesOrder}/approve', [OfficeSalesOrderController::class, 'approve']);
             Route::post('orders/{salesOrder}/deliver', [OfficeSalesOrderController::class, 'deliver']);
             Route::post('orders/{salesOrder}/reject', [OfficeSalesOrderController::class, 'reject']);
 
             Route::get('invoices', [OfficeInvoiceController::class, 'index']);
             Route::post('orders/{salesOrder}/generate-invoice', [OfficeInvoiceController::class, 'generateFromOrder']);
+            Route::post('sales-returns', [OfficeSalesReturnController::class, 'store']);
 
             Route::get('stock-receipts', [OfficeStockReceiptController::class, 'index']);
             Route::post('stock-receipts', [OfficeStockReceiptController::class, 'store']);
@@ -108,6 +113,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('payments', [OfficePaymentController::class, 'index']);
             Route::get('payments/{payment}', [OfficePaymentController::class, 'show']);
             Route::post('payments', [OfficePaymentController::class, 'store']);
+            Route::get('sales-returns', [OfficeSalesReturnController::class, 'index']);
             Route::apiResource('finance-categories', OfficeFinanceCategoryController::class)->except(['show']);
             Route::get('finance/transactions', [OfficeFinanceController::class, 'transactions']);
             Route::post('finance/transactions', [OfficeFinanceController::class, 'storeTransaction']);
@@ -131,6 +137,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('activity-logs', [OfficeActivityLogController::class, 'clear']);
             Route::get('users/roles', [OfficeUserController::class, 'roles']);
             Route::apiResource('users', OfficeUserController::class)->except(['show']);
+        });
+
+        Route::middleware('permission:office.settings')->group(function () {
+            Route::get('settings/invoice-print', [OfficeSettingController::class, 'invoicePrint']);
+            Route::put('settings/invoice-print', [OfficeSettingController::class, 'updateInvoicePrint']);
         });
     });
 

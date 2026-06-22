@@ -17,6 +17,20 @@ class PaymentController extends Controller
             ->with(['company', 'customer', 'allocations.invoice'])
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
+            ->when($request->filled('date_from'), fn ($query) => $query->whereDate('payment_date', '>=', $request->date('date_from')->toDateString()))
+            ->when($request->filled('date_to'), fn ($query) => $query->whereDate('payment_date', '<=', $request->date('date_to')->toDateString()))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = $request->search;
+
+                $query->where(function ($searchQuery) use ($search) {
+                    $searchQuery->where('payment_no', 'like', "%{$search}%")
+                        ->orWhere('reference_no', 'like', "%{$search}%")
+                        ->orWhereHas('company', fn ($companyQuery) => $companyQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('customer', fn ($customerQuery) => $customerQuery
+                            ->where('name', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%"));
+                });
+            })
             ->latest()
             ->paginate($request->integer('per_page', 15));
 

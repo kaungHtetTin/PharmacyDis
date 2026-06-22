@@ -27,7 +27,6 @@ export default function DashboardPage({ activePage }) {
     return (
         <div className="page-stack">
             <PageHeader
-                action={<button className="btn primary" type="button">Create record</button>}
                 description="Operational overview for sales, inventory, receivables, payables, and field team activity."
                 eyebrow="Office System"
                 title={title}

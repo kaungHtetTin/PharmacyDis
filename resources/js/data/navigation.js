@@ -1,12 +1,20 @@
 export const officeNavSections = [
     {
-        label: 'Overview',
+        label: 'Dashboard',
         items: [
             ['dashboard', 'grid', 'Dashboard', 'office.dashboard'],
         ],
     },
     {
-        label: 'Quick Operate',
+        label: 'Report',
+        items: [
+            ['reports-representatives', 'chart', 'Sales Reps', 'office.reports'],
+            ['reports-pharmacies', 'users', 'Pharmacies', 'office.reports'],
+            ['reports-finance', 'wallet', 'Finance', 'office.reports'],
+        ],
+    },
+    {
+        label: 'Quick - operate',
         items: [
             ['orders', 'cart', 'Orders', 'office.operations'],
             ['invoices', 'receipt', 'Invoices', 'office.operations'],
@@ -17,18 +25,19 @@ export const officeNavSections = [
         ],
     },
     {
-        label: 'Customers & Sales',
-        items: [
-            ['pharmacies', 'users', 'Pharmacies', 'office.master-data'],
-            ['representatives', 'user', 'Sales Reps', 'office.master-data'],
-        ],
-    },
-    {
         label: 'Finance Follow-up',
         items: [
             ['receivables', 'wallet', 'Receivables', 'office.finance'],
             ['payments', 'wallet', 'Payments', 'office.finance'],
+            ['sales-returns', 'receipt', 'Returns', 'office.finance'],
             ['payables', 'building', 'Payables', 'office.finance'],
+        ],
+    },
+    {
+        label: 'Customers & Sales',
+        items: [
+            ['pharmacies', 'users', 'Pharmacies', 'office.master-data'],
+            ['representatives', 'user', 'Sales Reps', 'office.master-data'],
         ],
     },
     {
@@ -40,14 +49,6 @@ export const officeNavSections = [
             ['companies', 'building', 'Companies', 'office.master-data'],
             ['warehouses', 'building', 'Warehouses', 'office.master-data'],
             ['finance-categories', 'wallet', 'Financial Categories', 'office.finance'],
-        ],
-    },
-    {
-        label: 'Reports',
-        items: [
-            ['reports-representatives', 'chart', 'Sales Reps', 'office.reports'],
-            ['reports-pharmacies', 'users', 'Pharmacies', 'office.reports'],
-            ['reports-finance', 'wallet', 'Finance', 'office.reports'],
         ],
     },
     {

@@ -15,6 +15,7 @@ class SalesOrder extends Model
     protected $casts = [
         'order_date' => 'date',
         'requested_delivery_date' => 'date',
+        'payment_due_date' => 'date',
         'approved_at' => 'datetime',
     ];
 

@@ -80,6 +80,60 @@ class StockMovementService
         });
     }
 
+    public function releaseReserved(string $referenceType, int $referenceId, ?int $userId = null): void
+    {
+        DB::transaction(function () use ($referenceType, $referenceId, $userId) {
+            $reservedByBatch = StockMovement::query()
+                ->where('reference_type', $referenceType)
+                ->where('reference_id', $referenceId)
+                ->whereIn('movement_type', ['reserve', 'release'])
+                ->whereNotNull('stock_batch_id')
+                ->select(
+                    'company_id',
+                    'warehouse_id',
+                    'product_id',
+                    'stock_batch_id',
+                    DB::raw("SUM(CASE WHEN movement_type = 'reserve' THEN ABS(base_unit_quantity) ELSE -ABS(base_unit_quantity) END) as reserved_quantity"),
+                    DB::raw('MIN(id) as first_movement_id')
+                )
+                ->groupBy('company_id', 'warehouse_id', 'product_id', 'stock_batch_id')
+                ->having('reserved_quantity', '>', 0)
+                ->orderBy('first_movement_id')
+                ->get();
+
+            foreach ($reservedByBatch as $reservation) {
+                $batch = StockBatch::query()
+                    ->lockForUpdate()
+                    ->find($reservation->stock_batch_id);
+
+                if (! $batch) {
+                    continue;
+                }
+
+                $quantity = min((int) $reservation->reserved_quantity, (int) $batch->reserved_base_quantity);
+
+                if ($quantity <= 0) {
+                    continue;
+                }
+
+                $batch->decrement('reserved_base_quantity', $quantity);
+                $batch->increment('available_base_quantity', $quantity);
+
+                $this->move([
+                    'company_id' => $reservation->company_id,
+                    'warehouse_id' => $reservation->warehouse_id,
+                    'product_id' => $reservation->product_id,
+                    'stock_batch_id' => $reservation->stock_batch_id,
+                    'movement_type' => 'release',
+                    'base_unit_quantity' => $quantity,
+                    'reference_type' => $referenceType,
+                    'reference_id' => $referenceId,
+                    'created_by' => $userId,
+                ]);
+            }
+        });
+    }
+
     public function sellReserved(int $companyId, int $productId, int $baseUnitQuantity, string $referenceType, int $referenceId, ?int $userId = null): void
     {
         DB::transaction(function () use ($companyId, $productId, $baseUnitQuantity, $referenceType, $referenceId, $userId) {

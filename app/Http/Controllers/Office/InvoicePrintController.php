@@ -4,23 +4,19 @@ namespace App\Http\Controllers\Office;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Models\SalesOrder;
+use App\Models\StockMovement;
+use App\Support\InvoicePrintSettings;
 use Illuminate\Http\Request;
 
 class InvoicePrintController extends Controller
 {
     public function __invoke(Request $request, Invoice $invoice)
     {
-        $paper = $request->query('paper', 'a4');
-        $allowedPaperSizes = ['a4', 'a5', 'inch-4', 'inch-3', 'inch-2'];
-
-        if (! in_array($paper, $allowedPaperSizes, true)) {
-            $paper = 'a4';
-        }
-
         $invoice->load([
             'company',
             'customer',
-            'salesOrder',
+            'salesOrder.salesRepresentative.user',
             'items.product',
             'items.unit',
             'allocations.payment',
@@ -29,14 +25,45 @@ class InvoicePrintController extends Controller
         return view('office.invoices.print', [
             'autoPrint' => $request->boolean('print'),
             'invoice' => $invoice,
-            'paper' => $paper,
-            'paperSizes' => [
-                'a4' => ['label' => 'A4', 'detail' => '210 x 297 mm'],
-                'a5' => ['label' => 'A5', 'detail' => '148 x 210 mm'],
-                'inch-4' => ['label' => '4 inch', 'detail' => '4 in roll'],
-                'inch-3' => ['label' => '3 inch', 'detail' => '3 in roll'],
-                'inch-2' => ['label' => '2 inch', 'detail' => '2 in roll'],
-            ],
+            'invoiceSettings' => InvoicePrintSettings::values(),
+            'itemBatchSummaries' => $this->itemBatchSummaries($invoice),
+            'paper' => 'a5',
         ]);
+    }
+
+    private function itemBatchSummaries(Invoice $invoice): array
+    {
+        if (! $invoice->sales_order_id) {
+            return [];
+        }
+
+        $movementType = $invoice->salesOrder?->status === 'delivered' ? 'sale' : 'reserve';
+
+        return StockMovement::query()
+            ->with('stockBatch:id,batch_no,expiry_date')
+            ->where('reference_type', SalesOrder::class)
+            ->where('reference_id', $invoice->sales_order_id)
+            ->where('movement_type', $movementType)
+            ->whereIn('product_id', $invoice->items->pluck('product_id')->filter()->unique())
+            ->get()
+            ->groupBy('product_id')
+            ->map(function ($movements) {
+                $batches = $movements
+                    ->map(fn ($movement) => $movement->stockBatch?->batch_no)
+                    ->filter()
+                    ->unique()
+                    ->values();
+                $expiries = $movements
+                    ->map(fn ($movement) => $movement->stockBatch?->expiry_date?->format('M-y'))
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                return [
+                    'batch' => $batches->isNotEmpty() ? $batches->join(', ') : '-',
+                    'expiry' => $expiries->isNotEmpty() ? $expiries->join(', ') : '-',
+                ];
+            })
+            ->all();
     }
 }

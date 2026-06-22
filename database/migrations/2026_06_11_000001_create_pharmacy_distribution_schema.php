@@ -289,6 +289,7 @@ return new class extends Migration
             $table->enum('status', ['draft', 'submitted', 'approved', 'rejected', 'invoiced', 'delivered', 'cancelled'])->default('submitted');
             $table->decimal('subtotal_amount', 15, 2)->default(0);
             $table->decimal('discount_amount', 15, 2)->default(0);
+            $table->decimal('tax_amount', 15, 2)->default(0);
             $table->decimal('foc_value_amount', 15, 2)->default(0);
             $table->decimal('total_amount', 15, 2)->default(0);
             $table->text('note')->nullable();

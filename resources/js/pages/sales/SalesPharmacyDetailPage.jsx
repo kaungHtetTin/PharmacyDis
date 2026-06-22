@@ -45,7 +45,14 @@ function titleCase(value) {
 }
 
 function dateOnly(value) {
-    return value ? String(value).slice(0, 10) : '-';
+    if (!value) {
+        return '-';
+    }
+
+    const text = String(value).trim();
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[T\s].*)?$/);
+
+    return match ? match[1] : text.slice(0, 10);
 }
 
 function initials(name) {

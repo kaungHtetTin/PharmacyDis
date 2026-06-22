@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import CreditStatusGrid from '../../components/shared/CreditStatusGrid';
 import DataTable from '../../components/shared/DataTable';
+import FilterToolbar from '../../components/shared/FilterToolbar';
 import FormField from '../../components/shared/FormField';
 import Modal from '../../components/shared/Modal';
 import OrderLineBuilder from '../../components/shared/OrderLineBuilder';
@@ -26,14 +27,53 @@ function titleCase(value) {
 }
 
 function dateOnly(value) {
-    return value ? String(value).slice(0, 10) : '-';
+    if (!value) {
+        return '-';
+    }
+
+    const text = String(value).trim();
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[T\s].*)?$/);
+
+    return match ? match[1] : text.slice(0, 10);
+}
+
+function defaultPaymentDueDate() {
+    const dueDays = Number(window.appConfig?.invoiceDueDays ?? 30);
+    const date = new Date();
+    date.setDate(date.getDate() + dueDays);
+
+    return date.toISOString().slice(0, 10);
 }
 
 function notifyOperationalActionsChanged() {
     window.dispatchEvent(new Event('office-operational-actions-changed'));
 }
 
+function promptInvoiceTaxAmount() {
+    const input = window.prompt('Total tax amount for this invoice (optional)', '0');
+
+    if (input === null) {
+        return null;
+    }
+
+    const normalized = String(input).trim() === '' ? 0 : Number(input);
+
+    if (!Number.isFinite(normalized) || normalized < 0) {
+        window.alert('Enter a valid tax amount, or leave it blank for zero.');
+        return null;
+    }
+
+    return normalized;
+}
+
 const historyPageSize = 5;
+const blankHistoryFilters = {
+    company_id: '',
+    date_from: '',
+    date_to: '',
+    search: '',
+    status: '',
+};
 const blankOrderLine = {
     id: 'pharmacy-order-line-1',
     product_id: '',
@@ -51,7 +91,49 @@ function defaultProductUnit(product) {
         || product?.product_units?.[0];
 }
 
-function HistorySection({ actions = [], columns, error = '', loading = false, onPageChange, onRowClick, page = 1, rows, title }) {
+function includesText(...values) {
+    const search = String(values.pop() || '').trim().toLowerCase();
+
+    if (!search) {
+        return true;
+    }
+
+    return values.some((value) => String(value || '').toLowerCase().includes(search));
+}
+
+function withinDateRange(value, from, to) {
+    const date = dateOnly(value);
+
+    if (!date) {
+        return !from && !to;
+    }
+
+    return (!from || date >= from) && (!to || date <= to);
+}
+
+function filterHistoryRows(rows, filters, dateKey, searchKeys = []) {
+    return rows.filter((row) => {
+        const statusValue = String(row.status_value || row.status || '').toLowerCase().replace(/\s+/g, '_');
+
+        return (!filters.company_id || String(row.company_id) === String(filters.company_id))
+            && (!filters.status || statusValue === filters.status)
+            && withinDateRange(row[dateKey], filters.date_from, filters.date_to)
+            && includesText(...searchKeys.map((key) => row[key]), filters.search);
+    });
+}
+
+function HistorySection({
+    actions = [],
+    columns,
+    error = '',
+    filterBar = null,
+    loading = false,
+    onPageChange,
+    onRowClick,
+    page = 1,
+    rows,
+    title,
+}) {
     const total = rows.length;
     const lastPage = Math.max(1, Math.ceil(total / historyPageSize));
     const currentPage = Math.min(page, lastPage);
@@ -61,6 +143,7 @@ function HistorySection({ actions = [], columns, error = '', loading = false, on
 
     return (
         <Panel eyebrow="History" title={title}>
+            {filterBar}
             <DataTable
                 actions={actions}
                 columns={columns}
@@ -162,6 +245,8 @@ function PharmacyOrderModal({
                             </select>
                         </label>
                         <FormField className="order-route-date" label="Requested delivery date" name="requested_delivery_date" onChange={onChange} type="date" value={form.requested_delivery_date} />
+                        <FormField className="order-route-date" label="Payment due date" name="payment_due_date" onChange={onChange} required type="date" value={form.payment_due_date} />
+                        <FormField className="order-route-date" label="Tax amount" name="tax_amount" onChange={onChange} type="number" value={form.tax_amount} />
                         <article className={`order-credit-summary ${blocked ? 'is-blocked' : ''}`}>
                             <div>
                                 <span>Company credit</span>
@@ -207,6 +292,8 @@ export default function PharmacyDetailPage({ onNavigate }) {
         sales_representative_id: '',
         warehouse_id: '',
         requested_delivery_date: '',
+        payment_due_date: defaultPaymentDueDate(),
+        tax_amount: '0',
         note: '',
     });
     const [orderLines, setOrderLines] = useState([{ ...blankOrderLine }]);
@@ -220,6 +307,9 @@ export default function PharmacyDetailPage({ onNavigate }) {
     const [orderPage, setOrderPage] = useState(1);
     const [invoicePage, setInvoicePage] = useState(1);
     const [paymentPage, setPaymentPage] = useState(1);
+    const [orderFilters, setOrderFilters] = useState(blankHistoryFilters);
+    const [invoiceFilters, setInvoiceFilters] = useState(blankHistoryFilters);
+    const [paymentFilters, setPaymentFilters] = useState(blankHistoryFilters);
     const [actionError, setActionError] = useState('');
     const [actionBusy, setActionBusy] = useState(false);
     const companiesResource = useApiResource(orderModalOpen ? '/lookups/companies' : '');
@@ -239,6 +329,31 @@ export default function PharmacyDetailPage({ onNavigate }) {
         outstanding: money(credit.outstanding_balance),
         oldestDue: credit.overdue_days ? `${credit.overdue_days} days overdue` : '-',
     }));
+    const historyCompanyOptions = (detail.credit_statuses || [])
+        .map((credit) => ({ label: credit.company?.name || `Company #${credit.company_id}`, value: String(credit.company_id) }))
+        .filter((company, index, companies) => company.value && companies.findIndex((item) => item.value === company.value) === index);
+    const orderStatusOptions = [
+        { label: 'Draft', value: 'draft' },
+        { label: 'Submitted', value: 'submitted' },
+        { label: 'Approved', value: 'approved' },
+        { label: 'Invoiced', value: 'invoiced' },
+        { label: 'Delivered', value: 'delivered' },
+        { label: 'Rejected', value: 'rejected' },
+        { label: 'Cancelled', value: 'cancelled' },
+    ];
+    const invoiceStatusOptions = [
+        { label: 'Issued', value: 'issued' },
+        { label: 'Partial', value: 'partial' },
+        { label: 'Paid', value: 'paid' },
+        { label: 'Overdue', value: 'overdue' },
+        { label: 'Void', value: 'void' },
+    ];
+    const paymentStatusOptions = [
+        { label: 'Recorded', value: 'recorded' },
+    ];
+    const filteredOrders = filterHistoryRows(orders, orderFilters, 'submittedDate', ['order', 'company', 'rep', 'status']);
+    const filteredInvoices = filterHistoryRows(invoices, invoiceFilters, 'invoice_date', ['invoice', 'order', 'company', 'status']);
+    const filteredPayments = filterHistoryRows(payments, paymentFilters, 'payment_date');
     const summary = detail.summary || {};
     const initials = String(customer.name || 'Pharmacy')
         .split(' ')
@@ -252,6 +367,62 @@ export default function PharmacyDetailPage({ onNavigate }) {
     const representatives = unwrapCollection(representativesResource.data);
     const stockRows = unwrapCollection(stockResource.data);
     const goToPage = (setter) => (page) => setter(Math.max(1, page));
+    const updateHistoryFilter = (setter, pageSetter) => (key, value) => {
+        setter((current) => ({ ...current, [key]: value }));
+        pageSetter(1);
+    };
+    const resetHistoryFilters = (setter, pageSetter) => () => {
+        setter(blankHistoryFilters);
+        pageSetter(1);
+    };
+    const orderHistoryFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: historyCompanyOptions,
+            placeholder: 'All companies',
+            value: orderFilters.company_id,
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            options: orderStatusOptions,
+            placeholder: 'All statuses',
+            value: orderFilters.status,
+        },
+    ];
+    const invoiceHistoryFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: historyCompanyOptions,
+            placeholder: 'All companies',
+            value: invoiceFilters.company_id,
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            options: invoiceStatusOptions,
+            placeholder: 'All statuses',
+            value: invoiceFilters.status,
+        },
+    ];
+    const paymentHistoryFilterControls = [
+        {
+            key: 'company_id',
+            label: 'Company',
+            options: historyCompanyOptions,
+            placeholder: 'All companies',
+            value: paymentFilters.company_id,
+        },
+        {
+            key: 'status',
+            label: 'Status',
+            options: paymentStatusOptions,
+            placeholder: 'All statuses',
+            value: paymentFilters.status,
+        },
+    ];
     const openInvoiceDetail = (invoice) => {
         if (!invoice?.id) {
             return;
@@ -334,7 +505,13 @@ export default function PharmacyDetailPage({ onNavigate }) {
         setActionError('');
 
         try {
-            const invoice = await api.post(`/office/orders/${record.id}/generate-invoice`);
+            const taxAmount = Number(record.tax_amount || 0) > 0 ? Number(record.tax_amount) : promptInvoiceTaxAmount();
+
+            if (taxAmount === null) {
+                return;
+            }
+
+            const invoice = await api.post(`/office/orders/${record.id}/generate-invoice`, { tax_amount: taxAmount });
             rememberGeneratedInvoice(invoice);
             notifyOperationalActionsChanged();
             detailResource.refresh();
@@ -351,6 +528,8 @@ export default function PharmacyDetailPage({ onNavigate }) {
             sales_representative_id: '',
             warehouse_id: '',
             requested_delivery_date: '',
+            payment_due_date: defaultPaymentDueDate(),
+            tax_amount: '0',
             note: '',
         });
         setOrderLines([{ ...blankOrderLine, id: `pharmacy-order-line-${Date.now()}` }]);
@@ -403,6 +582,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
                 sales_representative_id: orderForm.sales_representative_id || null,
                 warehouse_id: orderForm.warehouse_id || null,
                 requested_delivery_date: orderForm.requested_delivery_date || null,
+                payment_due_date: orderForm.payment_due_date || null,
                 note: orderForm.note || null,
                 auto_approve: true,
                 items: orderLines
@@ -481,7 +661,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
             </div>
 
             <Panel eyebrow="Credit" title="Company credit status">
-                <CreditStatusGrid rows={creditStatuses} />
+                <CreditStatusGrid compact rows={creditStatuses} />
             </Panel>
 
             <HistorySection
@@ -500,11 +680,27 @@ export default function PharmacyDetailPage({ onNavigate }) {
                     { key: 'status', label: 'Status', type: 'status' },
                 ]}
                 error={detailResource.error}
+                filterBar={(
+                    <FilterToolbar
+                        className="adaptive-filter-toolbar pharmacy-history-filter"
+                        collapsibleSearch
+                        dateFromValue={orderFilters.date_from}
+                        dateToValue={orderFilters.date_to}
+                        filters={orderHistoryFilterControls}
+                        onDateFromChange={(value) => updateHistoryFilter(setOrderFilters, setOrderPage)('date_from', value)}
+                        onDateToChange={(value) => updateHistoryFilter(setOrderFilters, setOrderPage)('date_to', value)}
+                        onFilterChange={updateHistoryFilter(setOrderFilters, setOrderPage)}
+                        onReset={resetHistoryFilters(setOrderFilters, setOrderPage)}
+                        onSearch={(value) => updateHistoryFilter(setOrderFilters, setOrderPage)('search', value)}
+                        searchPlaceholder="Search order, company, or sales rep"
+                        searchValue={orderFilters.search}
+                    />
+                )}
                 loading={detailResource.loading}
                 onPageChange={goToPage(setOrderPage)}
                 onRowClick={(record) => onNavigate?.('order-detail', { order_id: record.id })}
                 page={orderPage}
-                rows={orders}
+                rows={filteredOrders}
                 title="Order history"
             />
 
@@ -524,11 +720,27 @@ export default function PharmacyDetailPage({ onNavigate }) {
                     { key: 'status', label: 'Status', type: 'status' },
                 ]}
                 error={detailResource.error}
+                filterBar={(
+                    <FilterToolbar
+                        className="adaptive-filter-toolbar pharmacy-history-filter"
+                        collapsibleSearch
+                        dateFromValue={invoiceFilters.date_from}
+                        dateToValue={invoiceFilters.date_to}
+                        filters={invoiceHistoryFilterControls}
+                        onDateFromChange={(value) => updateHistoryFilter(setInvoiceFilters, setInvoicePage)('date_from', value)}
+                        onDateToChange={(value) => updateHistoryFilter(setInvoiceFilters, setInvoicePage)('date_to', value)}
+                        onFilterChange={updateHistoryFilter(setInvoiceFilters, setInvoicePage)}
+                        onReset={resetHistoryFilters(setInvoiceFilters, setInvoicePage)}
+                        onSearch={(value) => updateHistoryFilter(setInvoiceFilters, setInvoicePage)('search', value)}
+                        searchPlaceholder="Search invoice, order, or company"
+                        searchValue={invoiceFilters.search}
+                    />
+                )}
                 loading={detailResource.loading}
                 onPageChange={goToPage(setInvoicePage)}
                 onRowClick={openInvoiceDetail}
                 page={invoicePage}
-                rows={invoices}
+                rows={filteredInvoices}
                 title="Invoice history"
             />
 
@@ -542,11 +754,24 @@ export default function PharmacyDetailPage({ onNavigate }) {
                     { key: 'status', label: 'Status', type: 'status' },
                 ]}
                 error={detailResource.error}
+                filterBar={(
+                    <FilterToolbar
+                        className="adaptive-filter-toolbar pharmacy-history-filter no-search"
+                        dateFromValue={paymentFilters.date_from}
+                        dateToValue={paymentFilters.date_to}
+                        filters={paymentHistoryFilterControls}
+                        onDateFromChange={(value) => updateHistoryFilter(setPaymentFilters, setPaymentPage)('date_from', value)}
+                        onDateToChange={(value) => updateHistoryFilter(setPaymentFilters, setPaymentPage)('date_to', value)}
+                        onFilterChange={updateHistoryFilter(setPaymentFilters, setPaymentPage)}
+                        onReset={resetHistoryFilters(setPaymentFilters, setPaymentPage)}
+                        showSearch={false}
+                    />
+                )}
                 loading={detailResource.loading}
                 onPageChange={goToPage(setPaymentPage)}
                 onRowClick={openPaymentDetail}
                 page={paymentPage}
-                rows={payments}
+                rows={filteredPayments}
                 title="Payment history"
             />
 

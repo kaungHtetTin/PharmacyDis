@@ -183,8 +183,8 @@ class RealDataSeeder extends Seeder
             ->where('email', 'superadmin@pharmacy-dis.test')
             ->first();
 
-        if ($legacySuperAdmin && ! User::withTrashed()->where('email', 'admin@paramacy.test')->exists()) {
-            $legacySuperAdmin->forceFill(['email' => 'admin@paramacy.test'])->save();
+        if ($legacySuperAdmin && ! User::withTrashed()->where('email', 'admin@pharmacy.test')->exists()) {
+            $legacySuperAdmin->forceFill(['email' => 'admin@pharmacy.test'])->save();
             $legacySuperAdmin->restore();
         }
 
@@ -192,13 +192,13 @@ class RealDataSeeder extends Seeder
             ->where('email', 'may.zin@pharmacy-dis.test')
             ->first();
 
-        if ($legacyMayZin && ! User::withTrashed()->where('email', 'mayzin@paramacy.test')->exists()) {
-            $legacyMayZin->forceFill(['email' => 'mayzin@paramacy.test'])->save();
+        if ($legacyMayZin && ! User::withTrashed()->where('email', 'mayzin@pharmacy.test')->exists()) {
+            $legacyMayZin->forceFill(['email' => 'mayzin@pharmacy.test'])->save();
             $legacyMayZin->restore();
         }
 
         User::updateOrCreate(
-            ['email' => 'admin@paramacy.test'],
+            ['email' => 'admin@pharmacy.test'],
             [
                 'role_id' => $roles['super_admin']->id,
                 'name' => 'Office Super Admin',
@@ -210,7 +210,7 @@ class RealDataSeeder extends Seeder
         );
 
         $salesUsers = [
-            ['SR-0001', 'May Zin', 'mayzin@paramacy.test', '09-400-000101', 'Yangon North', 'MEDILIFE'],
+            ['SR-0001', 'May Zin', 'mayzin@pharmacy.test', '09-400-000101', 'Yangon North', 'MEDILIFE'],
             ['SR-0002', 'Aung Kyaw', 'aung.kyaw@pharmacy-dis.test', '09-400-000102', 'Mandalay', 'ZENITH'],
             ['SR-0003', 'Thiri Mon', 'thiri.mon@pharmacy-dis.test', '09-400-000103', 'Yangon South', 'APEXMED'],
             ['SR-0004', 'Nyi Nyi', 'nyi.nyi@pharmacy-dis.test', '09-400-000104', 'Naypyidaw', 'NOVA'],

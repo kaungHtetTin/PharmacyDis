@@ -26,8 +26,9 @@ function storageUrl(path) {
 }
 
 export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, children }) {
-    const { user } = useAuth();
+    const { logout, user } = useAuth();
     const [profileOpen, setProfileOpen] = useState(false);
+    const [loggingOut, setLoggingOut] = useState(false);
     const profileMenuRef = useRef(null);
     const representative = user?.sales_representative;
     const profileName = user?.name || 'Sales Representative';
@@ -51,6 +52,18 @@ export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, chi
     function navigateFromProfile(page) {
         setProfileOpen(false);
         onNavigate(page);
+    }
+
+    async function handleLogout() {
+        setLoggingOut(true);
+        setProfileOpen(false);
+
+        try {
+            await logout();
+            onNavigate('login');
+        } finally {
+            setLoggingOut(false);
+        }
     }
 
     return (
@@ -135,6 +148,10 @@ export default function SalesRepLayout({ activePage, getPageUrl, onNavigate, chi
                                         ) : <span className="muted">No assigned company.</span>}
                                     </div>
                                 </section>
+                                <button className="profile-logout-button" disabled={loggingOut} onClick={handleLogout} type="button">
+                                    <Icon name="logout" size={15} />
+                                    <span>{loggingOut ? 'Logging out...' : 'Logout'}</span>
+                                </button>
                             </div>
                         )}
                     </div>

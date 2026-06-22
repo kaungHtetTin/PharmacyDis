@@ -22,7 +22,7 @@ class CustomerController extends Controller
         ]);
 
         $orders = $customer->salesOrders()
-            ->with(['company:id,name', 'items.product', 'items.unit', 'focItems.product', 'focItems.focRule', 'salesRepresentative.user:id,name'])
+            ->with(['company:id,name', 'items.product', 'items.unit', 'items.focUnit', 'focItems.product', 'focItems.focRule', 'salesRepresentative.user:id,name'])
             ->where('company_id', $companyId)
             ->latest('order_date')
             ->limit(25)

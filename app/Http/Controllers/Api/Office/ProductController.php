@@ -68,7 +68,8 @@ class ProductController extends Controller
     {
         $data = $request->validated();
         $hasIncomingImagePath = array_key_exists('primary_image_path', $data);
-        unset($data['base_unit_selling_price'], $data['primary_image'], $data['product_units']);
+        $data['low_stock_threshold_base_units'] = $this->salesThresholdToBaseUnits($data, $product);
+        unset($data['base_unit_selling_price'], $data['primary_image'], $data['product_units'], $data['low_stock_threshold_sales_units']);
 
         if ($request->hasFile('primary_image')) {
             $data['primary_image_path'] = $request->file('primary_image')->store('products', 'public');
@@ -91,6 +92,20 @@ class ProductController extends Controller
         }
 
         return array_merge($data, $defaults);
+    }
+
+    private function salesThresholdToBaseUnits(array $data, ?Product $product = null): int
+    {
+        if (! array_key_exists('low_stock_threshold_sales_units', $data)) {
+            return (int) ($data['low_stock_threshold_base_units'] ?? $product?->low_stock_threshold_base_units ?? 0);
+        }
+
+        $salesThreshold = (float) ($data['low_stock_threshold_sales_units'] ?? 0);
+        $defaultSalesUnit = collect($data['product_units'] ?? [])
+            ->first(fn ($unit) => ($unit['status'] ?? 'active') === 'active' && filter_var($unit['is_default_sales_unit'] ?? false, FILTER_VALIDATE_BOOLEAN));
+        $conversionFactor = $defaultSalesUnit['conversion_factor_to_base'] ?? 1;
+
+        return max(0, (int) round($salesThreshold * max(1, (int) $conversionFactor)));
     }
 
     private function syncProductUnits(Product $product, array $submittedUnits, float $baseUnitSellingPrice): void

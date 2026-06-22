@@ -12,7 +12,8 @@ const blankLine = {
     unitPrice: '-',
     baseQuantity: '-',
     discount: '-',
-    focPreview: '-',
+    foc_quantity: '',
+    foc_unit_id: '',
     lineTotal: '-',
 };
 
@@ -46,52 +47,32 @@ function formatAmount(value) {
     return Number(value || 0).toLocaleString();
 }
 
-function calculateTieredFocReward(rules, thresholdKey, basis) {
-    let remaining = Number(basis || 0);
-
-    return rules
-        .filter(isRuleCurrent)
-        .sort((first, second) => Number(second[thresholdKey] || 0) - Number(first[thresholdKey] || 0))
-        .reduce((total, rule) => {
-            const threshold = Number(rule[thresholdKey] || 0);
-
-            if (threshold <= 0 || remaining < threshold) {
-                return total;
-            }
-
-            const multiplier = Math.floor(remaining / threshold);
-            remaining -= multiplier * threshold;
-
-            return total + (multiplier * Number(rule.reward_quantity_base_units || 0));
-        }, 0);
+function getValidFocRules(product) {
+    return getProductFocRules(product).filter(isRuleCurrent);
 }
 
-function calculateFocRewardBaseUnits(product, baseQuantity, lineTotal) {
-    const currentRules = getProductFocRules(product)
-        .filter(isRuleCurrent)
-        .filter((rule) => ['quantity', 'value'].includes(rule.rule_type));
-    const quantityReward = calculateTieredFocReward(
-        currentRules.filter((rule) => rule.rule_type === 'quantity'),
-        'minimum_quantity_base_units',
-        baseQuantity
-    );
-    const valueReward = calculateTieredFocReward(
-        currentRules.filter((rule) => rule.rule_type === 'value'),
-        'minimum_order_value',
-        lineTotal
-    );
+function formatFocRule(rule) {
+    const condition = rule.rule_type === 'value'
+        ? `buy ${formatAmount(rule.minimum_order_value)} value`
+        : `buy ${formatAmount(rule.minimum_quantity_base_units)} base units`;
+    const validity = [rule.starts_at, rule.ends_at].filter(Boolean).length
+        ? ` (${rule.starts_at || 'now'} to ${rule.ends_at || 'open'})`
+        : '';
 
-    return Math.max(quantityReward, valueReward);
+    return `${condition}, FOC ${formatAmount(rule.reward_quantity_base_units)} base units${validity}`;
 }
 
-function calculateFocPreview(product, baseQuantity, lineTotal) {
-    const rewardBaseUnits = calculateFocRewardBaseUnits(product, baseQuantity, lineTotal);
+function calculateManualFocBaseUnits(line, productOptions) {
+    const product = productOptions.find((option) => String(option.id) === String(line.product_id));
+    const focUnitId = line.foc_unit_id || line.unit_id;
+    const focProductUnit = getProductUnits(product).find((unit) => String(unit.unit_id) === String(focUnitId));
+    const focQuantity = Number(line.foc_quantity || 0);
 
-    if (rewardBaseUnits <= 0) {
-        return getProductFocRules(product).some(isRuleCurrent) ? 'No match' : 'No FOC';
+    if (!product || !focProductUnit || focQuantity <= 0) {
+        return 0;
     }
 
-    return `${formatAmount(rewardBaseUnits)} base units`;
+    return focQuantity * Number(focProductUnit.conversion_factor_to_base || 1);
 }
 
 function calculatePreview(line, productOptions) {
@@ -108,7 +89,6 @@ function calculatePreview(line, productOptions) {
         unitPrice: productUnit ? unitPrice.toLocaleString() : line.unitPrice || '-',
         baseQuantity: productUnit && quantity ? `${quantity * conversion} base units` : line.baseQuantity || '-',
         discount: productUnit ? `${discount}%` : line.discount || '0%',
-        focPreview: productUnit && quantity ? calculateFocPreview(product, quantity * conversion, Math.max(0, gross - discountAmount)) : line.focPreview || '-',
         lineTotal: productUnit && quantity ? Math.max(0, gross - discountAmount).toLocaleString() : line.lineTotal || '-',
     };
 }
@@ -134,11 +114,7 @@ function calculateLineDemand(line, productOptions) {
 
     const conversion = Number(productUnit.conversion_factor_to_base || 1);
     const orderedQuantity = quantity * conversion;
-    const unitPrice = Number(productUnit.selling_price || 0);
-    const discount = Number(line.discount_percentage ?? product.default_discount_percentage ?? 0);
-    const gross = quantity * unitPrice;
-    const lineTotal = Math.max(0, gross - (gross * (discount / 100)));
-    const focQuantity = calculateFocRewardBaseUnits(product, orderedQuantity, lineTotal);
+    const focQuantity = calculateManualFocBaseUnits(line, productOptions);
 
     return {
         focQuantity,
@@ -149,19 +125,7 @@ function calculateLineDemand(line, productOptions) {
 }
 
 function previewFocQuantity(item, productOptions) {
-    const product = productOptions.find((option) => String(option.id) === String(item.product_id));
-    const productUnit = getProductUnits(product).find((unit) => String(unit.unit_id) === String(item.unit_id));
-    const quantity = Number(item.quantity || item.orderedQuantity || 0);
-
-    if (!product || !productUnit || !quantity) {
-        return 0;
-    }
-
-    const conversion = Number(productUnit.conversion_factor_to_base || 1);
-    const unitPrice = Number(productUnit.selling_price || 0);
-    const discount = Number(item.discount_percentage ?? product.default_discount_percentage ?? 0);
-    const lineTotal = Math.max(0, (quantity * unitPrice) - ((quantity * unitPrice) * (discount / 100)));
-    return calculateFocRewardBaseUnits(product, quantity * conversion, lineTotal);
+    return calculateManualFocBaseUnits(item, productOptions);
 }
 
 export function getOrderStockStatus(lines = [], productOptions = [], stockRows = []) {
@@ -275,10 +239,11 @@ export default function OrderLineBuilder({
                     <span>Product</span>
                     <span>Qty</span>
                     <span>Unit</span>
+                    <span>FOC qty</span>
+                    <span>FOC unit</span>
                     <span>Price</span>
                     <span>Base qty</span>
                     <span>Discount</span>
-                    <span>FOC</span>
                     <span>Total</span>
                     <span>Action</span>
                 </div>
@@ -286,6 +251,7 @@ export default function OrderLineBuilder({
                     const selectedProduct = productOptions.find((product) => String(product.id) === String(item.product_id));
                     const unitOptions = getProductUnits(selectedProduct);
                     const preview = calculatePreview(item, productOptions);
+                    const validFocRules = getValidFocRules(selectedProduct);
                     const lineDemand = calculateLineDemand(item, productOptions);
                     const productDemand = lineDemand ? demandByProduct.get(String(lineDemand.product.id)) : null;
                     const productStock = lineDemand ? stockByProduct.get(String(lineDemand.product.id)) : null;
@@ -307,8 +273,9 @@ export default function OrderLineBuilder({
 
                                         updateLine(item.id, {
                                             product_id: event.target.value,
-                                        product: event.target.selectedOptions[0]?.textContent,
+                                            product: event.target.selectedOptions[0]?.textContent,
                                             unit_id: defaultUnit?.unit_id || '',
+                                            foc_unit_id: defaultUnit?.unit_id || '',
                                         });
                                     }}
                                     value={item.product_id || item.product || ''}
@@ -334,13 +301,41 @@ export default function OrderLineBuilder({
                                 <span>Unit</span>
                                 <select
                                     disabled={disabled || (productOptions.length > 0 && !selectedProduct)}
-                                    onChange={(event) => updateLine(item.id, { unit_id: event.target.value, selectedUnit: event.target.selectedOptions[0]?.textContent })}
+                                    onChange={(event) => updateLine(item.id, {
+                                        unit_id: event.target.value,
+                                        selectedUnit: event.target.selectedOptions[0]?.textContent,
+                                        foc_unit_id: item.foc_unit_id || event.target.value,
+                                    })}
                                     value={item.unit_id || item.selectedUnit || ''}
                                 >
                                     <option value="" disabled>Select unit</option>
                                     {unitOptions.length
                                         ? unitOptions.map((productUnit) => <option key={productUnit.id} value={productUnit.unit_id}>{productUnit.unit?.name || productUnit.unit_id}</option>)
                                         : allowFallback ? fallbackUnits.map((unit) => <option key={unit}>{unit}</option>) : null}
+                                </select>
+                            </label>
+                            <label>
+                                <span>FOC qty</span>
+                                <input
+                                    disabled={disabled || (productOptions.length > 0 && !selectedProduct)}
+                                    min="0"
+                                    onChange={(event) => updateLine(item.id, { foc_quantity: event.target.value })}
+                                    placeholder="0"
+                                    type="number"
+                                    value={item.foc_quantity || ''}
+                                />
+                            </label>
+                            <label>
+                                <span>FOC unit</span>
+                                <select
+                                    disabled={disabled || (productOptions.length > 0 && !selectedProduct)}
+                                    onChange={(event) => updateLine(item.id, { foc_unit_id: event.target.value })}
+                                    value={item.foc_unit_id || item.unit_id || ''}
+                                >
+                                    <option value="" disabled>Select unit</option>
+                                    {unitOptions.length
+                                        ? unitOptions.map((productUnit) => <option key={productUnit.id} value={productUnit.unit_id}>{productUnit.unit?.name || productUnit.unit_id}</option>)
+                                        : allowFallback ? fallbackUnits.map((unitOption) => <option key={unitOption}>{unitOption}</option>) : null}
                                 </select>
                             </label>
                             <div className="order-line-preview">
@@ -354,10 +349,6 @@ export default function OrderLineBuilder({
                             <div className="order-line-preview">
                                 <span>Discount</span>
                                 <strong>{preview.discount}</strong>
-                            </div>
-                            <div className="order-line-preview">
-                                <span>FOC</span>
-                                <strong>{preview.focPreview || 'No FOC'}</strong>
                             </div>
                             <div className="order-line-preview">
                                 <span>Total</span>
@@ -380,13 +371,19 @@ export default function OrderLineBuilder({
                                     </small>
                                 </div>
                             )}
+                            {validFocRules.length > 0 && (
+                                <div className="order-line-foc-note">
+                                    <strong>Active FOC offer</strong>
+                                    <span>{validFocRules.map(formatFocRule).join(' | ')}</span>
+                                </div>
+                            )}
                         </div>
                     );
                 })}
             </div>
             <div className="order-line-total-strip">
                 <span>Lines: {activeItems.length}</span>
-                <span>Preview FOC: {formatAmount(totalFocBaseUnits)} base units</span>
+                <span>Manual FOC: {formatAmount(totalFocBaseUnits)} base units</span>
             </div>
         </section>
     );

@@ -13,6 +13,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run()
     {
-        $this->call(RealDataSeeder::class);
+        $this->call(InitialDataSeeder::class);
+
+        // Sample/business data seeders are intentionally disabled for clean installs.
+        // $this->call(RealDataSeeder::class);
+        // $this->call(RolesAndSampleDataSeeder::class);
     }
 }

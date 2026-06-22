@@ -62,19 +62,26 @@ class StockController extends Controller
     public function current(Request $request)
     {
         $query = StockBatch::query()
+            ->leftJoinSub($this->receiptBatchCostSubquery(), 'batch_costs', function ($join) {
+                $join->on('batch_costs.company_id', '=', 'stock_batches.company_id')
+                    ->on('batch_costs.product_id', '=', 'stock_batches.product_id')
+                    ->whereRaw("batch_costs.batch_key = COALESCE(stock_batches.batch_no, '')")
+                    ->whereRaw("batch_costs.expiry_key = COALESCE(stock_batches.expiry_date, '1000-01-01')");
+            })
             ->select([
-                'company_id',
-                $request->filled('warehouse_id') ? 'warehouse_id' : DB::raw('NULL as warehouse_id'),
-                'product_id',
-                DB::raw('SUM(available_base_quantity) as available_base_quantity'),
-                DB::raw('SUM(reserved_base_quantity) as reserved_base_quantity'),
-                DB::raw('SUM(sold_base_quantity) as sold_base_quantity'),
-                DB::raw('MIN(expiry_date) as nearest_expiry_date'),
+                'stock_batches.company_id',
+                $request->filled('warehouse_id') ? 'stock_batches.warehouse_id' : DB::raw('NULL as warehouse_id'),
+                'stock_batches.product_id',
+                DB::raw('SUM(stock_batches.available_base_quantity) as available_base_quantity'),
+                DB::raw('SUM(stock_batches.reserved_base_quantity) as reserved_base_quantity'),
+                DB::raw('SUM(stock_batches.sold_base_quantity) as sold_base_quantity'),
+                DB::raw('SUM(stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0)) as stock_value_amount'),
+                DB::raw('MIN(stock_batches.expiry_date) as nearest_expiry_date'),
             ])
-            ->with(['product:id,name,sku,base_unit_id,low_stock_threshold_base_units', 'product.baseUnit:id,name,abbreviation'])
-            ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
-            ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->warehouse_id))
-            ->when($request->filled('product_id'), fn ($query) => $query->where('product_id', $request->product_id))
+            ->with(['product:id,name,sku,base_unit_id,low_stock_threshold_base_units', 'product.baseUnit:id,name,abbreviation', 'product.productUnits.unit:id,name,abbreviation'])
+            ->when($request->filled('company_id'), fn ($query) => $query->where('stock_batches.company_id', $request->company_id))
+            ->when($request->filled('warehouse_id'), fn ($query) => $query->where('stock_batches.warehouse_id', $request->warehouse_id))
+            ->when($request->filled('product_id'), fn ($query) => $query->where('stock_batches.product_id', $request->product_id))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->search;
 
@@ -84,60 +91,91 @@ class StockController extends Controller
                 });
             })
             ->groupBy(...array_filter([
-                'company_id',
-                $request->filled('warehouse_id') ? 'warehouse_id' : null,
-                'product_id',
+                'stock_batches.company_id',
+                $request->filled('warehouse_id') ? 'stock_batches.warehouse_id' : null,
+                'stock_batches.product_id',
             ]));
 
         if ($request->boolean('action_only')) {
-            $query->havingRaw('SUM(available_base_quantity) <= COALESCE((select low_stock_threshold_base_units from products where products.id = stock_batches.product_id), 0)');
+            $query->havingRaw('SUM(stock_batches.available_base_quantity) <= COALESCE((select low_stock_threshold_base_units from products where products.id = stock_batches.product_id), 0)');
         }
 
         match ($request->input('status')) {
-            'available' => $query->havingRaw('SUM(available_base_quantity) > 0'),
-            'low_stock' => $query->havingRaw('SUM(available_base_quantity) <= COALESCE((select low_stock_threshold_base_units from products where products.id = stock_batches.product_id), 0)'),
-            'near_expiry' => $query->havingRaw('MIN(expiry_date) between ? and ?', [now()->toDateString(), now()->addDays(90)->toDateString()]),
-            'expired' => $query->havingRaw('MIN(expiry_date) < ?', [now()->toDateString()]),
+            'available' => $query->havingRaw('SUM(stock_batches.available_base_quantity) > 0'),
+            'low_stock' => $query->havingRaw('SUM(stock_batches.available_base_quantity) <= COALESCE((select low_stock_threshold_base_units from products where products.id = stock_batches.product_id), 0)'),
+            'near_expiry' => $query->havingRaw('MIN(stock_batches.expiry_date) between ? and ?', [now()->toDateString(), now()->addDays(90)->toDateString()]),
+            'expired' => $query->havingRaw('MIN(stock_batches.expiry_date) < ?', [now()->toDateString()]),
             default => null,
         };
 
-        return $query->paginate($request->integer('per_page', 15));
+        $summary = DB::query()
+            ->fromSub((clone $query)->toBase(), 'stock_summary')
+            ->selectRaw('
+                COUNT(*) as stock_row_count,
+                COALESCE(SUM(available_base_quantity), 0) as available_base_quantity,
+                COALESCE(SUM(reserved_base_quantity), 0) as reserved_base_quantity,
+                COALESCE(SUM(sold_base_quantity), 0) as sold_base_quantity,
+                COALESCE(SUM(stock_value_amount), 0) as stock_value_amount
+            ')
+            ->first();
+        $paginated = $query->paginate($request->integer('per_page', 15));
+
+        return response()->json(array_merge($paginated->toArray(), [
+            'summary' => [
+                'stock_row_count' => (int) ($summary->stock_row_count ?? 0),
+                'available_base_quantity' => (int) ($summary->available_base_quantity ?? 0),
+                'reserved_base_quantity' => (int) ($summary->reserved_base_quantity ?? 0),
+                'sold_base_quantity' => (int) ($summary->sold_base_quantity ?? 0),
+                'stock_value_amount' => (float) ($summary->stock_value_amount ?? 0),
+            ],
+        ]));
     }
 
     public function productBatches(Request $request, Product $product)
     {
         $query = StockBatch::query()
+            ->leftJoinSub($this->receiptBatchCostSubquery(), 'batch_costs', function ($join) {
+                $join->on('batch_costs.company_id', '=', 'stock_batches.company_id')
+                    ->on('batch_costs.product_id', '=', 'stock_batches.product_id')
+                    ->whereRaw("batch_costs.batch_key = COALESCE(stock_batches.batch_no, '')")
+                    ->whereRaw("batch_costs.expiry_key = COALESCE(stock_batches.expiry_date, '1000-01-01')");
+            })
+            ->select([
+                'stock_batches.*',
+                DB::raw('COALESCE(batch_costs.base_unit_cost, 0) as base_unit_cost_amount'),
+                DB::raw('stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0) as stock_value_amount'),
+            ])
             ->with(['warehouse:id,name,code'])
-            ->where('company_id', $product->company_id)
-            ->where('product_id', $product->id)
-            ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->warehouse_id))
+            ->where('stock_batches.company_id', $product->company_id)
+            ->where('stock_batches.product_id', $product->id)
+            ->when($request->filled('warehouse_id'), fn ($query) => $query->where('stock_batches.warehouse_id', $request->warehouse_id))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->search;
 
-                $query->where('batch_no', 'like', "%{$search}%");
+                $query->where('stock_batches.batch_no', 'like', "%{$search}%");
             })
             ->when($request->filled('status'), function ($query) use ($request) {
                 match ($request->input('status')) {
-                    'available' => $query->where('available_base_quantity', '>', 0),
-                    'reserved' => $query->where('reserved_base_quantity', '>', 0),
-                    'sold' => $query->where('sold_base_quantity', '>', 0),
-                    'damaged' => $query->where('damaged_base_quantity', '>', 0),
+                    'available' => $query->where('stock_batches.available_base_quantity', '>', 0),
+                    'reserved' => $query->where('stock_batches.reserved_base_quantity', '>', 0),
+                    'sold' => $query->where('stock_batches.sold_base_quantity', '>', 0),
+                    'damaged' => $query->where('stock_batches.damaged_base_quantity', '>', 0),
                     'expired' => $query->where(function ($query) {
-                        $query->where('expired_base_quantity', '>', 0)
-                            ->orWhere('expiry_date', '<', now()->toDateString());
+                        $query->where('stock_batches.expired_base_quantity', '>', 0)
+                            ->orWhere('stock_batches.expiry_date', '<', now()->toDateString());
                     }),
-                    'near_expiry' => $query->whereBetween('expiry_date', [now()->toDateString(), now()->addDays(90)->toDateString()]),
+                    'near_expiry' => $query->whereBetween('stock_batches.expiry_date', [now()->toDateString(), now()->addDays(90)->toDateString()]),
                     default => null,
                 };
             })
-            ->orderByRaw('expiry_date is null')
-            ->orderBy('expiry_date')
-            ->orderBy('id');
+            ->orderByRaw('stock_batches.expiry_date is null')
+            ->orderBy('stock_batches.expiry_date')
+            ->orderBy('stock_batches.id');
 
         $summaryQuery = StockBatch::query()
-            ->where('company_id', $product->company_id)
-            ->where('product_id', $product->id)
-            ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->warehouse_id));
+            ->where('stock_batches.company_id', $product->company_id)
+            ->where('stock_batches.product_id', $product->id)
+            ->when($request->filled('warehouse_id'), fn ($query) => $query->where('stock_batches.warehouse_id', $request->warehouse_id));
 
         $summary = (clone $summaryQuery)
             ->selectRaw('
@@ -150,6 +188,14 @@ class StockController extends Controller
                 MIN(expiry_date) as nearest_expiry_date
             ')
             ->first();
+        $stockValue = (float) (clone $summaryQuery)
+            ->leftJoinSub($this->receiptBatchCostSubquery(), 'batch_costs', function ($join) {
+                $join->on('batch_costs.company_id', '=', 'stock_batches.company_id')
+                    ->on('batch_costs.product_id', '=', 'stock_batches.product_id')
+                    ->whereRaw("batch_costs.batch_key = COALESCE(stock_batches.batch_no, '')")
+                    ->whereRaw("batch_costs.expiry_key = COALESCE(stock_batches.expiry_date, '1000-01-01')");
+            })
+            ->sum(DB::raw('stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0)'));
 
         $paginated = $query->paginate($request->integer('per_page', 15));
         $paginated->getCollection()->load(['product:id,name,sku,base_unit_id', 'product.baseUnit:id,name,abbreviation']);
@@ -164,9 +210,30 @@ class StockController extends Controller
                 'sold_base_quantity' => (int) ($summary->sold_base_quantity ?? 0),
                 'damaged_base_quantity' => (int) ($summary->damaged_base_quantity ?? 0),
                 'expired_base_quantity' => (int) ($summary->expired_base_quantity ?? 0),
+                'stock_value_amount' => $stockValue,
                 'nearest_expiry_date' => $summary->nearest_expiry_date ?? null,
             ],
         ]));
+    }
+
+    private function receiptBatchCostSubquery()
+    {
+        return DB::table('stock_receipt_items')
+            ->join('stock_receipts', 'stock_receipts.id', '=', 'stock_receipt_items.stock_receipt_id')
+            ->whereNull('stock_receipts.deleted_at')
+            ->selectRaw("
+                stock_receipts.company_id,
+                stock_receipt_items.product_id,
+                COALESCE(stock_receipt_items.batch_no, '') as batch_key,
+                COALESCE(stock_receipt_items.expiry_date, '1000-01-01') as expiry_key,
+                COALESCE(SUM(stock_receipt_items.line_total) / NULLIF(SUM(stock_receipt_items.base_unit_quantity), 0), 0) as base_unit_cost
+            ")
+            ->groupBy(
+                'stock_receipts.company_id',
+                'stock_receipt_items.product_id',
+                DB::raw("COALESCE(stock_receipt_items.batch_no, '')"),
+                DB::raw("COALESCE(stock_receipt_items.expiry_date, '1000-01-01')")
+            );
     }
 
     public function adjust(

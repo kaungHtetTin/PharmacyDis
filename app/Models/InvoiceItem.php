@@ -25,4 +25,14 @@ class InvoiceItem extends Model
     {
         return $this->belongsTo(Unit::class);
     }
+
+    public function salesOrderItem()
+    {
+        return $this->belongsTo(SalesOrderItem::class);
+    }
+
+    public function salesReturnItems()
+    {
+        return $this->hasMany(SalesReturnItem::class);
+    }
 }

@@ -44,7 +44,18 @@ class StockController extends Controller
                 $join->on('stock_summary.product_id', '=', 'products.id')
                     ->on('stock_summary.company_id', '=', 'products.company_id');
             })
-            ->with(['baseUnit:id,name,abbreviation'])
+            ->with([
+                'baseUnit:id,name,abbreviation',
+                'productUnits.unit:id,name,abbreviation',
+                'focRules' => fn ($query) => $query
+                    ->where('status', 'active')
+                    ->where(function ($dateQuery) {
+                        $dateQuery->whereNull('starts_at')->orWhere('starts_at', '<=', now()->toDateString());
+                    })
+                    ->where(function ($dateQuery) {
+                        $dateQuery->whereNull('ends_at')->orWhere('ends_at', '>=', now()->toDateString());
+                    }),
+            ])
             ->where('products.company_id', $companyId)
             ->where('products.status', 'active')
             ->when($request->filled('search'), function ($query) use ($request) {
@@ -53,6 +64,18 @@ class StockController extends Controller
                 $query->where(function ($searchQuery) use ($search) {
                     $searchQuery->where('products.name', 'like', "%{$search}%")
                         ->orWhere('products.sku', 'like', "%{$search}%");
+                });
+            })
+            ->when($request->boolean('foc_active'), function ($query) {
+                $query->whereHas('focRules', function ($focQuery) {
+                    $focQuery
+                        ->where('status', 'active')
+                        ->where(function ($dateQuery) {
+                            $dateQuery->whereNull('starts_at')->orWhere('starts_at', '<=', now()->toDateString());
+                        })
+                        ->where(function ($dateQuery) {
+                            $dateQuery->whereNull('ends_at')->orWhere('ends_at', '>=', now()->toDateString());
+                        });
                 });
             });
 
@@ -80,6 +103,8 @@ class StockController extends Controller
                     'base_unit_id' => $product->base_unit_id,
                     'low_stock_threshold_base_units' => (int) $product->low_stock_threshold_base_units,
                     'base_unit' => $product->baseUnit,
+                    'product_units' => $product->productUnits,
+                    'foc_rules' => $product->focRules,
                 ],
             ]);
     }

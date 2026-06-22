@@ -1,8 +1,70 @@
 import StatusBadge from './StatusBadge';
 
-export default function SettingsWorkspace({ creditPolicies = [], permissionMatrix = [], storageSettings = [] }) {
+export default function SettingsWorkspace({
+    creditPolicies = [],
+    invoicePrintError = '',
+    invoicePrintLoading = false,
+    invoicePrintSaving = false,
+    invoicePrintSettings = [],
+    invoicePrintSuccess = '',
+    onInvoicePrintChange,
+    onInvoicePrintSave,
+    permissionMatrix = [],
+    storageSettings = [],
+}) {
     return (
         <div className="settings-workspace">
+            {(invoicePrintSettings.length > 0 || invoicePrintLoading || invoicePrintError || onInvoicePrintSave) && (
+                <section className="drawer-section">
+                    <div className="section-heading-row">
+                        <div>
+                            <p className="eyebrow">Invoice print parameters</p>
+                            <h3>A5 sales invoice</h3>
+                        </div>
+                        <button
+                            className="btn primary"
+                            disabled={invoicePrintLoading || invoicePrintSaving}
+                            onClick={onInvoicePrintSave}
+                            type="button"
+                        >
+                            {invoicePrintSaving ? 'Saving...' : 'Save invoice settings'}
+                        </button>
+                    </div>
+
+                    {invoicePrintError && <div className="form-error">{invoicePrintError}</div>}
+                    {invoicePrintSuccess && <div className="form-success">{invoicePrintSuccess}</div>}
+
+                    {invoicePrintLoading ? (
+                        <span className="muted">Loading invoice parameters...</span>
+                    ) : (
+                        <div className="invoice-setting-grid">
+                            {invoicePrintSettings.map((setting) => (
+                                <label className="invoice-setting-card" key={setting.key}>
+                                    <span>{setting.label}</span>
+                                    <code>{setting.key}</code>
+                                    {setting.input_type === 'textarea' ? (
+                                        <textarea
+                                            onChange={(event) => onInvoicePrintChange?.(setting.key, event.target.value)}
+                                            rows={3}
+                                            value={setting.value ?? ''}
+                                        />
+                                    ) : (
+                                        <input
+                                            min={setting.input_type === 'number' ? '0' : undefined}
+                                            onChange={(event) => onInvoicePrintChange?.(setting.key, event.target.value)}
+                                            step={setting.input_type === 'number' ? '0.01' : undefined}
+                                            type={setting.input_type === 'number' ? 'number' : 'text'}
+                                            value={setting.value ?? ''}
+                                        />
+                                    )}
+                                    {setting.help && <small>{setting.help}</small>}
+                                </label>
+                            ))}
+                        </div>
+                    )}
+                </section>
+            )}
+
             {permissionMatrix.length > 0 && (
                 <section className="drawer-section">
                     <p className="eyebrow">Role permission matrix</p>

@@ -13,7 +13,10 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\ProductUnit;
+use App\Models\SalesReturn;
 use App\Models\SalesOrder;
+use App\Models\Setting;
 use App\Models\StockBatch;
 use App\Models\StockTransfer;
 use App\Models\Unit;
@@ -38,16 +41,46 @@ class BusinessWorkflowTest extends TestCase
         $this->seed(RolesAndSampleDataSeeder::class);
 
         $this->salesToken = $this->postJson('/api/auth/login', [
-            'email' => 'mayzin@paramacy.test',
+            'email' => 'mayzin@pharmacy.test',
             'password' => 'password',
             'user_type' => 'sales',
         ])->json('token');
 
         $this->officeToken = $this->postJson('/api/auth/login', [
-            'email' => 'admin@paramacy.test',
+            'email' => 'admin@pharmacy.test',
             'password' => 'password',
             'user_type' => 'office',
         ])->json('token');
+    }
+
+    public function test_office_admin_can_manage_invoice_print_settings(): void
+    {
+        $this->assertDatabaseMissing('settings', ['key' => 'invoice_print.company_name']);
+
+        $response = $this->withToken($this->officeToken)
+            ->getJson('/api/office/settings/invoice-print')
+            ->assertOk()
+            ->assertJsonPath('settings.0.key', 'invoice_print.company_name');
+
+        $this->assertTrue(
+            collect($response->json('settings'))->contains(fn (array $setting) => $setting['key'] === 'invoice_print.company_name')
+        );
+
+        $this->withToken($this->officeToken)
+            ->putJson('/api/office/settings/invoice-print', [
+                'settings' => [
+                    ['key' => 'invoice_print.company_name', 'value' => 'My Pharmacy Distribution'],
+                    ['key' => 'invoice_print.footer_text', 'value' => 'Please check goods on delivery'],
+                ],
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('settings', [
+            'key' => 'invoice_print.company_name',
+            'setting_group' => 'invoice_print',
+            'value' => 'My Pharmacy Distribution',
+        ]);
+        $this->assertSame('My Pharmacy Distribution', Setting::where('key', 'invoice_print.company_name')->value('value'));
     }
 
     public function test_blocked_customer_company_credit_prevents_sales_order_creation(): void
@@ -74,30 +107,36 @@ class BusinessWorkflowTest extends TestCase
         $carton = Unit::where('abbreviation', 'Ctn')->firstOrFail();
         $paracetamol = Product::where('sku', 'ML-PARA-500')->firstOrFail();
         $coughSyrup = Product::where('sku', 'ML-COUGH-100')->firstOrFail();
+        $paracetamolBox = ProductUnit::where('product_id', $paracetamol->id)->where('unit_id', $box->id)->firstOrFail();
+        $paymentDueDate = now()->addDays(10)->toDateString();
 
         $response = $this->withToken($this->salesToken)
             ->postJson('/api/sales/orders', [
                 'customer_id' => $customer->id,
                 'requested_delivery_date' => now()->addDays(2)->toDateString(),
+                'payment_due_date' => $paymentDueDate,
                 'items' => [
-                    ['product_id' => $paracetamol->id, 'unit_id' => $box->id, 'quantity' => 10],
+                    ['product_id' => $paracetamol->id, 'unit_id' => $box->id, 'quantity' => 10, 'foc_unit_id' => $box->id, 'foc_quantity' => 1],
                     ['product_id' => $coughSyrup->id, 'unit_id' => $carton->id, 'quantity' => 2],
                 ],
             ])
             ->assertCreated()
-            ->assertJsonPath('data.items.0.foc_base_unit_quantity', 100)
+            ->assertJsonPath('data.items.0.foc_quantity', 1)
+            ->assertJsonPath('data.items.0.foc_unit_id', $box->id)
+            ->assertJsonPath('data.items.0.foc_base_unit_quantity', $paracetamolBox->conversion_factor_to_base)
             ->assertJsonCount(1, 'data.foc_items');
 
         $order = SalesOrder::where('order_no', $response->json('data.order_no'))->firstOrFail();
 
         $this->assertCount(2, $order->items);
-        $this->assertEquals(100, $order->items()->where('product_id', $paracetamol->id)->first()->foc_base_unit_quantity);
+        $this->assertEquals($paracetamolBox->conversion_factor_to_base, $order->items()->where('product_id', $paracetamol->id)->first()->foc_base_unit_quantity);
         $this->assertEquals('submitted', $order->status);
         $this->assertDatabaseHas('invoices', [
             'sales_order_id' => $order->id,
             'status' => 'issued',
             'paid_amount' => 0,
             'balance_amount' => $order->total_amount,
+            'due_date' => $paymentDueDate,
         ]);
         $expectedCustomerBalance = Invoice::query()
             ->where('customer_id', $order->customer_id)
@@ -115,12 +154,13 @@ class BusinessWorkflowTest extends TestCase
         ]);
     }
 
-    public function test_quantity_foc_rules_apply_higher_tiers_then_lower_remainders(): void
+    public function test_foc_rules_are_announcements_and_manual_foc_is_recorded(): void
     {
         $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
         $company = Company::where('code', 'MEDILIFE')->firstOrFail();
         $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
         $box = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $boxProductUnit = ProductUnit::where('product_id', $product->id)->where('unit_id', $box->id)->firstOrFail();
 
         FocRule::updateOrCreate(
             ['company_id' => $company->id, 'product_id' => $product->id, 'rule_type' => 'quantity', 'minimum_quantity_base_units' => 3000],
@@ -133,21 +173,46 @@ class BusinessWorkflowTest extends TestCase
             ]
         );
 
-        foreach ([20 => 200, 40 => 500, 50 => 600, 60 => 800] as $boxQuantity => $expectedFocBaseQuantity) {
-            $response = $this->withToken($this->salesToken)
-                ->postJson('/api/sales/orders', [
-                    'customer_id' => $customer->id,
-                    'items' => [
-                        ['product_id' => $product->id, 'unit_id' => $box->id, 'quantity' => $boxQuantity],
-                    ],
-                ])
-                ->assertCreated()
-                ->assertJsonPath('data.items.0.foc_base_unit_quantity', $expectedFocBaseQuantity);
+        $this->withToken($this->salesToken)
+            ->postJson('/api/sales/orders', [
+                'customer_id' => $customer->id,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $box->id, 'quantity' => 40],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.items.0.foc_base_unit_quantity', 0)
+            ->assertJsonCount(0, 'data.foc_items');
 
-            $order = SalesOrder::findOrFail($response->json('data.id'));
+        $response = $this->withToken($this->salesToken)
+            ->postJson('/api/sales/orders', [
+                'customer_id' => $customer->id,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $box->id, 'quantity' => 40, 'foc_unit_id' => $box->id, 'foc_quantity' => 2],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.items.0.foc_quantity', 2)
+            ->assertJsonPath('data.items.0.foc_base_unit_quantity', 2 * $boxProductUnit->conversion_factor_to_base)
+            ->assertJsonCount(1, 'data.foc_items');
 
-            $this->assertEquals($expectedFocBaseQuantity, $order->focItems()->sum('reward_base_unit_quantity'));
-        }
+        $order = SalesOrder::findOrFail($response->json('data.id'));
+
+        $this->assertEquals(2 * $boxProductUnit->conversion_factor_to_base, $order->focItems()->sum('reward_base_unit_quantity'));
+
+        $stockResponse = $this->withToken($this->salesToken)
+            ->getJson('/api/sales/stock/current?search=' . urlencode($product->sku))
+            ->assertOk();
+        $stockRow = collect($stockResponse->json('data'))->firstWhere('product_id', $product->id);
+
+        $this->assertNotNull($stockRow);
+        $this->assertNotEmpty($stockRow['product']['foc_rules']);
+
+        $filteredStockResponse = $this->withToken($this->salesToken)
+            ->getJson('/api/sales/stock/current?foc_active=1&search=' . urlencode($product->sku))
+            ->assertOk();
+
+        $this->assertNotNull(collect($filteredStockResponse->json('data'))->firstWhere('product_id', $product->id));
     }
 
     public function test_office_can_approve_order_and_generate_invoice(): void
@@ -194,12 +259,55 @@ class BusinessWorkflowTest extends TestCase
         $this->assertEquals(1, Invoice::where('sales_order_id', $order->id)->count());
     }
 
+    public function test_invoice_generation_can_include_optional_tax_amount(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('available_base_quantity', '>', 0)
+            ->value('warehouse_id');
+        $taxAmount = 2500;
+
+        $createdOrder = $this->withToken($this->officeToken)
+            ->postJson('/api/office/orders', [
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'warehouse_id' => $warehouseId,
+                'auto_approve' => true,
+                'tax_amount' => $taxAmount,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertCreated()
+            ->json('data');
+
+        $invoice = $this->withToken($this->officeToken)
+            ->postJson("/api/office/orders/{$createdOrder['id']}/generate-invoice")
+            ->assertOk()
+            ->json('data');
+
+        $this->assertEquals($taxAmount, (float) $invoice['tax_amount']);
+        $this->assertEquals((float) $createdOrder['total_amount'], (float) $invoice['total_amount']);
+        $this->assertEquals((float) $invoice['total_amount'], (float) $invoice['balance_amount']);
+        $this->assertDatabaseHas('invoices', [
+            'id' => $invoice['id'],
+            'tax_amount' => $taxAmount,
+            'total_amount' => (float) $createdOrder['total_amount'],
+        ]);
+    }
+
     public function test_office_can_create_auto_approved_order_and_reserve_stock(): void
     {
         $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
         $company = Company::where('code', 'MEDILIFE')->firstOrFail();
         $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
         $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $productUnit = ProductUnit::where('product_id', $product->id)->where('unit_id', $unit->id)->firstOrFail();
         $warehouseId = StockBatch::query()
             ->where('company_id', $company->id)
             ->where('product_id', $product->id)
@@ -225,14 +333,15 @@ class BusinessWorkflowTest extends TestCase
                 'company_id' => $company->id,
                 'customer_id' => $customer->id,
                 'warehouse_id' => $warehouseId,
+                'payment_due_date' => now()->addDays(14)->toDateString(),
                 'auto_approve' => true,
                 'items' => [
-                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 10],
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 10, 'foc_unit_id' => $unit->id, 'foc_quantity' => 1],
                 ],
             ])
             ->assertCreated()
             ->assertJsonPath('data.status', 'approved')
-            ->assertJsonPath('data.items.0.foc_base_unit_quantity', 100)
+            ->assertJsonPath('data.items.0.foc_base_unit_quantity', $productUnit->conversion_factor_to_base)
             ->assertJsonCount(1, 'data.foc_items');
 
         $order = SalesOrder::findOrFail($response->json('data.id'));
@@ -256,7 +365,8 @@ class BusinessWorkflowTest extends TestCase
 
         $this->withToken($this->officeToken)
             ->postJson("/api/office/orders/{$order->id}/generate-invoice")
-            ->assertOk();
+            ->assertOk()
+            ->assertJsonPath('data.due_date', now()->addDays(14)->toDateString());
 
         $this->withToken($this->officeToken)
             ->postJson("/api/office/orders/{$order->id}/deliver")
@@ -283,6 +393,262 @@ class BusinessWorkflowTest extends TestCase
             'sales_order_id' => $order->id,
             'status' => 'delivered',
         ]);
+    }
+
+    public function test_office_can_edit_invoiced_order_before_delivery_and_sync_stock_and_invoice(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->select('warehouse_id')
+            ->groupBy('warehouse_id')
+            ->havingRaw('SUM(available_base_quantity) >= ?', [1100])
+            ->value('warehouse_id');
+        $reservedBefore = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('reserved_base_quantity');
+
+        $createdOrder = $this->withToken($this->officeToken)
+            ->postJson('/api/office/orders', [
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'warehouse_id' => $warehouseId,
+                'auto_approve' => true,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 10],
+                ],
+            ])
+            ->assertCreated()
+            ->json('data');
+
+        $this->withToken($this->officeToken)
+            ->postJson("/api/office/orders/{$createdOrder['id']}/generate-invoice")
+            ->assertOk();
+
+        $response = $this->withToken($this->officeToken)
+            ->putJson("/api/office/orders/{$createdOrder['id']}", [
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'warehouse_id' => $warehouseId,
+                'requested_delivery_date' => now()->addDay()->toDateString(),
+                'payment_due_date' => now()->addDays(21)->toDateString(),
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 5],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'invoiced')
+            ->json('data');
+
+        $order = SalesOrder::with('items')->findOrFail($response['id']);
+        $reservedQuantity = $order->items->sum(fn ($item) => $item->base_unit_quantity + $item->foc_base_unit_quantity);
+        $reservedAfterEdit = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('reserved_base_quantity');
+        $invoice = Invoice::where('sales_order_id', $order->id)->with('items')->firstOrFail();
+
+        $this->assertEquals(5, $order->items->first()->quantity);
+        $this->assertEquals($reservedBefore + $reservedQuantity, $reservedAfterEdit);
+        $this->assertEquals((float) $order->total_amount, (float) $invoice->total_amount);
+        $this->assertEquals((float) $order->total_amount, (float) $invoice->balance_amount);
+        $this->assertEquals(now()->addDays(21)->toDateString(), $invoice->due_date->toDateString());
+        $this->assertCount(1, $invoice->items);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_type' => SalesOrder::class,
+            'reference_id' => $order->id,
+            'movement_type' => 'release',
+        ]);
+    }
+
+    public function test_office_can_delete_order_before_delivery_and_release_stock(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('available_base_quantity', '>', 0)
+            ->value('warehouse_id');
+        $availableBefore = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('available_base_quantity');
+        $reservedBefore = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('reserved_base_quantity');
+
+        $createdOrder = $this->withToken($this->officeToken)
+            ->postJson('/api/office/orders', [
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'warehouse_id' => $warehouseId,
+                'auto_approve' => true,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertCreated()
+            ->json('data');
+
+        $this->withToken($this->officeToken)
+            ->deleteJson("/api/office/orders/{$createdOrder['id']}")
+            ->assertNoContent();
+
+        $availableAfter = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('available_base_quantity');
+        $reservedAfter = StockBatch::where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('warehouse_id', $warehouseId)
+            ->sum('reserved_base_quantity');
+
+        $this->assertEquals($availableBefore, $availableAfter);
+        $this->assertEquals($reservedBefore, $reservedAfter);
+        $this->assertSoftDeleted('sales_orders', ['id' => $createdOrder['id'], 'status' => 'cancelled']);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_type' => SalesOrder::class,
+            'reference_id' => $createdOrder['id'],
+            'movement_type' => 'release',
+        ]);
+    }
+
+    public function test_office_cannot_delete_order_with_invoice_payments(): void
+    {
+        $order = SalesOrder::where('order_no', 'SO-DEMO-1000')->firstOrFail();
+
+        $this->withToken($this->officeToken)
+            ->deleteJson("/api/office/orders/{$order->id}")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('invoice');
+    }
+
+    public function test_office_can_post_pharmacy_return_against_delivered_order_and_update_finance_and_stock(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->select('warehouse_id')
+            ->groupBy('warehouse_id')
+            ->havingRaw('SUM(available_base_quantity) >= ?', [1100])
+            ->value('warehouse_id');
+
+        $createdOrder = $this->withToken($this->officeToken)
+            ->postJson('/api/office/orders', [
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'warehouse_id' => $warehouseId,
+                'auto_approve' => true,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 10],
+                ],
+            ])
+            ->assertCreated()
+            ->json('data');
+
+        $this->withToken($this->officeToken)
+            ->postJson("/api/office/orders/{$createdOrder['id']}/generate-invoice")
+            ->assertOk();
+
+        $this->withToken($this->officeToken)
+            ->postJson("/api/office/orders/{$createdOrder['id']}/deliver")
+            ->assertOk();
+
+        $invoice = Invoice::where('sales_order_id', $createdOrder['id'])->with('items')->firstOrFail();
+        $invoiceItem = $invoice->items->first();
+        $originalInvoiceTotal = (float) $invoice->total_amount;
+        $returnQuantity = 2;
+        $returnBaseQuantity = $returnQuantity * (int) $invoiceItem->conversion_factor_to_base;
+        $expectedReturnAmount = round((float) $invoiceItem->line_total * ($returnBaseQuantity / (int) $invoiceItem->base_unit_quantity), 2);
+
+        $response = $this->withToken($this->officeToken)
+            ->postJson('/api/office/sales-returns', [
+                'invoice_id' => $invoice->id,
+                'warehouse_id' => $warehouseId,
+                'return_date' => now()->toDateString(),
+                'reason' => 'Pharmacy returned sellable stock',
+                'items' => [
+                    [
+                        'invoice_item_id' => $invoiceItem->id,
+                        'quantity' => $returnQuantity,
+                        'condition' => 'sellable',
+                        'batch_no' => 'RET-SELLABLE-001',
+                        'expiry_date' => now()->addYear()->toDateString(),
+                    ],
+                ],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('status', 'posted')
+            ->json();
+
+        $invoice->refresh();
+        $invoiceItem->refresh();
+        $returnBatch = StockBatch::where('company_id', $company->id)
+            ->where('warehouse_id', $warehouseId)
+            ->where('product_id', $product->id)
+            ->where('batch_no', 'RET-SELLABLE-001')
+            ->firstOrFail();
+
+        $this->assertEquals(8, $invoiceItem->quantity);
+        $this->assertEquals($originalInvoiceTotal - $expectedReturnAmount, (float) $invoice->total_amount);
+        $this->assertEquals($originalInvoiceTotal - $expectedReturnAmount, (float) $invoice->balance_amount);
+        $this->assertEquals($returnBaseQuantity, $returnBatch->available_base_quantity);
+        $this->assertEquals($expectedReturnAmount, (float) $response['total_amount']);
+        $this->assertDatabaseHas('sales_return_items', [
+            'sales_return_id' => $response['id'],
+            'invoice_item_id' => $invoiceItem->id,
+            'condition' => 'sellable',
+            'base_unit_quantity' => $returnBaseQuantity,
+        ]);
+        $this->assertDatabaseHas('stock_movements', [
+            'reference_type' => SalesReturn::class,
+            'reference_id' => $response['id'],
+            'warehouse_id' => $warehouseId,
+            'stock_batch_id' => $returnBatch->id,
+            'movement_type' => 'return',
+            'base_unit_quantity' => $returnBaseQuantity,
+        ]);
+        $expectedCustomerBalance = Invoice::query()
+            ->where('customer_id', $invoice->customer_id)
+            ->where('company_id', $invoice->company_id)
+            ->where('status', '!=', 'void')
+            ->sum('total_amount')
+            - Payment::query()
+                ->where('customer_id', $invoice->customer_id)
+                ->where('company_id', $invoice->company_id)
+                ->sum('amount');
+        $this->assertDatabaseHas('customer_balances', [
+            'customer_id' => $invoice->customer_id,
+            'company_id' => $invoice->company_id,
+            'balance_amount' => $expectedCustomerBalance,
+        ]);
+
+        $financeMetrics = collect($this->withToken($this->officeToken)
+            ->getJson('/api/office/reports/finance/overview?' . http_build_query([
+                'duration' => 'month',
+                'date_from' => now()->toDateString(),
+                'date_to' => now()->toDateString(),
+                'company_id' => $company->id,
+            ]))
+            ->assertOk()
+            ->json('metrics'));
+        $salesReturnsMetric = $financeMetrics->firstWhere('label', 'Sales returns');
+
+        $this->assertNotNull($salesReturnsMetric);
+        $this->assertEquals(number_format($expectedReturnAmount), $salesReturnsMetric['value']);
     }
 
     public function test_office_can_transfer_stock_between_warehouses_preserving_batch_and_expiry(): void
@@ -390,9 +756,37 @@ class BusinessWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_inventory_summary_includes_stock_holding_value(): void
+    {
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+
+        $response = $this->withToken($this->officeToken)
+            ->getJson("/api/office/stock/current?company_id={$company->id}&per_page=15")
+            ->assertOk();
+
+        $this->assertArrayHasKey('stock_value_amount', $response->json('summary'));
+        $this->assertGreaterThan(0, $response->json('summary.stock_value_amount'));
+        $this->assertArrayHasKey('stock_value_amount', $response->json('data.0'));
+    }
+
+    public function test_finance_report_date_range_includes_stock_holding_value(): void
+    {
+        $dateFrom = now()->startOfMonth()->toDateString();
+        $dateTo = now()->endOfMonth()->toDateString();
+
+        $response = $this->withToken($this->officeToken)
+            ->getJson("/api/office/reports/finance/overview?duration=month&date_from={$dateFrom}&date_to={$dateTo}")
+            ->assertOk();
+        $metrics = collect($response->json('metrics'));
+        $duration = collect($response->json('summary'))->firstWhere('label', 'Duration');
+
+        $this->assertTrue($metrics->contains('label', 'Stock holding value'));
+        $this->assertSame("{$dateFrom} to {$dateTo}", $duration['note']);
+    }
+
     public function test_payment_allocation_updates_invoice_balance(): void
     {
-        $invoice = Invoice::where('invoice_no', 'INV-DEMO-1000')->firstOrFail();
+        $invoice = Invoice::with('items')->where('invoice_no', 'INV-DEMO-1000')->firstOrFail();
 
         $createdPayment = $this->withToken($this->officeToken)
             ->postJson('/api/office/payments', [
@@ -422,6 +816,60 @@ class BusinessWorkflowTest extends TestCase
 
         $this->assertNotNull($paymentRow);
         $this->assertEquals($invoice->id, $paymentRow['allocations'][0]['invoice']['id']);
+
+        $invoiceItem = $invoice->items->first();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $invoice->company_id)
+            ->where('product_id', $invoiceItem->product_id)
+            ->where('available_base_quantity', '>', 0)
+            ->value('warehouse_id');
+        $returnBaseQuantity = (int) $invoiceItem->conversion_factor_to_base;
+        $expectedReturnAmount = round((float) $invoiceItem->line_total * ($returnBaseQuantity / (int) $invoiceItem->base_unit_quantity), 2);
+
+        $salesReturn = $this->withToken($this->officeToken)
+            ->postJson('/api/office/sales-returns', [
+                'invoice_id' => $invoice->id,
+                'warehouse_id' => $warehouseId,
+                'return_date' => now()->toDateString(),
+                'reason' => 'Paid invoice return creates customer credit',
+                'items' => [
+                    [
+                        'invoice_item_id' => $invoiceItem->id,
+                        'quantity' => 1,
+                        'condition' => 'sellable',
+                        'batch_no' => 'RET-CREDIT-001',
+                    ],
+                ],
+            ])
+            ->assertCreated()
+            ->json();
+
+        $receivableSummary = $this->withToken($this->officeToken)
+            ->getJson('/api/office/receivables?' . http_build_query([
+                'action_only' => 0,
+                'company_id' => $invoice->company_id,
+                'customer_id' => $invoice->customer_id,
+            ]))
+            ->assertOk()
+            ->json('summary');
+
+        $this->assertEquals($expectedReturnAmount, (float) $receivableSummary['customer_credit_amount']);
+        $this->assertEquals(-$expectedReturnAmount, (float) CustomerBalance::where('customer_id', $invoice->customer_id)->where('company_id', $invoice->company_id)->value('balance_amount'));
+
+        $returnHistory = $this->withToken($this->officeToken)
+            ->getJson('/api/office/sales-returns?' . http_build_query([
+                'search' => $salesReturn['return_no'],
+                'company_id' => $invoice->company_id,
+                'date_from' => now()->toDateString(),
+                'date_to' => now()->toDateString(),
+            ]))
+            ->assertOk();
+        $returnRow = collect($returnHistory->json('data'))->firstWhere('id', $salesReturn['id']);
+
+        $this->assertNotNull($returnRow);
+        $this->assertEquals($expectedReturnAmount, (float) $returnRow['total_amount']);
+        $this->assertEquals(196000, (float) $returnRow['payment_amount']);
+        $this->assertEquals(196000, (float) $returnHistory->json('summary.payment_amount'));
     }
 
     public function test_customer_payment_must_match_invoice_allocations(): void
@@ -469,6 +917,34 @@ class BusinessWorkflowTest extends TestCase
         $this->assertNotNull($invoiceRow);
         $this->assertCount(3, $invoiceRow['allocations']);
         $this->assertEquals(196000, collect($invoiceRow['allocations'])->sum('allocated_amount'));
+    }
+
+    public function test_office_can_filter_invoices_by_search_status_company_and_invoice_date_range(): void
+    {
+        $invoice = Invoice::where('invoice_no', 'INV-DEMO-1000')->firstOrFail();
+
+        $response = $this->withToken($this->officeToken)
+            ->getJson('/api/office/invoices?' . http_build_query([
+                'action_only' => 0,
+                'company_id' => $invoice->company_id,
+                'date_from' => $invoice->invoice_date->toDateString(),
+                'date_to' => $invoice->invoice_date->toDateString(),
+                'search' => $invoice->invoice_no,
+                'status' => $invoice->status,
+            ]))
+            ->assertOk();
+
+        $this->assertTrue(collect($response->json('data'))->contains('id', $invoice->id));
+
+        $this->withToken($this->officeToken)
+            ->getJson('/api/office/invoices?' . http_build_query([
+                'action_only' => 0,
+                'date_from' => $invoice->invoice_date->copy()->addDay()->toDateString(),
+                'date_to' => $invoice->invoice_date->copy()->addDays(2)->toDateString(),
+                'search' => $invoice->invoice_no,
+            ]))
+            ->assertOk()
+            ->assertJsonMissing(['id' => $invoice->id]);
     }
 
     public function test_pharmacy_detail_uses_live_order_invoice_and_payment_history(): void
@@ -611,7 +1087,7 @@ class BusinessWorkflowTest extends TestCase
                 'primary_image' => $this->fakePngUpload(),
                 'default_discount_percentage' => 4,
                 'commission_rate_percentage' => 2,
-                'low_stock_threshold_base_units' => 20,
+                'low_stock_threshold_sales_units' => 20,
                 'base_unit_selling_price' => 1500,
                 'product_units' => [
                     ['unit_id' => $unit->id, 'conversion_factor_to_base' => 1, 'selling_price' => 1500, 'is_default_sales_unit' => false, 'status' => 'active'],
@@ -637,7 +1113,7 @@ class BusinessWorkflowTest extends TestCase
                 'name' => 'Test Product 001 Updated',
                 'default_discount_percentage' => 5,
                 'commission_rate_percentage' => 3,
-                'low_stock_threshold_base_units' => 25,
+                'low_stock_threshold_sales_units' => 25,
                 'base_unit_selling_price' => 1800,
                 'product_units' => [
                     ['unit_id' => $unit->id, 'conversion_factor_to_base' => 1, 'selling_price' => 1800, 'is_default_sales_unit' => false, 'status' => 'active'],
@@ -650,6 +1126,11 @@ class BusinessWorkflowTest extends TestCase
             ->assertJsonPath('brand', 'Test Health Plus')
             ->assertJsonPath('barcode', '9559000000013')
             ->assertJsonPath('name', 'Test Product 001 Updated');
+
+        $this->assertDatabaseHas('products', [
+            'id' => $created['id'],
+            'low_stock_threshold_base_units' => 2500,
+        ]);
 
         $this->assertDatabaseHas('product_units', [
             'product_id' => $created['id'],

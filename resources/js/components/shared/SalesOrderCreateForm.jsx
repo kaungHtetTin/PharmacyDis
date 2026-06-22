@@ -89,6 +89,21 @@ export default function SalesOrderCreateForm({
                         type="date"
                         value={form?.requested_delivery_date || ''}
                     />
+                    <FormField
+                        label="Payment due date"
+                        name="payment_due_date"
+                        onChange={onChange}
+                        required
+                        type="date"
+                        value={form?.payment_due_date || ''}
+                    />
+                    <FormField
+                        label="Tax amount"
+                        name="tax_amount"
+                        onChange={onChange}
+                        type="number"
+                        value={form?.tax_amount || '0'}
+                    />
                     <label className="form-field sales-order-note">
                         <span>Order note</span>
                         <textarea disabled={blocked || submitting} name="note" onChange={onChange} placeholder="Optional note for office approval or warehouse" rows="3" value={form?.note || ''} />
@@ -113,7 +128,7 @@ export default function SalesOrderCreateForm({
             {stockBlockedReason && <span className={stockStatus.hasShortage || stockError ? 'error-text' : 'muted'}>{stockBlockedReason}</span>}
             <div className="order-submit-row">
                 <p className="helper-copy">
-                    Company and sales representative are fixed by the signed-in sales account. Stock availability includes ordered and FOC base quantities.
+                    Company and sales representative are fixed by the signed-in sales account. Stock availability includes ordered quantity and manually entered FOC quantity.
                 </p>
                 <button className="btn primary" disabled={blocked || stockBlocked || submitting} type="submit">
                     {submitting ? 'Submitting order...' : 'Submit order'}

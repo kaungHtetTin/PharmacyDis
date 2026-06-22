@@ -4,7 +4,7 @@ export const salesModules = {
     stock: {
         eyebrow: 'Availability',
         title: 'Stock',
-        description: 'Check available stock by product, base unit, and nearest expiry date for the assigned company before creating customer orders.',
+        description: 'Check available stock by product, sales default unit, and nearest expiry date for the assigned company before creating customer orders.',
         primaryAction: 'Refresh stock',
         searchPlaceholder: 'Search product or SKU',
         pageSize: 15,
@@ -15,6 +15,7 @@ export const salesModules = {
             { key: 'product', label: 'Product' },
             { key: 'sku', label: 'SKU' },
             { key: 'available', label: 'Available' },
+            { key: 'focOffer', label: 'FOC' },
             { key: 'expiry', label: 'Nearest Expiry' },
             { key: 'status', label: 'Status', type: 'status' },
         ],
@@ -44,7 +45,7 @@ export const salesModules = {
     'new-order': {
         eyebrow: 'Order Entry',
         title: 'New Order',
-        description: 'Start from a pharmacy card, add products from the assigned company, preview FOC, check credit status, and submit the order.',
+        description: 'Start from a pharmacy card, add products from the assigned company, review active FOC offers, enter manual FOC, check credit status, and submit the order.',
         primaryAction: 'Submit order',
         rows: emptyRows,
         salesOrderContext: {},

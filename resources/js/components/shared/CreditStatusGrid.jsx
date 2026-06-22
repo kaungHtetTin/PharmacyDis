@@ -1,6 +1,6 @@
-export default function CreditStatusGrid({ rows = [] }) {
+export default function CreditStatusGrid({ compact = false, rows = [] }) {
     return (
-        <div className="credit-grid">
+        <div className={`credit-grid ${compact ? 'is-compact' : ''}`}>
             {rows.map((row) => (
                 <article className="credit-card" key={row.company}>
                     <div className="credit-card-head">

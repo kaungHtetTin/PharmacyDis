@@ -128,16 +128,25 @@ export default function FinanceReportOverview({
                     {filterControls.map((filter) => (
                         <label className="report-control-field" key={filter.key}>
                             <span>{filter.label}</span>
-                            <select
-                                aria-label={filter.label}
-                                onChange={(event) => onFilterChange?.(filter.key, event.target.value)}
-                                value={filter.value}
-                            >
-                                <option value="">{filter.placeholder || filter.label}</option>
-                                {filter.options.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                ))}
-                            </select>
+                            {filter.type === 'date' ? (
+                                <input
+                                    aria-label={filter.label}
+                                    onChange={(event) => onFilterChange?.(filter.key, event.target.value)}
+                                    type="date"
+                                    value={filter.value || ''}
+                                />
+                            ) : (
+                                <select
+                                    aria-label={filter.label}
+                                    onChange={(event) => onFilterChange?.(filter.key, event.target.value)}
+                                    value={filter.value}
+                                >
+                                    <option value="">{filter.placeholder || filter.label}</option>
+                                    {filter.options.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                </select>
+                            )}
                         </label>
                     ))}
                     <button className="btn secondary filter-reset-btn" onClick={onReset} type="button">Reset</button>

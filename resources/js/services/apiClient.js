@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const appConfig = window.appConfig || {};
 const baseUrl = String(appConfig.baseUrl || '').replace(/\/+$/g, '');
-const tokenKey = 'paramacy_dis_api_token';
+const tokenKey = 'pharmacy_dis_api_token';
 
 export function getStoredToken() {
     return window.localStorage.getItem(tokenKey);

@@ -17,9 +17,9 @@ class InvoiceService
     ) {
     }
 
-    public function generateFromOrder(SalesOrder $order, ?User $actor = null, bool $allowSubmitted = false): Invoice
+    public function generateFromOrder(SalesOrder $order, ?User $actor = null, bool $allowSubmitted = false, ?float $taxAmount = null): Invoice
     {
-        return DB::transaction(function () use ($order, $actor, $allowSubmitted) {
+        return DB::transaction(function () use ($order, $actor, $allowSubmitted, $taxAmount) {
             $order->load('items');
 
             $allowedStatuses = $allowSubmitted
@@ -53,11 +53,15 @@ class InvoiceService
                     'salesOrder.salesRepresentative.user',
                     'salesOrder.items.product',
                     'salesOrder.items.unit',
+                    'salesOrder.items.focUnit',
                     'salesOrder.focItems.product',
                     'salesOrder.focItems.focRule',
                     'allocations.payment',
                 ]);
             }
+
+            $taxAmount = round(max(0, (float) ($taxAmount ?? $order->tax_amount ?? 0)), 2);
+            $invoiceTotal = round((float) $order->total_amount, 2);
 
             $invoice = Invoice::create([
                 'invoice_no' => $this->numberGeneratorService->next(Invoice::class, 'invoice_no', 'INV'),
@@ -66,13 +70,14 @@ class InvoiceService
                 'customer_id' => $order->customer_id,
                 'sales_representative_id' => $order->sales_representative_id,
                 'invoice_date' => now()->toDateString(),
-                'due_date' => now()->addDays((int) config('billing.invoice_due_days', 30))->toDateString(),
+                'due_date' => $order->payment_due_date?->toDateString() ?? now()->addDays((int) config('billing.invoice_due_days', 30))->toDateString(),
                 'status' => 'issued',
                 'subtotal_amount' => $order->subtotal_amount,
                 'discount_amount' => $order->discount_amount,
+                'tax_amount' => $taxAmount,
                 'foc_value_amount' => $order->foc_value_amount,
-                'total_amount' => $order->total_amount,
-                'balance_amount' => $order->total_amount,
+                'total_amount' => $invoiceTotal,
+                'balance_amount' => $invoiceTotal,
                 'created_by' => $actor?->id,
             ]);
 
@@ -108,6 +113,7 @@ class InvoiceService
                 'salesOrder.salesRepresentative.user',
                 'salesOrder.items.product',
                 'salesOrder.items.unit',
+                'salesOrder.items.focUnit',
                 'salesOrder.focItems.product',
                 'salesOrder.focItems.focRule',
                 'allocations.payment',

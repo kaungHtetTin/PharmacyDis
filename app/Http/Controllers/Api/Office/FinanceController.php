@@ -13,6 +13,7 @@ use App\Models\Invoice;
 use App\Services\NumberGeneratorService;
 use App\Services\CompanyPaymentService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class FinanceController extends Controller
 {
@@ -131,12 +132,30 @@ class FinanceController extends Controller
             ->latest('due_date');
 
         $summaryQuery = clone $query;
+        $creditQuery = DB::table('customer_balances')
+            ->join('customers', 'customers.id', '=', 'customer_balances.customer_id')
+            ->join('companies', 'companies.id', '=', 'customer_balances.company_id')
+            ->where('customer_balances.balance_amount', '<', 0)
+            ->when($request->filled('company_id'), fn ($query) => $query->where('customer_balances.company_id', $request->company_id))
+            ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_balances.customer_id', $request->customer_id))
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $search = $request->search;
+
+                $query->where(function ($query) use ($search) {
+                    $query->where('customers.name', 'like', "%{$search}%")
+                        ->orWhere('companies.name', 'like', "%{$search}%");
+                });
+            });
+        $receivableAmount = (float) (clone $summaryQuery)->sum('balance_amount');
+        $customerCreditAmount = abs((float) (clone $creditQuery)->sum('customer_balances.balance_amount'));
         $paginated = $query->paginate($request->integer('per_page', 15));
 
         return response()->json(array_merge($paginated->toArray(), [
             'summary' => [
                 'invoice_count' => (clone $summaryQuery)->count(),
-                'receivable_amount' => (float) (clone $summaryQuery)->sum('balance_amount'),
+                'receivable_amount' => $receivableAmount,
+                'customer_credit_amount' => $customerCreditAmount,
+                'net_receivable_amount' => $receivableAmount - $customerCreditAmount,
                 'overdue_amount' => (float) (clone $summaryQuery)->whereDate('due_date', '<', now()->toDateString())->sum('balance_amount'),
             ],
         ]));

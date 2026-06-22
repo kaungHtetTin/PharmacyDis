@@ -2,7 +2,7 @@ export default function PrintPreview({ items = [], title, type = 'A4' }) {
     return (
         <div className={`print-preview ${type === 'receipt' ? 'receipt' : ''}`}>
             <div className="print-header">
-                <span>Paramacy DIS</span>
+                <span>Medi Mart Distribution System</span>
                 <strong>{title}</strong>
                 <small>{type} print preview</small>
             </div>

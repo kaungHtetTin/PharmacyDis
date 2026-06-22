@@ -17,6 +17,23 @@ function orderStatusValue(order) {
     return String(order?.status_value || order?.status || '').toLowerCase();
 }
 
+function promptInvoiceTaxAmount() {
+    const input = window.prompt('Total tax amount for this invoice (optional)', '0');
+
+    if (input === null) {
+        return null;
+    }
+
+    const normalized = String(input).trim() === '' ? 0 : Number(input);
+
+    if (!Number.isFinite(normalized) || normalized < 0) {
+        window.alert('Enter a valid tax amount, or leave it blank for zero.');
+        return null;
+    }
+
+    return normalized;
+}
+
 function DetailFactGrid({ order }) {
     const facts = [
         ['Sales rep', order.rep],
@@ -106,7 +123,13 @@ export default function OrderDetailPage({ onNavigate }) {
         setActionError('');
 
         try {
-            const invoice = await api.post(`/office/orders/${order.id}/generate-invoice`);
+            const taxAmount = Number(order.tax_amount || 0) > 0 ? Number(order.tax_amount) : promptInvoiceTaxAmount();
+
+            if (taxAmount === null) {
+                return;
+            }
+
+            const invoice = await api.post(`/office/orders/${order.id}/generate-invoice`, { tax_amount: taxAmount });
             rememberGeneratedInvoice(invoice);
             refreshAfterAction();
         } catch (error) {

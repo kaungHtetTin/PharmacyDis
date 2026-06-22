@@ -29,6 +29,38 @@ function readSubmittedOrderSnapshot() {
     }
 }
 
+function defaultPaymentDueDate() {
+    const dueDays = Number(window.appConfig?.invoiceDueDays ?? 30);
+    const date = new Date();
+    date.setDate(date.getDate() + dueDays);
+
+    return date.toISOString().slice(0, 10);
+}
+
+const blankStockFilters = {
+    foc_active: '',
+    search: '',
+    status: '',
+};
+
+function buildSalesStockEndpoint(filters = blankStockFilters) {
+    const params = new URLSearchParams({ per_page: '100' });
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    if (filters.foc_active) {
+        params.set('foc_active', '1');
+    }
+
+    return `/sales/stock/current?${params.toString()}`;
+}
+
 function SubmittedOrderPage({ onNavigate }) {
     const routeSearchParams = new URLSearchParams(window.location.search);
     const orderId = routeSearchParams.get('order_id') || '';
@@ -142,7 +174,8 @@ function SalesDetails({ record, screen }) {
 export default function SalesModulePage({ onNavigate, pageKey }) {
     const { user } = useAuth();
     const baseScreen = salesModules[pageKey] || salesModules.stock;
-    const liveEndpoint = getSalesEndpoint(pageKey);
+    const [stockFilters, setStockFilters] = useState(blankStockFilters);
+    const liveEndpoint = pageKey === 'stock' ? buildSalesStockEndpoint(stockFilters) : getSalesEndpoint(pageKey);
     const liveResource = useApiResource(liveEndpoint);
     const [pharmacySearch, setPharmacySearch] = useState('');
     const [debouncedPharmacySearch, setDebouncedPharmacySearch] = useState('');
@@ -157,10 +190,11 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const screen = liveEndpoint ? applyLiveRows(baseScreen, liveRows) : baseScreen;
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
+    const [focDialogRecord, setFocDialogRecord] = useState(null);
     const [pageIndex, setPageIndex] = useState(0);
     const [selectedRecord, setSelectedRecord] = useState(screen.rows[0]);
-    const [orderForm, setOrderForm] = useState({ customer_id: '', requested_delivery_date: '', note: '' });
-    const [orderLines, setOrderLines] = useState([{ id: 'draft-line-1', product_id: '', unit_id: '', quantity: '' }]);
+    const [orderForm, setOrderForm] = useState({ customer_id: '', requested_delivery_date: '', payment_due_date: defaultPaymentDueDate(), tax_amount: '0', note: '' });
+    const [orderLines, setOrderLines] = useState([{ id: 'draft-line-1', product_id: '', unit_id: '', quantity: '', foc_unit_id: '', foc_quantity: '' }]);
     const [submitError, setSubmitError] = useState('');
     const [submitSuccess, setSubmitSuccess] = useState('');
     const [submitting, setSubmitting] = useState(false);
@@ -169,6 +203,46 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const pageStart = pageIndex * pageSize;
     const pageEnd = Math.min(pageStart + pageSize, screen.rows.length);
     const visibleRows = screen.rows.slice(pageStart, pageStart + pageSize);
+    const tableColumns = pageKey === 'stock'
+        ? screen.columns.map((column) => (column.key === 'focOffer'
+            ? {
+                ...column,
+                sortable: false,
+                render: (row, value) => (row.hasActiveFoc ? (
+                    <button
+                        className="foc-offer-btn"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setFocDialogRecord(row);
+                        }}
+                        type="button"
+                    >
+                        {value}
+                    </button>
+                ) : <span className="muted">-</span>),
+            }
+            : column))
+        : screen.columns;
+    const stockFilterControls = [
+        {
+            key: 'status',
+            label: 'Status',
+            options: [
+                { label: 'Available', value: 'available' },
+                { label: 'Low Stock', value: 'low_stock' },
+                { label: 'Near Expiry', value: 'near_expiry' },
+            ],
+            placeholder: 'All statuses',
+            value: stockFilters.status,
+        },
+        {
+            key: 'foc_active',
+            label: 'FOC',
+            options: [{ label: 'FOC active', value: '1' }],
+            placeholder: 'All FOC',
+            value: stockFilters.foc_active,
+        },
+    ];
     const salesOrderBlocked = pageKey === 'new-order' && isBlockedCredit(screen.salesOrderContext?.creditStatus);
     const customers = unwrapCollection(customersResource.data);
     const products = unwrapCollection(productsResource.data);
@@ -230,6 +304,21 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
         setModalOpen(true);
     }
 
+    function updateStockSearch(value) {
+        setStockFilters((current) => ({ ...current, search: value }));
+        setPageIndex(0);
+    }
+
+    function updateStockFilter(key, value) {
+        setStockFilters((current) => ({ ...current, [key]: value }));
+        setPageIndex(0);
+    }
+
+    function resetStockFilters() {
+        setStockFilters(blankStockFilters);
+        setPageIndex(0);
+    }
+
     function updateOrderForm(event) {
         setOrderForm((current) => ({ ...current, [event.target.name]: event.target.value }));
         setSubmitError('');
@@ -268,6 +357,8 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     product_id: line.product_id,
                     unit_id: line.unit_id,
                     quantity: line.quantity,
+                    foc_unit_id: Number(line.foc_quantity || 0) > 0 ? line.foc_unit_id || line.unit_id || null : null,
+                    foc_quantity: Number(line.foc_quantity || 0),
                 })),
             };
 
@@ -276,9 +367,9 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
             if (submittedOrder) {
                 window.sessionStorage.setItem('sales:last-submitted-order', JSON.stringify(submittedOrder));
             }
-            setOrderForm({ customer_id: '', requested_delivery_date: '', note: '' });
+            setOrderForm({ customer_id: '', requested_delivery_date: '', payment_due_date: defaultPaymentDueDate(), tax_amount: '0', note: '' });
             setPharmacySearch('');
-            setOrderLines([{ id: `draft-line-${Date.now()}`, product_id: '', unit_id: '', quantity: '' }]);
+            setOrderLines([{ id: `draft-line-${Date.now()}`, product_id: '', unit_id: '', quantity: '', foc_unit_id: '', foc_quantity: '' }]);
             onNavigate?.('order-submitted', { order_id: submittedOrder?.id || response.data?.id || response.id || '' });
         } catch (requestError) {
             setSubmitError(requestError.message);
@@ -347,9 +438,17 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
             )}
 
             <Panel eyebrow="Mobile Workspace" title={`${screen.title} Review`}>
-                <FilterToolbar filters={screen.filters} searchPlaceholder={screen.searchPlaceholder || 'Search assigned records'} showDate={screen.showDate} />
+                <FilterToolbar
+                    filters={pageKey === 'stock' ? stockFilterControls : screen.filters}
+                    onFilterChange={pageKey === 'stock' ? updateStockFilter : undefined}
+                    onReset={pageKey === 'stock' ? resetStockFilters : undefined}
+                    onSearch={pageKey === 'stock' ? updateStockSearch : undefined}
+                    searchPlaceholder={screen.searchPlaceholder || 'Search assigned records'}
+                    searchValue={pageKey === 'stock' ? stockFilters.search : undefined}
+                    showDate={screen.showDate}
+                />
                 <DataTable
-                    columns={screen.columns}
+                    columns={tableColumns}
                     error={liveResource.error}
                     loading={liveResource.loading}
                     onRowClick={pageKey === 'stock' ? undefined : openRecord}
@@ -382,6 +481,27 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                         { label: 'Quantity', type: 'number' },
                         { label: 'Unit', type: 'select', options: ['Box', 'Card', 'Bottle'] },
                     ]).map((field) => <FormField key={field.label} {...field} />)}
+                </div>
+            </Modal>
+
+            <Modal
+                actions={<button className="btn primary" onClick={() => setFocDialogRecord(null)} type="button">Done</button>}
+                open={Boolean(focDialogRecord)}
+                onClose={() => setFocDialogRecord(null)}
+                title={`FOC rules - ${focDialogRecord?.product || 'Product'}`}
+            >
+                <div className="foc-rule-dialog-list">
+                    {(focDialogRecord?.focRules || []).map((rule) => (
+                        <article key={rule.id || rule.title}>
+                            <div>
+                                <strong>{rule.title}</strong>
+                                <StatusBadge value={rule.status || 'Active'} />
+                            </div>
+                            <span>{rule.condition}</span>
+                            <small>{rule.reward}</small>
+                            <small>{rule.validity}</small>
+                        </article>
+                    ))}
                 </div>
             </Modal>
 
