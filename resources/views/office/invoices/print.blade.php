@@ -12,6 +12,7 @@
     $orderNo = $invoice->salesOrder?->order_no ?? '-';
     $faviconUrl = asset('favicon.png');
     $logoUrl = asset('logo.png');
+    $publicShareUrl = $shareUrl ?? route('public.invoices.show', $invoice);
     $remarks = strtr($settings['remarks_template'] ?? '#{sale_type} {time} Based On Sales Order {order_no}.', [
         '{sale_type}' => strtolower($saleType),
         '{time}' => optional($invoice->created_at)->format('h:i A') ?? now()->format('h:i A'),
@@ -29,12 +30,16 @@
     </head>
     <body class="invoice-print-standalone">
         <div class="print-page-toolbar">
-            <div>
+            <div class="print-page-title">
                 <span>Invoice print</span>
                 <strong>{{ $invoice->invoice_no }}</strong>
             </div>
             <span class="print-page-size-label">A5 pharmacy invoice</span>
-            <button onclick="window.print()" type="button">Print</button>
+            <div class="print-page-actions">
+                <button data-share-url="{{ $publicShareUrl }}" id="copy-invoice-link" type="button">Copy link</button>
+                <button onclick="window.print()" type="button">Save PDF</button>
+                <button onclick="window.print()" type="button">Print</button>
+            </div>
         </div>
 
         <main class="invoice-print-area paper-{{ $paper }}">
@@ -190,6 +195,46 @@
                 </center>
             </article>
         </main>
+
+        <script>
+            (() => {
+                const copyButton = document.getElementById('copy-invoice-link');
+
+                if (!copyButton) {
+                    return;
+                }
+
+                const resetLabel = () => {
+                    copyButton.textContent = 'Copy link';
+                };
+
+                copyButton.addEventListener('click', async () => {
+                    const shareUrl = copyButton.dataset.shareUrl || window.location.href;
+
+                    try {
+                        if (navigator.clipboard?.writeText) {
+                            await navigator.clipboard.writeText(shareUrl);
+                        } else {
+                            const input = document.createElement('input');
+                            input.value = shareUrl;
+                            input.setAttribute('readonly', 'readonly');
+                            input.style.position = 'fixed';
+                            input.style.opacity = '0';
+                            document.body.appendChild(input);
+                            input.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(input);
+                        }
+
+                        copyButton.textContent = 'Copied';
+                        window.setTimeout(resetLabel, 1800);
+                    } catch (error) {
+                        copyButton.textContent = 'Copy failed';
+                        window.setTimeout(resetLabel, 1800);
+                    }
+                });
+            })();
+        </script>
 
         @if ($autoPrint)
             <script>

@@ -28,6 +28,7 @@ class InvoicePrintController extends Controller
             'invoiceSettings' => InvoicePrintSettings::values(),
             'itemBatchSummaries' => $this->itemBatchSummaries($invoice),
             'paper' => 'a5',
+            'shareUrl' => route('public.invoices.show', $invoice),
         ]);
     }
 

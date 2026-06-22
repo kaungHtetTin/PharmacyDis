@@ -13,7 +13,7 @@ export function invoicePrintPageUrl(invoiceId, paperSize = 'a4', autoPrint = fal
         query.set('print', '1');
     }
 
-    return `${baseUrl}/office/invoices/${invoiceId}/print?${query.toString()}`;
+    return `${baseUrl}/invoices/${invoiceId}?${query.toString()}`;
 }
 
 export function InvoiceDetailContent({ customerName = '', fallbackInvoice = {}, invoice }) {

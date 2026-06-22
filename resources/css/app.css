@@ -7085,7 +7085,7 @@ tbody tr:last-child .row-more-list {
     background: var(--compact-card-bg);
 }
 
-.print-page-toolbar > div {
+.print-page-title {
     display: grid;
     gap: 2px;
     min-width: 0;
@@ -7100,6 +7100,21 @@ tbody tr:last-child .row-more-list {
 
 .print-page-toolbar strong {
     overflow-wrap: anywhere;
+}
+
+.print-page-toolbar .print-page-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: max-content;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.print-page-toolbar .print-page-actions button {
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .print-page-toolbar button {
@@ -7511,6 +7526,7 @@ tbody tr:last-child .row-more-list {
 }
 
 .invoice-classic-signatures td {
+    border-top: 0;
     font-size: 9px;
     text-align: center;
 }
@@ -7638,6 +7654,25 @@ tbody tr:last-child .row-more-list {
 
     .delivery-allocation-row .delivery-batch-note {
         grid-column: auto;
+    }
+}
+
+@media (max-width: 720px) {
+    .print-page-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .print-page-size-label,
+    .print-page-actions {
+        justify-self: stretch;
+    }
+
+    .print-page-actions {
+        justify-content: flex-start;
+    }
+
+    .print-page-actions button {
+        flex: 0 0 auto;
     }
 }
 

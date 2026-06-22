@@ -18,6 +18,8 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+Route::get('/invoices/{invoice}', InvoicePrintController::class)->name('public.invoices.show');
+
 Route::view('/office', 'welcome')->name('office.index');
 Route::get('/office/invoices/{invoice}/print', InvoicePrintController::class)->name('office.invoices.print');
 Route::view('/office/{page}', 'welcome')
