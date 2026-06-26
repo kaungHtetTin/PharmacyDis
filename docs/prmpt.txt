@@ -1,8 +1,13 @@
-Re arrange the navigation drawer,
-Dashboard,
-Report,
-Quick - operate
-Finance Follow-up
-Customers & Sales
-Master Data
-System
+In printed invoice form,
+=> Rename Prepared By to Authorized By in signing part. 
+=> In signning part, remove Name/ Date,
+=> Place remark at the bottom below the signing part above the footer line
+=> I want to add remark by my own
+=> In Sold TO remove customer code,
+=> In product table UI, remove batch column
+=> Remove sale type, 
+=> Change Order taker label to MR/ MSR . also add phone number in this format  Name . Phone
+=> Remove Invoice Logo
+=> Move Distribution Company name to Right side and 
+move Sales Invoice label into left side,
+remove customer copy text. 

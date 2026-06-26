@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react';
 import { InvoiceDetailContent, invoicePrintPageUrl } from '../../components/shared/InvoiceDetailDrawer';
 import PageHeader from '../../components/shared/PageHeader';
 import Panel from '../../components/shared/Panel';
 import StatusBadge from '../../components/shared/StatusBadge';
 import useApiResource from '../../hooks/useApiResource';
+import { api } from '../../services/apiClient';
 import { mapInvoices } from '../../services/screenAdapters';
 
 function InvoiceSnapshot({ invoice }) {
@@ -37,6 +39,38 @@ export default function InvoiceDetailPage({ onNavigate }) {
     const invoiceResource = useApiResource(invoiceId ? `/office/invoices?invoice_id=${invoiceId}&per_page=1` : '');
     const [invoice] = invoiceResource.data ? mapInvoices(invoiceResource.data) : [];
     const printUrl = invoice ? invoicePrintPageUrl(invoice.id) : '';
+    const [remark, setRemark] = useState('');
+    const [remarkError, setRemarkError] = useState('');
+    const [remarkSaving, setRemarkSaving] = useState(false);
+    const [remarkSuccess, setRemarkSuccess] = useState('');
+    const [saleType, setSaleType] = useState('cash');
+
+    useEffect(() => {
+        setRemark(invoice?.remark || '');
+        setSaleType(invoice?.sale_type || 'cash');
+        setRemarkError('');
+        setRemarkSuccess('');
+    }, [invoice?.id, invoice?.remark, invoice?.sale_type]);
+
+    const saveRemark = async () => {
+        if (!invoice?.id) {
+            return;
+        }
+
+        setRemarkSaving(true);
+        setRemarkError('');
+        setRemarkSuccess('');
+
+        try {
+            await api.patch(`/office/invoices/${invoice.id}/print-details`, { remark, sale_type: saleType });
+            setRemarkSuccess('Invoice print details saved.');
+            invoiceResource.refresh();
+        } catch (error) {
+            setRemarkError(error.message);
+        } finally {
+            setRemarkSaving(false);
+        }
+    };
 
     if (!invoiceId) {
         return (
@@ -105,6 +139,45 @@ export default function InvoiceDetailPage({ onNavigate }) {
                             <InvoiceSnapshot invoice={invoice} />
                             <InvoiceDetailContent invoice={invoice} />
                         </div>
+                    </Panel>
+
+                    <Panel eyebrow="Invoice Print" title="Printed invoice details">
+                        {remarkError && <div className="form-error">{remarkError}</div>}
+                        {remarkSuccess && <div className="form-success">{remarkSuccess}</div>}
+                        <fieldset className="invoice-sale-type-field">
+                            <legend>Sale type</legend>
+                            <div className="invoice-sale-type-options">
+                                {[
+                                    ['cash', 'Cash'],
+                                    ['credit', 'Credit'],
+                                ].map(([value, label]) => (
+                                    <label className="invoice-sale-type-radio" key={value}>
+                                        <input
+                                            checked={saleType === value}
+                                            disabled={remarkSaving}
+                                            name="sale_type"
+                                            onChange={() => setSaleType(value)}
+                                            type="radio"
+                                            value={value}
+                                        />
+                                        <span>{label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </fieldset>
+                        <label className="form-field sales-order-note">
+                            <span>Remark</span>
+                            <textarea
+                                disabled={remarkSaving}
+                                onChange={(event) => setRemark(event.target.value)}
+                                placeholder="Optional remark for this invoice"
+                                rows="3"
+                                value={remark}
+                            />
+                        </label>
+                        <button className="btn primary invoice-print-save-button" disabled={remarkSaving} onClick={saveRemark} type="button">
+                            {remarkSaving ? 'Saving...' : 'Save print details'}
+                        </button>
                     </Panel>
                 </>
             )}

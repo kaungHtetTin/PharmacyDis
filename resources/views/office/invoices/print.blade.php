@@ -8,16 +8,15 @@
     $itemCount = $invoice->items->count();
     $unitGroups = $invoice->items->groupBy(fn ($item) => $item->unit?->name ?? 'Unit');
     $totalQuantity = $unitGroups->map(fn ($items, $unit) => $items->sum('quantity') . ' ' . $unit)->values()->join(', ');
-    $saleType = $settings['sale_type_default'] ?? 'Cash';
     $orderNo = $invoice->salesOrder?->order_no ?? '-';
     $faviconUrl = asset('favicon.png');
-    $logoUrl = asset('logo.png');
     $publicShareUrl = $shareUrl ?? route('public.invoices.show', $invoice);
-    $remarks = strtr($settings['remarks_template'] ?? '#{sale_type} {time} Based On Sales Order {order_no}.', [
-        '{sale_type}' => strtolower($saleType),
-        '{time}' => optional($invoice->created_at)->format('h:i A') ?? now()->format('h:i A'),
-        '{order_no}' => $orderNo,
-    ]);
+    $salesRepresentative = $invoice->salesRepresentative ?? $invoice->salesOrder?->salesRepresentative;
+    $representativeName = $salesRepresentative?->user?->name ?? '-';
+    $representativePhone = $salesRepresentative?->phone ?: $salesRepresentative?->user?->phone;
+    $representativeLabel = trim($representativeName . ($representativePhone ? ' . ' . $representativePhone : ''));
+    $saleType = ucfirst($invoice->sale_type ?? 'cash');
+    $remarks = trim($invoice->remark ?? '');
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
@@ -46,30 +45,24 @@
             <article class="invoice-paper invoice-classic-paper">
                 <table class="invoice-classic-header" width="100%" border="0" cellpadding="4" cellspacing="0">
                     <tr>
-                        <td width="18%" align="center">
-                            <img class="invoice-classic-logo" src="{{ $logoUrl }}" alt="{{ $settings['company_name'] ?? 'Company logo' }}">
+                        <td width="38%" valign="top">
+                            <h3>{{ $settings['document_title'] ?? 'SALES INVOICE' }}</h3>
+                            <small>{{ $invoice->company?->name ?? '-' }}</small>
                         </td>
-                        <td width="52%">
+                        <td width="62%" align="right" valign="top">
                             <h3>{{ $settings['company_name'] ?? 'AA MEDICAL PRODUCTS LTD' }}</h3>
                             <small>
                                 {{ $settings['company_address'] ?? '-' }}<br>
                                 Phone: {{ $settings['company_phone'] ?? '-' }}
                             </small>
                         </td>
-                        <td width="30%" align="center">
-                            <h3>{{ $settings['document_title'] ?? 'SALES INVOICE' }}</h3>
-                            <b>{{ $settings['copy_label'] ?? 'CUSTOMER COPY' }}</b>
-                        </td>
                     </tr>
                 </table>
-
-                <hr>
 
                 <table class="invoice-classic-info" width="100%" border="0" cellpadding="4">
                     <tr>
                         <td width="50%" valign="top">
                             <b>{{ $settings['sold_to_label'] ?? 'SOLD TO' }}</b><br>
-                            Customer Code: {{ $invoice->customer?->code ?? '-' }}<br>
                             Customer Name: {{ $invoice->customer?->name ?? '-' }}<br>
                             Address: {{ $invoice->customer?->address ?? '-' }}<br>
                             Phone: {{ $invoice->customer?->phone ?? '-' }}
@@ -80,7 +73,7 @@
                             <b>Payment Due Date: {{ $formatDate($invoice->due_date) }}</b><br>
                             Sale Type: {{ $saleType }}<br>
                             Order No: {{ $orderNo }}<br>
-                            Order Taker: {{ $invoice->salesOrder?->salesRepresentative?->user?->name ?? '-' }}
+                            MR/ MSR: {{ $representativeLabel ?: '-' }}
                         </td>
                     </tr>
                 </table>
@@ -89,7 +82,6 @@
                     <colgroup>
                         <col class="invoice-col-no">
                         <col class="invoice-col-product">
-                        <col class="invoice-col-batch">
                         <col class="invoice-col-exp">
                         <col class="invoice-col-qty">
                         <col class="invoice-col-unit">
@@ -100,7 +92,6 @@
                         <tr>
                             <th>No</th>
                             <th>Product</th>
-                            <th>Batch</th>
                             <th>Exp</th>
                             <th>Qty</th>
                             <th>Unit</th>
@@ -121,7 +112,6 @@
                                         <br><small>FOC: {{ $formatMoney($item->foc_base_unit_quantity) }} base units</small>
                                     @endif
                                 </td>
-                                <td class="invoice-cell-batch">{{ $batchSummary['batch'] }}</td>
                                 <td>{{ $batchSummary['expiry'] }}</td>
                                 <td align="right">{{ $formatMoney($item->quantity) }}</td>
                                 <td>{{ $item->unit?->name ?? '-' }}</td>
@@ -130,7 +120,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" align="center">No invoice items available.</td>
+                                <td colspan="7" align="center">No invoice items available.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -140,9 +130,7 @@
                     <tr>
                         <td width="55%" valign="top">
                             Total Items: {{ $itemCount }}<br>
-                            Total Qty: {{ $totalQuantity ?: '-' }}<br><br>
-                            Remarks:<br>
-                            {{ $remarks }}
+                            Total Qty: {{ $totalQuantity ?: '-' }}
                         </td>
                         <td width="45%" valign="top">
                             <table width="100%" border="1" cellpadding="4" cellspacing="0">
@@ -169,7 +157,7 @@
 
                 <table class="invoice-classic-signatures" width="100%" border="0" cellpadding="6">
                     <tr align="center">
-                        <td>{{ $settings['prepared_by_label'] ?? 'Prepared By' }}</td>
+                        <td>Authorized By</td>
                         <td>{{ $settings['checked_by_label'] ?? 'Checked By' }}</td>
                         <td>{{ $settings['delivered_by_label'] ?? 'Delivered By' }}</td>
                         <td>{{ $settings['received_by_label'] ?? 'Received By' }}</td>
@@ -180,13 +168,12 @@
                         <td>________________</td>
                         <td>________________</td>
                     </tr>
-                    <tr align="center">
-                        <td>{{ $settings['prepared_by_hint'] ?? 'Name / Date' }}</td>
-                        <td>{{ $settings['checked_by_hint'] ?? 'Name / Date' }}</td>
-                        <td>{{ $settings['delivered_by_hint'] ?? 'Name / Date' }}</td>
-                        <td>{{ $settings['received_by_hint'] ?? 'Name / Signature / Stamp' }}</td>
-                    </tr>
                 </table>
+
+                <div class="invoice-classic-remarks">
+                    <b>Remarks:</b>
+                    <div>{{ $remarks ?: ' ' }}</div>
+                </div>
 
                 <hr>
 

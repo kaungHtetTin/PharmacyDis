@@ -4402,6 +4402,53 @@ tbody tr:hover {
     margin-top: 0;
 }
 
+.invoice-sale-type-field {
+    display: grid;
+    gap: 8px;
+    margin: 0;
+    border: 0;
+    padding: 0;
+}
+
+.invoice-sale-type-field legend {
+    padding: 0;
+    color: var(--color-muted);
+    font-size: 10px;
+    font-weight: 850;
+    line-height: 1.2;
+}
+
+.invoice-sale-type-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.invoice-sale-type-radio {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    padding: 0 12px;
+    color: var(--color-text);
+    font-size: 12px;
+    font-weight: 750;
+    background: var(--input-bg);
+}
+
+.invoice-sale-type-radio input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--color-primary);
+}
+
+.invoice-print-save-button {
+    margin-top: 10px;
+}
+
 .receiving-detail-page .panel {
     max-width: 100%;
     min-width: 0;
@@ -7476,19 +7523,15 @@ tbody tr:last-child .row-more-list {
 }
 
 .invoice-col-product {
-    width: 34%;
-}
-
-.invoice-col-batch {
-    width: 13%;
+    width: 42%;
 }
 
 .invoice-col-exp {
-    width: 9%;
+    width: 10%;
 }
 
 .invoice-col-qty {
-    width: 7%;
+    width: 8%;
 }
 
 .invoice-col-unit {
@@ -7496,24 +7539,23 @@ tbody tr:last-child .row-more-list {
 }
 
 .invoice-col-price {
-    width: 10%;
+    width: 11%;
 }
 
 .invoice-col-amount {
-    width: 12%;
+    width: 14%;
 }
 
 .invoice-classic-lines td:nth-child(1),
+.invoice-classic-lines td:nth-child(3),
 .invoice-classic-lines td:nth-child(4),
 .invoice-classic-lines td:nth-child(5),
 .invoice-classic-lines td:nth-child(6),
-.invoice-classic-lines td:nth-child(7),
-.invoice-classic-lines td:nth-child(8) {
+.invoice-classic-lines td:nth-child(7) {
     white-space: nowrap;
 }
 
-.invoice-cell-product,
-.invoice-cell-batch {
+.invoice-cell-product {
     white-space: normal;
 }
 
@@ -7529,6 +7571,18 @@ tbody tr:last-child .row-more-list {
     border-top: 0;
     font-size: 9px;
     text-align: center;
+}
+
+.invoice-classic-remarks {
+    margin-top: 8px;
+    min-height: 28px;
+    font-size: 10px;
+}
+
+.invoice-classic-remarks div {
+    margin-top: 2px;
+    min-height: 16px;
+    border-bottom: 1px dotted #9ca3af;
 }
 
 .paper-a5 .invoice-classic-paper {

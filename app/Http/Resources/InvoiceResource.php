@@ -19,6 +19,8 @@ class InvoiceResource extends JsonResource
             'customer' => $this->whenLoaded('customer'),
             'invoice_date' => optional($this->invoice_date)->toDateString(),
             'due_date' => optional($this->due_date)->toDateString(),
+            'sale_type' => $this->sale_type ?? 'cash',
+            'remark' => $this->remark,
             'status' => $this->status,
             'subtotal_amount' => $this->subtotal_amount,
             'discount_amount' => $this->discount_amount,

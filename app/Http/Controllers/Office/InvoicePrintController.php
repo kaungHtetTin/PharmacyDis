@@ -16,6 +16,7 @@ class InvoicePrintController extends Controller
         $invoice->load([
             'company',
             'customer',
+            'salesRepresentative.user',
             'salesOrder.salesRepresentative.user',
             'items.product',
             'items.unit',

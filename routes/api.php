@@ -93,6 +93,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('orders/{salesOrder}/reject', [OfficeSalesOrderController::class, 'reject']);
 
             Route::get('invoices', [OfficeInvoiceController::class, 'index']);
+            Route::patch('invoices/{invoice}/print-details', [OfficeInvoiceController::class, 'updateRemark']);
+            Route::patch('invoices/{invoice}/remark', [OfficeInvoiceController::class, 'updateRemark']);
             Route::post('orders/{salesOrder}/generate-invoice', [OfficeInvoiceController::class, 'generateFromOrder']);
             Route::post('sales-returns', [OfficeSalesReturnController::class, 'store']);
 

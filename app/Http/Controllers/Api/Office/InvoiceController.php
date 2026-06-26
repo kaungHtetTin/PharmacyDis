@@ -69,4 +69,33 @@ class InvoiceController extends Controller
 
         return new InvoiceResource($invoice);
     }
+
+    public function updateRemark(Request $request, Invoice $invoice)
+    {
+        $validated = $request->validate([
+            'remark' => ['nullable', 'string', 'max:2000'],
+            'sale_type' => ['nullable', 'string', 'in:cash,credit'],
+        ]);
+
+        $invoice->update([
+            'remark' => $validated['remark'] ?? null,
+            'sale_type' => $validated['sale_type'] ?? $invoice->sale_type ?? 'cash',
+        ]);
+
+        return new InvoiceResource($invoice->fresh([
+            'company',
+            'customer',
+            'salesOrder.company',
+            'salesOrder.customer',
+            'salesOrder.salesRepresentative.user',
+            'salesOrder.items.product',
+            'salesOrder.items.unit',
+            'salesOrder.items.focUnit',
+            'salesOrder.focItems.product',
+            'salesOrder.focItems.focRule',
+            'items.product',
+            'items.unit',
+            'allocations.payment',
+        ]));
+    }
 }

@@ -83,6 +83,25 @@ class BusinessWorkflowTest extends TestCase
         $this->assertSame('My Pharmacy Distribution', Setting::where('key', 'invoice_print.company_name')->value('value'));
     }
 
+    public function test_office_admin_can_update_invoice_remark(): void
+    {
+        $invoice = Invoice::where('invoice_no', 'INV-DEMO-1000')->firstOrFail();
+
+        $this->withToken($this->officeToken)
+            ->patchJson("/api/office/invoices/{$invoice->id}/print-details", [
+                'remark' => 'Deliver before noon.',
+                'sale_type' => 'credit',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.remark', 'Deliver before noon.')
+            ->assertJsonPath('data.sale_type', 'credit');
+
+        $invoice->refresh();
+
+        $this->assertSame('Deliver before noon.', $invoice->remark);
+        $this->assertSame('credit', $invoice->sale_type);
+    }
+
     public function test_blocked_customer_company_credit_prevents_sales_order_creation(): void
     {
         $customer = Customer::where('name', 'Aung Pharmacy')->firstOrFail();

@@ -71,6 +71,7 @@ class InvoiceService
                 'sales_representative_id' => $order->sales_representative_id,
                 'invoice_date' => now()->toDateString(),
                 'due_date' => $order->payment_due_date?->toDateString() ?? now()->addDays((int) config('billing.invoice_due_days', 30))->toDateString(),
+                'sale_type' => 'cash',
                 'status' => 'issued',
                 'subtotal_amount' => $order->subtotal_amount,
                 'discount_amount' => $order->discount_amount,
