@@ -6356,7 +6356,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 }
 
                 if (action.orderAction === 'createForPharmacy') {
-                    openOfficeOrderForm(record);
+                    onNavigate?.('order-create', { customer_id: record?.id || '' });
                     return;
                 }
 

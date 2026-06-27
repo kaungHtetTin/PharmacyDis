@@ -42,6 +42,7 @@ Route::view('/office/{page}', 'welcome')
         'stock-transfer-create',
         'stock-transfer-detail',
         'orders',
+        'order-create',
         'order-detail',
         'invoices',
         'invoice-detail',

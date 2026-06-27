@@ -73,14 +73,32 @@ class InvoiceController extends Controller
     public function updateRemark(Request $request, Invoice $invoice)
     {
         $validated = $request->validate([
+            'due_date' => ['nullable', 'date'],
             'remark' => ['nullable', 'string', 'max:2000'],
             'sale_type' => ['nullable', 'string', 'in:cash,credit'],
         ]);
 
-        $invoice->update([
-            'remark' => $validated['remark'] ?? null,
-            'sale_type' => $validated['sale_type'] ?? $invoice->sale_type ?? 'cash',
-        ]);
+        $invoiceUpdates = [];
+
+        if (array_key_exists('due_date', $validated)) {
+            $invoiceUpdates['due_date'] = $validated['due_date'];
+        }
+
+        if (array_key_exists('remark', $validated)) {
+            $invoiceUpdates['remark'] = $validated['remark'];
+        }
+
+        if (array_key_exists('sale_type', $validated)) {
+            $invoiceUpdates['sale_type'] = $validated['sale_type'] ?? 'cash';
+        }
+
+        if ($invoiceUpdates !== []) {
+            $invoice->update($invoiceUpdates);
+        }
+
+        if (array_key_exists('due_date', $invoiceUpdates) && $invoice->sales_order_id) {
+            $invoice->salesOrder()->update(['payment_due_date' => $invoiceUpdates['due_date']]);
+        }
 
         return new InvoiceResource($invoice->fresh([
             'company',

@@ -10,6 +10,7 @@ import OfficeModulePage from './pages/office/OfficeModulePage';
 import OfficeProfilePage from './pages/office/OfficeProfilePage';
 import OfficeUsersPage from './pages/office/OfficeUsersPage';
 import OrderDetailPage from './pages/office/OrderDetailPage';
+import OrderCreateWizard from './components/shared/OrderCreateWizard';
 import PayableDetailPage from './pages/office/PayableDetailPage';
 import PaymentDetailPage from './pages/office/PaymentDetailPage';
 import PharmacyDetailPage from './pages/office/PharmacyDetailPage';
@@ -25,11 +26,12 @@ import SalesPharmacyDetailPage from './pages/sales/SalesPharmacyDetailPage';
 import SalesProfilePage from './pages/sales/SalesProfilePage';
 import { useAuth } from './services/auth.jsx';
 
-const officePages = [...officeNav.map(([key]) => key), 'login', 'profile', 'pharmacies-detail', 'product-detail', 'representatives-detail', 'inventory-detail', 'invoice-detail', 'order-detail', 'payable-detail', 'payment-detail', 'receiving-detail', 'stock-transfer-create', 'stock-transfer-detail'];
+const officePages = [...officeNav.map(([key]) => key), 'login', 'profile', 'pharmacies-detail', 'product-detail', 'representatives-detail', 'inventory-detail', 'invoice-detail', 'order-create', 'order-detail', 'payable-detail', 'payment-detail', 'receiving-detail', 'stock-transfer-create', 'stock-transfer-detail'];
 const salesPages = [...salesNav.map(([key]) => key), 'login', 'profile', 'pharmacies-detail', 'order-detail', 'order-submitted'];
 const detailParentPages = {
     'inventory-detail': 'inventory',
     'invoice-detail': 'invoices',
+    'order-create': 'orders',
     'order-detail': 'orders',
     'payable-detail': 'payables',
     'payment-detail': 'payments',
@@ -124,7 +126,9 @@ export default function Root() {
                             ? <SalesPharmacyDetailPage onNavigate={(page, params) => navigate('sales', page, params)} />
                             : page === 'order-detail'
                                 ? <SalesOrderDetailPage onNavigate={(page, params) => navigate('sales', page, params)} />
-                                : <SalesModulePage pageKey={page} onNavigate={(page, params) => navigate('sales', page, params)} />}
+                                : page === 'new-order'
+                                    ? <OrderCreateWizard mode="sales" onNavigate={(page, params) => navigate('sales', page, params)} />
+                                    : <SalesModulePage pageKey={page} onNavigate={(page, params) => navigate('sales', page, params)} />}
             </SalesRepLayout>
         );
     }
@@ -137,7 +141,7 @@ export default function Root() {
 
     return (
         <OfficeLayout
-            activePage={page === 'stock-transfer-create' || page === 'stock-transfer-detail' ? 'stock-transfers' : page === 'inventory-detail' ? 'inventory' : page === 'invoice-detail' ? 'invoices' : page === 'order-detail' ? 'orders' : page === 'payable-detail' ? 'payables' : page === 'payment-detail' ? 'payments' : page === 'product-detail' ? 'products' : page === 'receiving-detail' ? 'receiving' : page === 'representatives-detail' || page === 'pharmacies-detail' ? page.replace('-detail', '') : page}
+            activePage={page === 'stock-transfer-create' || page === 'stock-transfer-detail' ? 'stock-transfers' : page === 'inventory-detail' ? 'inventory' : page === 'invoice-detail' ? 'invoices' : page === 'order-create' || page === 'order-detail' ? 'orders' : page === 'payable-detail' ? 'payables' : page === 'payment-detail' ? 'payments' : page === 'product-detail' ? 'products' : page === 'receiving-detail' ? 'receiving' : page === 'representatives-detail' || page === 'pharmacies-detail' ? page.replace('-detail', '') : page}
             getPageUrl={(page) => pageUrl('office', page)}
             onNavigate={(page, params) => navigate('office', page, params)}
         >
@@ -156,6 +160,7 @@ export default function Root() {
             {officeAccessAllowed && page === 'pharmacies-detail' && <PharmacyDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'representatives-detail' && <RepresentativeDetailPage onNavigate={(page) => navigate('office', page)} />}
             {officeAccessAllowed && page === 'invoice-detail' && <InvoiceDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
+            {officeAccessAllowed && page === 'order-create' && <OrderCreateWizard mode="office" onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'order-detail' && <OrderDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'payable-detail' && <PayableDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'payment-detail' && <PaymentDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
@@ -165,7 +170,7 @@ export default function Root() {
             {officeAccessAllowed && page === 'profile' && <OfficeProfilePage onNavigate={(page) => navigate('office', page)} />}
             {officeAccessAllowed && page === 'users' && <OfficeUsersPage />}
             {officeAccessAllowed && page === 'activity-logs' && <ActivityLogPage />}
-            {officeAccessAllowed && page !== 'dashboard' && page !== 'pharmacies-detail' && page !== 'representatives-detail' && page !== 'invoice-detail' && page !== 'order-detail' && page !== 'payable-detail' && page !== 'payment-detail' && page !== 'product-detail' && page !== 'receiving-detail' && page !== 'stock-transfer-detail' && page !== 'profile' && page !== 'users' && page !== 'activity-logs' && (
+            {officeAccessAllowed && page !== 'dashboard' && page !== 'pharmacies-detail' && page !== 'representatives-detail' && page !== 'invoice-detail' && page !== 'order-create' && page !== 'order-detail' && page !== 'payable-detail' && page !== 'payment-detail' && page !== 'product-detail' && page !== 'receiving-detail' && page !== 'stock-transfer-detail' && page !== 'profile' && page !== 'users' && page !== 'activity-logs' && (
                 <OfficeModulePage pageKey={page} onNavigate={(page, params) => navigate('office', page, params)} />
             )}
         </OfficeLayout>

@@ -204,6 +204,7 @@ export function mapInvoices(response) {
             pharmacy: invoice.customer?.name || `Customer #${invoice.customer_id}`,
             company: invoice.company?.name || `Company #${invoice.company_id}`,
             invoice_date: dateOnly(invoice.invoice_date),
+            due_date: dateOnly(invoice.due_date),
             invoiceDate: dateOnly(invoice.invoice_date) || '-',
             dueDate: dateOnly(invoice.due_date) || '-',
             sale_type: invoice.sale_type || 'cash',

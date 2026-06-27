@@ -43,8 +43,8 @@ const blankStockFilters = {
     status: '',
 };
 
-function buildSalesStockEndpoint(filters = blankStockFilters) {
-    const params = new URLSearchParams({ per_page: '100' });
+function buildSalesStockEndpoint(filters = blankStockFilters, page = 1) {
+    const params = new URLSearchParams({ page: String(page), per_page: '15' });
 
     if (filters.search) {
         params.set('search', filters.search);
@@ -175,7 +175,8 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const { user } = useAuth();
     const baseScreen = salesModules[pageKey] || salesModules.stock;
     const [stockFilters, setStockFilters] = useState(blankStockFilters);
-    const liveEndpoint = pageKey === 'stock' ? buildSalesStockEndpoint(stockFilters) : getSalesEndpoint(pageKey);
+    const [stockPage, setStockPage] = useState(1);
+    const liveEndpoint = pageKey === 'stock' ? buildSalesStockEndpoint(stockFilters, stockPage) : getSalesEndpoint(pageKey);
     const liveResource = useApiResource(liveEndpoint);
     const [pharmacySearch, setPharmacySearch] = useState('');
     const [debouncedPharmacySearch, setDebouncedPharmacySearch] = useState('');
@@ -247,6 +248,21 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const customers = unwrapCollection(customersResource.data);
     const products = unwrapCollection(productsResource.data);
     const stockRows = unwrapCollection(stockResource.data);
+    const stockPagination = pageKey === 'stock' ? {
+        currentPage: Number(liveResource.data?.meta?.current_page || 1),
+        from: Number(liveResource.data?.meta?.from || 0),
+        lastPage: Number(liveResource.data?.meta?.last_page || 1),
+        to: Number(liveResource.data?.meta?.to || 0),
+        total: Number(liveResource.data?.meta?.total || screen.rows.length),
+    } : null;
+    const displayedRows = pageKey === 'stock' ? screen.rows : visibleRows;
+    const displayedPagination = stockPagination || {
+        currentPage: pageIndex + 1,
+        from: screen.rows.length ? pageStart + 1 : 0,
+        lastPage: totalPages,
+        to: pageEnd,
+        total: screen.rows.length,
+    };
     const assignedContext = {
         ...screen.salesOrderContext,
         representative: user?.name || screen.salesOrderContext?.representative,
@@ -306,16 +322,19 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
 
     function updateStockSearch(value) {
         setStockFilters((current) => ({ ...current, search: value }));
+        setStockPage(1);
         setPageIndex(0);
     }
 
     function updateStockFilter(key, value) {
         setStockFilters((current) => ({ ...current, [key]: value }));
+        setStockPage(1);
         setPageIndex(0);
     }
 
     function resetStockFilters() {
         setStockFilters(blankStockFilters);
+        setStockPage(1);
         setPageIndex(0);
     }
 
@@ -452,16 +471,21 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     error={liveResource.error}
                     loading={liveResource.loading}
                     onRowClick={pageKey === 'stock' ? undefined : openRecord}
-                    rows={visibleRows}
+                    rows={displayedRows}
                 />
                 <PaginationBar
-                    currentPage={pageIndex + 1}
-                    from={screen.rows.length ? pageStart + 1 : 0}
-                    lastPage={totalPages}
-                    onNext={() => setPageIndex((page) => Math.min(totalPages - 1, page + 1))}
-                    onPrevious={() => setPageIndex((page) => Math.max(0, page - 1))}
-                    to={pageEnd}
-                    total={screen.rows.length}
+                    currentPage={displayedPagination.currentPage}
+                    from={displayedPagination.from}
+                    lastPage={displayedPagination.lastPage}
+                    loading={liveResource.loading}
+                    onNext={pageKey === 'stock'
+                        ? () => setStockPage((page) => Math.min(displayedPagination.lastPage, page + 1))
+                        : () => setPageIndex((page) => Math.min(totalPages - 1, page + 1))}
+                    onPrevious={pageKey === 'stock'
+                        ? () => setStockPage((page) => Math.max(1, page - 1))
+                        : () => setPageIndex((page) => Math.max(0, page - 1))}
+                    to={displayedPagination.to}
+                    total={displayedPagination.total}
                 />
             </Panel>
 

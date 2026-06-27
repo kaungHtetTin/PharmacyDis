@@ -5,9 +5,6 @@
     $formatDate = fn ($value) => $value ? $value->format($dateFormat) : '-';
     $taxAmount = (float) ($invoice->tax_amount ?? 0);
     $netTotal = (float) $invoice->total_amount;
-    $itemCount = $invoice->items->count();
-    $unitGroups = $invoice->items->groupBy(fn ($item) => $item->unit?->name ?? 'Unit');
-    $totalQuantity = $unitGroups->map(fn ($items, $unit) => $items->sum('quantity') . ' ' . $unit)->values()->join(', ');
     $orderNo = $invoice->salesOrder?->order_no ?? '-';
     $faviconUrl = asset('favicon.png');
     $publicShareUrl = $shareUrl ?? route('public.invoices.show', $invoice);
@@ -46,8 +43,8 @@
                 <table class="invoice-classic-header" width="100%" border="0" cellpadding="4" cellspacing="0">
                     <tr>
                         <td width="38%" valign="top">
-                            <h3>{{ $settings['document_title'] ?? 'SALES INVOICE' }}</h3>
-                            <small>{{ $invoice->company?->name ?? '-' }}</small>
+                            <h3 class="invoice-document-title">{{ $settings['document_title'] ?? 'SALES INVOICE' }}</h3>
+                            <strong class="invoice-medicine-company">{{ $invoice->company?->name ?? '-' }}</strong>
                         </td>
                         <td width="62%" align="right" valign="top">
                             <h3>{{ $settings['company_name'] ?? 'AA MEDICAL PRODUCTS LTD' }}</h3>
@@ -105,7 +102,7 @@
                                 $batchSummary = $itemBatchSummaries[$item->product_id] ?? ['batch' => '-', 'expiry' => '-'];
                             @endphp
                             <tr>
-                                <td align="center">{{ $loop->iteration }}</td>
+                                <td>{{ $loop->iteration }}</td>
                                 <td class="invoice-cell-product">
                                     {{ $item->product?->name ?? 'Product #' . $item->product_id }}
                                     @if ((int) $item->foc_base_unit_quantity > 0)
@@ -113,10 +110,10 @@
                                     @endif
                                 </td>
                                 <td>{{ $batchSummary['expiry'] }}</td>
-                                <td align="right">{{ $formatMoney($item->quantity) }}</td>
+                                <td>{{ $formatMoney($item->quantity) }}</td>
                                 <td>{{ $item->unit?->name ?? '-' }}</td>
-                                <td align="right">{{ $formatMoney($item->unit_price) }}</td>
-                                <td align="right">{{ $formatMoney($item->line_total) }}</td>
+                                <td>{{ $formatMoney($item->unit_price) }}</td>
+                                <td>{{ $formatMoney($item->line_total) }}</td>
                             </tr>
                         @empty
                             <tr>
@@ -128,10 +125,7 @@
 
                 <table class="invoice-classic-summary" width="100%" border="0" cellpadding="4">
                     <tr>
-                        <td width="55%" valign="top">
-                            Total Items: {{ $itemCount }}<br>
-                            Total Qty: {{ $totalQuantity ?: '-' }}
-                        </td>
+                        <td width="55%" valign="top"></td>
                         <td width="45%" valign="top">
                             <table width="100%" border="1" cellpadding="4" cellspacing="0">
                                 <tr>

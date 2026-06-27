@@ -224,7 +224,7 @@ export const officeModules = {
         title: 'Sales Orders',
         description: 'Create admin orders, review sales-rep submissions, reserve stock on approval, and generate customer invoices.',
         primaryAction: 'Create order from pharmacy',
-        primaryActionTarget: 'pharmacies',
+        primaryActionTarget: 'order-create',
         detailActionLabel: 'Open order detail',
         detailPageKey: 'order-detail',
         showEditAction: false,

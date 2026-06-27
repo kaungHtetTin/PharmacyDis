@@ -621,7 +621,7 @@ export default function PharmacyDetailPage({ onNavigate }) {
             <PageHeader
                 action={(
                     <div className="page-heading-actions">
-                        <button className="btn primary" onClick={openOrderModal} type="button">Create order</button>
+                        <button className="btn primary" onClick={() => onNavigate?.('order-create', { customer_id: customerId })} type="button">Create order</button>
                         <button className="btn secondary" onClick={() => onNavigate?.('pharmacies')} type="button">Back to pharmacies</button>
                     </div>
                 )}

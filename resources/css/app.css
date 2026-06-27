@@ -4782,10 +4782,10 @@ tbody tr:hover {
 .order-line-builder-head,
 .order-line-draft-row {
     display: grid;
-    grid-template-columns: minmax(190px, 1.2fr) 72px 112px 78px 112px repeat(4, minmax(88px, .7fr)) 54px;
+    grid-template-columns: minmax(250px, 1.35fr) 72px 112px 78px 112px repeat(4, minmax(88px, .7fr)) 54px;
     gap: 8px;
     align-items: center;
-    min-width: 1120px;
+    min-width: 1180px;
 }
 
 .order-line-builder-head {
@@ -4851,6 +4851,17 @@ tbody tr:hover {
     background-color: var(--input-bg-hover);
 }
 
+.order-line-product-field input[type="search"] {
+    min-height: 34px;
+}
+
+.order-line-product-empty {
+    color: var(--input-error);
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
 .order-line-preview {
     padding: 8px 9px;
     border: 1px solid var(--compact-card-border);
@@ -4876,6 +4887,403 @@ tbody tr:hover {
     font-size: 11px;
     font-weight: 800;
     background: var(--compact-card-bg);
+}
+
+.order-wizard-page {
+    gap: 12px;
+}
+
+.order-wizard-tabs {
+    display: inline-grid;
+    grid-template-columns: repeat(4, 36px);
+    gap: 6px;
+    width: fit-content;
+}
+
+.order-wizard-tabs button {
+    display: inline-flex;
+    width: 36px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--compact-card-border);
+    border-radius: 999px;
+    padding: 0;
+    color: var(--color-muted);
+    background: var(--compact-card-bg);
+    transition: border-color .16s ease, background-color .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+.order-wizard-tabs button.active {
+    border-color: color-mix(in srgb, var(--color-primary) 46%, var(--compact-card-border));
+    color: var(--color-primary);
+    background: var(--color-primary-soft);
+    box-shadow: 0 10px 28px rgb(8 127 116 / 9%);
+}
+
+.order-wizard-tabs span {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    color: inherit;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.order-wizard-basic-grid,
+.order-wizard-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 10px;
+}
+
+.order-wizard-preview-grid {
+    margin-bottom: 12px;
+}
+
+.order-wizard-basic-grid > .pharmacy-store-picker,
+.order-wizard-note {
+    grid-column: 1 / -1;
+}
+
+.order-wizard-basic-grid > .form-field,
+.order-wizard-basic-grid > .pharmacy-store-picker,
+.order-wizard-basic-grid > .order-wizard-fixed-card {
+    align-self: start;
+}
+
+.order-wizard-basic-grid > .form-field:not(.order-wizard-note) input,
+.order-wizard-basic-grid > .form-field:not(.order-wizard-note) select {
+    height: 44px;
+}
+
+.order-wizard-note textarea {
+    min-height: 112px;
+}
+
+.order-wizard-fixed-card,
+.order-wizard-product-toolbar article,
+.order-wizard-preview-grid article,
+.order-wizard-line-preview {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    border: 1px solid var(--compact-card-border);
+    border-radius: 8px;
+    padding: 5px 10px;
+    background: var(--compact-card-bg);
+}
+
+.order-wizard-fixed-card span,
+.order-wizard-product-toolbar article span,
+.order-wizard-preview-grid span,
+.order-wizard-line-preview span {
+    color: var(--color-muted);
+    font-size: 10px;
+    font-weight: 850;
+}
+
+.order-wizard-fixed-card strong,
+.order-wizard-product-toolbar article strong,
+.order-wizard-preview-grid strong,
+.order-wizard-line-preview strong {
+    overflow-wrap: anywhere;
+}
+
+.order-wizard-preview-grid article {
+    min-height: 54px;
+    align-content: center;
+}
+
+.order-wizard-preview-grid span {
+    line-height: 1.2;
+}
+
+.order-wizard-preview-grid strong {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.order-wizard-product-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 160px);
+    align-items: end;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.order-wizard-product-toolbar article {
+    min-height: 44px;
+    align-content: center;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    column-gap: 8px;
+    padding: 6px 10px;
+}
+
+.order-wizard-product-toolbar article span {
+    line-height: 1;
+}
+
+.order-wizard-product-toolbar article strong {
+    color: var(--color-primary);
+    font-size: 18px;
+    line-height: 1;
+}
+
+.order-wizard-product-toolbar article button {
+    min-height: 28px;
+    border: 1px solid var(--button-secondary-border);
+    border-radius: 6px;
+    padding: 0 9px;
+    color: var(--color-muted);
+    font-size: 10px;
+    font-weight: 850;
+    background: var(--button-secondary-bg);
+}
+
+.order-wizard-product-toolbar article button:hover:not(:disabled),
+.order-wizard-product-toolbar article button:focus-visible:not(:disabled) {
+    color: var(--color-text);
+    border-color: var(--input-border-hover);
+    background: var(--button-secondary-bg-hover);
+    outline: 0;
+}
+
+.order-wizard-product-toolbar article button:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+
+.order-wizard-product-list,
+.order-wizard-quantity-list,
+.order-wizard-preview-lines {
+    display: grid;
+    gap: 8px;
+}
+
+.order-wizard-product-list {
+    max-height: min(58vh, 620px);
+    overflow: auto;
+    padding-right: 3px;
+}
+
+.order-wizard-product-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(150px, .5fr);
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: 1px solid var(--compact-card-border);
+    border-radius: 7px;
+    padding: 7px 9px;
+    color: var(--color-text);
+    text-align: left;
+    background: var(--compact-card-bg);
+    transition: border-color .14s ease, background-color .14s ease, box-shadow .14s ease;
+}
+
+.order-wizard-product-row:hover,
+.order-wizard-product-row:focus-visible {
+    border-color: var(--input-border-hover);
+    background: var(--input-bg-hover);
+    outline: 0;
+}
+
+.order-wizard-product-row.selected {
+    border-color: color-mix(in srgb, var(--color-primary) 50%, var(--compact-card-border));
+    background: var(--color-primary-soft);
+}
+
+.order-wizard-product-row span,
+.order-wizard-product-row strong,
+.order-wizard-product-row small {
+    display: block;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.order-wizard-product-row strong {
+    font-size: 12px;
+    line-height: 1.2;
+}
+
+.order-wizard-product-row small {
+    color: var(--color-muted);
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.order-wizard-product-row span:last-child {
+    text-align: right;
+}
+
+.order-wizard-quantity-row {
+    display: grid;
+    grid-template-columns: minmax(210px, 1.35fr) 82px 126px 82px 126px repeat(2, minmax(92px, .55fr));
+    gap: 7px;
+    align-items: end;
+    border: 1px solid var(--compact-card-border);
+    border-radius: 7px;
+    padding: 7px 9px;
+    background: var(--compact-card-bg);
+}
+
+.order-wizard-quantity-row .form-field > span {
+    font-size: 9px;
+}
+
+.order-wizard-quantity-row input,
+.order-wizard-quantity-row select {
+    min-height: 38px;
+    height: 38px;
+}
+
+.order-wizard-quantity-title {
+    display: grid;
+    min-width: 0;
+    align-self: center;
+}
+
+.order-wizard-quantity-title strong {
+    overflow-wrap: anywhere;
+    font-size: 13px;
+    line-height: 1.25;
+}
+
+.order-wizard-line-preview {
+    min-height: 38px;
+    align-content: center;
+}
+
+.order-wizard-line-preview strong {
+    font-size: 13px;
+    line-height: 1.1;
+}
+
+.order-wizard-foc-note {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(120px, .25fr) minmax(0, 1fr);
+    gap: 8px;
+    border: 1px solid color-mix(in srgb, var(--color-warning, #d97706) 34%, var(--compact-card-border));
+    border-radius: 6px;
+    padding: 7px 9px;
+    color: var(--color-muted);
+    font-size: 10px;
+    font-weight: 800;
+    background: color-mix(in srgb, var(--color-warning, #d97706) 12%, var(--compact-card-bg));
+}
+
+.order-wizard-stock-warning {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(130px, .65fr) repeat(3, minmax(120px, 1fr));
+    align-items: center;
+    gap: 8px;
+    border: 1px solid color-mix(in srgb, var(--input-error) 34%, var(--compact-card-border));
+    border-radius: 6px;
+    padding: 7px 9px;
+    color: var(--input-error);
+    font-size: 10px;
+    font-weight: 850;
+    background: color-mix(in srgb, var(--input-error) 8%, var(--compact-card-bg));
+}
+
+.order-wizard-stock-warning span {
+    color: color-mix(in srgb, var(--input-error) 78%, var(--color-muted));
+}
+
+.order-wizard-preview-lines div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(160px, .6fr) minmax(140px, .5fr);
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--compact-card-border);
+    border-radius: 8px;
+    min-height: 44px;
+    padding: 8px 10px;
+    background: var(--compact-card-bg);
+}
+
+.order-wizard-preview-lines strong {
+    overflow-wrap: anywhere;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.order-wizard-preview-lines span {
+    color: var(--color-muted);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.order-wizard-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 2px;
+}
+
+@media (max-width: 980px) {
+    .order-wizard-basic-grid,
+    .order-wizard-preview-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .order-wizard-quantity-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .order-wizard-quantity-title,
+    .order-wizard-foc-note,
+    .order-wizard-stock-warning {
+        grid-column: 1 / -1;
+    }
+
+    .order-wizard-stock-warning {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .order-wizard-preview-lines div {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .order-wizard-note {
+        grid-column: auto;
+    }
+
+    .order-wizard-tabs {
+        grid-template-columns: repeat(4, 34px);
+    }
+
+    .order-wizard-tabs button {
+        width: 34px;
+        height: 34px;
+    }
+
+    .order-wizard-product-toolbar,
+    .order-wizard-product-row,
+    .order-wizard-quantity-row,
+    .order-wizard-stock-warning {
+        grid-template-columns: 1fr;
+    }
+
+    .order-wizard-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        display: grid;
+    }
 }
 
 .order-line-draft-row.has-stock-warning {
@@ -5856,6 +6264,23 @@ tbody tr:hover {
     max-width: 112px;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.selected-pharmacy-chip .status {
+    flex: 0 0 auto;
+    min-width: 76px;
+    min-height: 32px;
+    justify-content: center;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    padding: 0 12px;
+    font-size: 11px;
+    font-weight: 900;
+    line-height: 1;
+    overflow: visible;
+}
+
+.selected-pharmacy-chip .status-dot {
+    display: none;
 }
 
 .pharmacy-picker-empty {
@@ -7457,7 +7882,7 @@ tbody tr:last-child .row-more-list {
 .invoice-classic-paper {
     gap: 8px;
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.35;
 }
 
@@ -7473,7 +7898,20 @@ tbody tr:last-child .row-more-list {
 }
 
 .invoice-classic-paper h3 {
-    font-size: 13px;
+    font-size: 14px;
+}
+
+.invoice-classic-paper .invoice-document-title {
+    font-size: 10px;
+}
+
+.invoice-medicine-company {
+    display: block;
+    margin-top: 2px;
+    color: #111827;
+    font-size: 14px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
 }
 
 .invoice-classic-logo {
@@ -7500,7 +7938,7 @@ tbody tr:last-child .row-more-list {
 .invoice-classic-paper td {
     vertical-align: top;
     color: #111827;
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.35;
     overflow-wrap: anywhere;
     word-break: break-word;
@@ -7508,14 +7946,19 @@ tbody tr:last-child .row-more-list {
 
 .invoice-classic-paper small {
     color: #374151;
-    font-size: 9px;
+    font-size: 10px;
     line-height: 1.3;
 }
 
 .invoice-classic-lines th {
     background: #f3f4f6;
-    font-size: 9px;
-    text-align: center;
+    font-size: 10px;
+    text-align: left;
+}
+
+.invoice-classic-lines th,
+.invoice-classic-lines td {
+    text-align: left !important;
 }
 
 .invoice-col-no {
@@ -7569,14 +8012,14 @@ tbody tr:last-child .row-more-list {
 
 .invoice-classic-signatures td {
     border-top: 0;
-    font-size: 9px;
+    font-size: 10px;
     text-align: center;
 }
 
 .invoice-classic-remarks {
     margin-top: 8px;
     min-height: 28px;
-    font-size: 10px;
+    font-size: 11px;
 }
 
 .invoice-classic-remarks div {
@@ -7795,7 +8238,7 @@ tbody tr:last-child .row-more-list {
 
     .invoice-classic-paper th,
     .invoice-classic-paper td {
-        font-size: 9.5px;
+        font-size: 10.5px;
     }
 
     .invoice-print-header {

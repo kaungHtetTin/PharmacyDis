@@ -139,7 +139,11 @@ export default function PharmacyStorePicker({
             {open && !disabled && (
                 <div className="pharmacy-picker-menu" id="pharmacy-store-options" role="listbox">
                     {loading && <div className="pharmacy-picker-empty">Loading pharmacies...</div>}
-                    {!loading && visibleCustomers.length === 0 && <div className="pharmacy-picker-empty">No pharmacies found</div>}
+                    {!loading && visibleCustomers.length === 0 && (
+                        <div className="pharmacy-picker-empty">
+                            {searchValue.trim() ? 'No pharmacies found' : 'Search to find pharmacy'}
+                        </div>
+                    )}
                     {!loading && visibleCustomers.map((customer, index) => {
                         const selected = String(customer.id) === String(value);
 

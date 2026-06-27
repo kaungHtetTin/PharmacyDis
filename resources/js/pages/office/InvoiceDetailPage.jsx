@@ -44,13 +44,15 @@ export default function InvoiceDetailPage({ onNavigate }) {
     const [remarkSaving, setRemarkSaving] = useState(false);
     const [remarkSuccess, setRemarkSuccess] = useState('');
     const [saleType, setSaleType] = useState('cash');
+    const [dueDate, setDueDate] = useState('');
 
     useEffect(() => {
         setRemark(invoice?.remark || '');
         setSaleType(invoice?.sale_type || 'cash');
+        setDueDate(invoice?.due_date || '');
         setRemarkError('');
         setRemarkSuccess('');
-    }, [invoice?.id, invoice?.remark, invoice?.sale_type]);
+    }, [invoice?.id, invoice?.remark, invoice?.sale_type, invoice?.due_date]);
 
     const saveRemark = async () => {
         if (!invoice?.id) {
@@ -62,7 +64,7 @@ export default function InvoiceDetailPage({ onNavigate }) {
         setRemarkSuccess('');
 
         try {
-            await api.patch(`/office/invoices/${invoice.id}/print-details`, { remark, sale_type: saleType });
+            await api.patch(`/office/invoices/${invoice.id}/print-details`, { due_date: dueDate, remark, sale_type: saleType });
             setRemarkSuccess('Invoice print details saved.');
             invoiceResource.refresh();
         } catch (error) {
@@ -165,6 +167,15 @@ export default function InvoiceDetailPage({ onNavigate }) {
                                 ))}
                             </div>
                         </fieldset>
+                        <label className="form-field invoice-print-due-date-field">
+                            <span>Payment due date</span>
+                            <input
+                                disabled={remarkSaving}
+                                onChange={(event) => setDueDate(event.target.value)}
+                                type="date"
+                                value={dueDate}
+                            />
+                        </label>
                         <label className="form-field sales-order-note">
                             <span>Remark</span>
                             <textarea

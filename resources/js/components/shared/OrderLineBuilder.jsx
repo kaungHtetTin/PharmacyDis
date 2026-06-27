@@ -47,6 +47,27 @@ function formatAmount(value) {
     return Number(value || 0).toLocaleString();
 }
 
+function getProductLabel(product) {
+    return [product?.name, product?.sku, product?.barcode].filter(Boolean).join(' / ');
+}
+
+function productMatchesSearch(product, search) {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+        return true;
+    }
+
+    return [
+        product?.name,
+        product?.sku,
+        product?.barcode,
+        product?.brand,
+        product?.category?.name,
+        product?.category,
+    ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
+}
+
 function getValidFocRules(product) {
     return getProductFocRules(product).filter(isRuleCurrent);
 }
@@ -199,6 +220,7 @@ export default function OrderLineBuilder({
     showStockAvailability = false,
 }) {
     const [items, setItems] = useState(lines.length ? lines : [blankLine]);
+    const [productSearches, setProductSearches] = useState({});
     const controlled = Array.isArray(value);
     const activeItems = controlled ? value : items;
     const { demandByProduct, stockByProduct } = getOrderStockStatus(activeItems, productOptions, stockRows);
@@ -216,6 +238,12 @@ export default function OrderLineBuilder({
     }
 
     function removeLine(id) {
+        setProductSearches((current) => {
+            const next = { ...current };
+            delete next[id];
+
+            return next;
+        });
         updateItems(activeItems.length === 1 ? activeItems : activeItems.filter((item) => item.id !== id));
     }
 
@@ -260,11 +288,26 @@ export default function OrderLineBuilder({
                     const shortageQuantity = Math.max(0, requiredQuantity - availableQuantity);
                     const unit = stockUnit(selectedProduct, productStock?.row);
                     const showStockNote = Boolean(lineDemand && (warehouseId || showStockAvailability));
+                    const productSearch = productSearches[item.id] || '';
+                    const filteredProducts = productOptions
+                        .filter((product) => productMatchesSearch(product, productSearch))
+                        .slice(0, 80);
+                    const productSelectOptions = selectedProduct && !filteredProducts.some((product) => String(product.id) === String(selectedProduct.id))
+                        ? [selectedProduct, ...filteredProducts]
+                        : filteredProducts;
+                    const filteredFallbackProducts = fallbackProducts.filter((product) => product.toLowerCase().includes(productSearch.trim().toLowerCase()));
 
                     return (
                         <div className={`order-line-draft-row ${shortageQuantity > 0 ? 'has-stock-warning' : ''}`} key={item.id}>
-                            <label>
+                            <label className="order-line-product-field">
                                 <span>Product</span>
+                                <input
+                                    disabled={disabled}
+                                    onChange={(event) => setProductSearches((current) => ({ ...current, [item.id]: event.target.value }))}
+                                    placeholder="Search product name or SKU"
+                                    type="search"
+                                    value={productSearch}
+                                />
                                 <select
                                     disabled={disabled}
                                     onChange={(event) => {
@@ -277,14 +320,18 @@ export default function OrderLineBuilder({
                                             unit_id: defaultUnit?.unit_id || '',
                                             foc_unit_id: defaultUnit?.unit_id || '',
                                         });
+                                        setProductSearches((current) => ({ ...current, [item.id]: '' }));
                                     }}
                                     value={item.product_id || item.product || ''}
                                 >
                                     <option value="" disabled>Select product</option>
                                     {productOptions.length
-                                        ? productOptions.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)
-                                        : allowFallback ? fallbackProducts.map((product) => <option key={product}>{product}</option>) : null}
+                                        ? productSelectOptions.map((product) => <option key={product.id} value={product.id}>{getProductLabel(product)}</option>)
+                                        : allowFallback ? filteredFallbackProducts.map((product) => <option key={product}>{product}</option>) : null}
                                 </select>
+                                {productOptions.length > 0 && !productSelectOptions.length && (
+                                    <small className="order-line-product-empty">No products match this search.</small>
+                                )}
                             </label>
                             <label>
                                 <span>Qty</span>
