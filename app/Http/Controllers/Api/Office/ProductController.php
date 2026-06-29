@@ -12,10 +12,13 @@ class ProductController extends Controller
 {
     public function index(Request $request)
     {
+        $status = $request->input('status');
+
         return Product::query()
+            ->when($status === 'deleted', fn ($query) => $query->onlyTrashed())
             ->with(['company', 'category', 'baseUnit', 'productUnits.unit', 'focRules' => fn ($query) => $query->where('status', 'active')])
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
-            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
+            ->when($request->filled('status') && $status !== 'deleted', fn ($query) => $query->where('status', $status))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $query->where(function ($searchQuery) use ($request) {
                     $searchQuery->where('name', 'like', "%{$request->search}%")
@@ -40,8 +43,10 @@ class ProductController extends Controller
         return response()->json($product->fresh(['company', 'category', 'baseUnit', 'productUnits.unit', 'focRules']), 201);
     }
 
-    public function show(Product $product)
+    public function show($product)
     {
+        $product = Product::withTrashed()->findOrFail($product);
+
         return $product->load(['company', 'category', 'baseUnit', 'productUnits.unit', 'focRules' => fn ($query) => $query->where('status', 'active')]);
     }
 
@@ -62,6 +67,14 @@ class ProductController extends Controller
         $product->delete();
 
         return response()->noContent();
+    }
+
+    public function restore($product)
+    {
+        $product = Product::withTrashed()->findOrFail($product);
+        $product->restore();
+
+        return $product->fresh(['company', 'category', 'baseUnit', 'productUnits.unit', 'focRules']);
     }
 
     private function payload(StoreProductRequest $request, ?Product $product = null): array

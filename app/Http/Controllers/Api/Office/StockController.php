@@ -96,6 +96,12 @@ class StockController extends Controller
                 'stock_batches.product_id',
             ]));
 
+        $query->havingRaw('SUM(stock_batches.available_base_quantity) > 0 OR EXISTS (
+            select 1 from products
+            where products.id = stock_batches.product_id
+            and products.deleted_at is null
+        )');
+
         if ($request->boolean('action_only')) {
             $query->havingRaw('SUM(stock_batches.available_base_quantity) <= COALESCE((select low_stock_threshold_base_units from products where products.id = stock_batches.product_id), 0)');
         }
@@ -131,8 +137,10 @@ class StockController extends Controller
         ]));
     }
 
-    public function productBatches(Request $request, Product $product)
+    public function productBatches(Request $request, $product)
     {
+        $product = Product::withTrashed()->findOrFail($product);
+
         $query = StockBatch::query()
             ->leftJoinSub($this->receiptBatchCostSubquery(), 'batch_costs', function ($join) {
                 $join->on('batch_costs.company_id', '=', 'stock_batches.company_id')

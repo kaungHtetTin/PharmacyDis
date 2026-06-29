@@ -35,7 +35,7 @@ function dateOnly(value) {
 }
 
 function defaultSalesProductUnit(product = {}) {
-    const units = product.product_units || [];
+    const units = product?.product_units || [];
 
     return units.find((unit) => unit.is_default_sales_unit && (unit.status || 'active') === 'active')
         || units.find((unit) => unit.is_base_unit)
@@ -690,7 +690,10 @@ export function mapProducts(response) {
             discountRate: `${product.default_discount_percentage || 0}%`,
             focRule: product.foc_rules?.length ? `${product.foc_rules.length} active` : 'No active FOC',
             focStatus: product.foc_rules?.length ? 'Active' : 'Not configured',
-            status: titleCase(product.status),
+            status: product.deleted_at ? 'Deleted' : titleCase(product.status),
+            status_value: product.deleted_at ? 'deleted' : product.status,
+            deleted_at: product.deleted_at || '',
+            isDeleted: Boolean(product.deleted_at),
             foc_rules_raw: product.foc_rules || [],
             focRules: (product.foc_rules || []).map((rule) => ({
                 id: rule.id,

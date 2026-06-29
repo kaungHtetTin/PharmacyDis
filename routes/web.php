@@ -37,6 +37,7 @@ Route::view('/office/{page}', 'welcome')
         'inventory',
         'inventory-detail',
         'receiving',
+        'receiving-create',
         'receiving-detail',
         'stock-transfers',
         'stock-transfer-create',

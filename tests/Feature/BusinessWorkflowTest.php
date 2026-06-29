@@ -788,6 +788,45 @@ class BusinessWorkflowTest extends TestCase
         $this->assertArrayHasKey('stock_value_amount', $response->json('data.0'));
     }
 
+    public function test_inventory_shows_soft_deleted_products_while_available_stock_remains(): void
+    {
+        $batch = StockBatch::query()
+            ->where('available_base_quantity', '>', 0)
+            ->firstOrFail();
+        $product = Product::findOrFail($batch->product_id);
+
+        $product->delete();
+
+        $this->withToken($this->officeToken)
+            ->getJson('/api/office/stock/current?' . http_build_query([
+                'company_id' => $batch->company_id,
+                'search' => $product->sku,
+                'per_page' => 15,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.0.product.id', $product->id)
+            ->assertJsonPath('data.0.product.name', $product->name);
+
+        $this->withToken($this->officeToken)
+            ->getJson("/api/office/stock/products/{$product->id}/batches?per_page=15")
+            ->assertOk()
+            ->assertJsonPath('product.id', $product->id)
+            ->assertJsonPath('data.0.product.id', $product->id);
+
+        StockBatch::query()
+            ->where('product_id', $product->id)
+            ->update(['available_base_quantity' => 0]);
+
+        $this->withToken($this->officeToken)
+            ->getJson('/api/office/stock/current?' . http_build_query([
+                'company_id' => $batch->company_id,
+                'search' => $product->sku,
+                'per_page' => 15,
+            ]))
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
     public function test_finance_report_date_range_includes_stock_holding_value(): void
     {
         $dateFrom = now()->startOfMonth()->toDateString();
@@ -1174,6 +1213,53 @@ class BusinessWorkflowTest extends TestCase
             'id' => $created['id'],
             'sku' => 'TEST-PROD-001',
         ]);
+    }
+
+    public function test_office_can_filter_and_restore_deleted_products(): void
+    {
+        $product = Product::query()->firstOrFail();
+
+        $this->withToken($this->officeToken)
+            ->deleteJson("/api/office/products/{$product->id}")
+            ->assertNoContent();
+
+        $this->withToken($this->officeToken)
+            ->getJson('/api/office/products?' . http_build_query([
+                'search' => $product->sku,
+                'per_page' => 15,
+            ]))
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this->withToken($this->officeToken)
+            ->getJson('/api/office/products?' . http_build_query([
+                'search' => $product->sku,
+                'status' => 'deleted',
+                'per_page' => 15,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $product->id)
+            ->assertJsonPath('data.0.name', $product->name);
+
+        $this->withToken($this->officeToken)
+            ->getJson("/api/office/products/{$product->id}")
+            ->assertOk()
+            ->assertJsonPath('id', $product->id);
+
+        $this->withToken($this->officeToken)
+            ->postJson("/api/office/products/{$product->id}/restore")
+            ->assertOk()
+            ->assertJsonPath('id', $product->id);
+
+        $this->assertNull(Product::withTrashed()->findOrFail($product->id)->deleted_at);
+
+        $this->withToken($this->officeToken)
+            ->getJson('/api/office/products?' . http_build_query([
+                'search' => $product->sku,
+                'per_page' => 15,
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $product->id);
     }
 
     private function fakePngUpload(): UploadedFile

@@ -74,6 +74,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::apiResource('customers', OfficeCustomerController::class)->except(['show']);
             Route::get('customers/{customer}/detail', [OfficeCustomerController::class, 'detail']);
             Route::apiResource('product-categories', OfficeProductCategoryController::class)->except(['show']);
+            Route::post('products/{product}/restore', [OfficeProductController::class, 'restore']);
             Route::get('products/{product}', [OfficeProductController::class, 'show']);
             Route::apiResource('products', OfficeProductController::class)->except(['show']);
             Route::get('sales-representatives/{salesRepresentative}/detail', [OfficeSalesRepresentativeController::class, 'detail']);

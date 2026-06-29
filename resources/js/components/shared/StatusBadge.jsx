@@ -30,6 +30,7 @@ const statusMap = {
     rejected: 'danger',
     blocked: 'danger',
     critical: 'danger',
+    deleted: 'danger',
     expired: 'danger',
     overdue: 'danger',
     failed: 'danger',

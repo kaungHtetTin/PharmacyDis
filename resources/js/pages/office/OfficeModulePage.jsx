@@ -819,6 +819,10 @@ function findReceiptProductUnit(product, unitId) {
     return units.find((unit) => String(unit.unit_id) === String(unitId)) || units[0];
 }
 
+function isDeletedProductRecord(record) {
+    return Boolean(record?.isDeleted || record?.deleted_at || record?.status_value === 'deleted' || String(record?.status || '').toLowerCase() === 'deleted');
+}
+
 function makeReceiptBatchNumber(product, receivedDate = '', itemIndex = 0) {
     const source = product?.sku || product?.name || 'MED';
     const prefix = String(source).replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 12) || 'MED';
@@ -4378,6 +4382,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 { label: 'Active', value: 'active' },
                 { label: 'Inactive', value: 'inactive' },
                 { label: 'Discontinued', value: 'discontinued' },
+                { label: 'Deleted', value: 'deleted' },
             ],
             placeholder: 'All statuses',
             value: productListFilters.status,
@@ -5150,6 +5155,24 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             await api.delete(`/office/products/${record.id}`);
             liveResource.refresh();
             closeConfirmAction();
+        } catch (requestError) {
+            setProductError(requestError.message);
+        } finally {
+            setProductSubmitting(false);
+        }
+    };
+    const restoreProduct = async (record) => {
+        if (!record?.id) {
+            return;
+        }
+
+        setProductSubmitting(true);
+        setProductError('');
+
+        try {
+            await api.post(`/office/products/${record.id}/restore`);
+            liveResource.refresh();
+            setDrawerOpen(false);
         } catch (requestError) {
             setProductError(requestError.message);
         } finally {
@@ -6388,7 +6411,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 ) : isStockTransfersPage ? (
                     <button className="btn primary" onClick={() => onNavigate?.('stock-transfer-create')} type="button">Create transfer</button>
                 ) : screen.hidePrimaryAction ? null : (
-                    <button className="btn primary" onClick={isSettingsPage ? saveInvoicePrintSettings : isCompaniesPage ? () => openCompanyForm() : isFinanceCategoriesPage ? () => openFinanceCategoryForm() : isFinanceTransactionsPage ? () => openFinanceTransactionForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isWarehousesPage ? () => openWarehouseForm() : isProductsPage ? () => openProductForm() : isReceivingPage ? () => openStockReceiptForm() : isInventoryPage ? () => openStockAdjustmentForm(selectedRecord) : isReceivablesPage ? () => openCustomerPaymentForm(selectedRecord) : isPayablesPage ? () => openCompanyPaymentForm(null) : isRepresentativesPage ? () => openSalesRepresentativeForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{isSettingsPage && invoicePrintSaving ? 'Saving...' : screen.primaryAction}</button>
+                    <button className="btn primary" onClick={isSettingsPage ? saveInvoicePrintSettings : isCompaniesPage ? () => openCompanyForm() : isFinanceCategoriesPage ? () => openFinanceCategoryForm() : isFinanceTransactionsPage ? () => openFinanceTransactionForm() : isPharmaciesPage ? () => openPharmacyForm() : isProductCategoriesPage ? () => openProductCategoryForm() : isUnitsPage ? () => openUnitForm() : isWarehousesPage ? () => openWarehouseForm() : isProductsPage ? () => openProductForm() : isReceivingPage ? () => onNavigate?.('receiving-create') : isInventoryPage ? () => openStockAdjustmentForm(selectedRecord) : isReceivablesPage ? () => openCustomerPaymentForm(selectedRecord) : isPayablesPage ? () => openCompanyPaymentForm(null) : isRepresentativesPage ? () => openSalesRepresentativeForm() : createScreenAction(primaryAction, onNavigate, () => openWorkflowModal(null, selectedRecord))} type="button">{isSettingsPage && invoicePrintSaving ? 'Saving...' : screen.primaryAction}</button>
                 )}
                 description={screen.description}
                 eyebrow={screen.eyebrow}
@@ -6703,16 +6726,26 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         ...(showEditAction ? [
                             {
                                 label: screen.editActionLabel || `Edit ${recordLabel}`,
+                                shouldShow: (record) => !(isProductsPage && isDeletedProductRecord(record)),
                                 onClick: (record) => isCompaniesPage ? openCompanyForm(record) : isFinanceCategoriesPage ? openFinanceCategoryForm(record) : isFinanceTransactionsPage ? openFinanceTransactionForm(record) : isPharmaciesPage ? openPharmacyForm(record) : isProductCategoriesPage ? openProductCategoryForm(record) : isUnitsPage ? openUnitForm(record) : isWarehousesPage ? openWarehouseForm(record) : isProductsPage ? openProductForm(record) : isReceivingPage ? openStockReceiptForm(record) : isRepresentativesPage ? openSalesRepresentativeForm(record) : openWorkflowModal(null, record, {
                                     submitLabel: screen.editSubmitLabel || `Save ${recordLabel}`,
                                     title: screen.editActionLabel || `Edit ${recordLabel}`,
                                 }),
                             },
                         ] : []),
+                        ...(isProductsPage ? [
+                            {
+                                label: 'Restore product',
+                                icon: 'restore',
+                                shouldShow: isDeletedProductRecord,
+                                onClick: restoreProduct,
+                            },
+                        ] : []),
                         ...(isManagedCrudPage ? [
                             {
                                 label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isFinanceCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isWarehousesPage ? 'Delete warehouse' : isReceivingPage ? 'Delete receiving' : isFinanceTransactionsPage ? 'Delete transaction' : isPharmaciesPage ? 'Delete pharmacy' : isRepresentativesPage ? 'Delete sales rep' : 'Delete company',
                                 variant: 'danger',
+                                shouldShow: (record) => !(isProductsPage && isDeletedProductRecord(record)),
                                 onClick: (record) => {
                                     setSelectedRecord(record);
                                     setConfirmAction({ action: { label: isProductsPage ? 'Delete product' : isProductCategoriesPage ? 'Delete category' : isFinanceCategoriesPage ? 'Delete category' : isUnitsPage ? 'Delete unit' : isWarehousesPage ? 'Delete warehouse' : isReceivingPage ? 'Delete receiving' : isFinanceTransactionsPage ? 'Delete transaction' : isPharmaciesPage ? 'Delete pharmacy' : isRepresentativesPage ? 'Delete sales rep' : 'Delete company', categoryDelete: isProductCategoriesPage, companyDelete: isCompaniesPage, financeCategoryDelete: isFinanceCategoriesPage, financeTransactionDelete: isFinanceTransactionsPage, pharmacyDelete: isPharmaciesPage, productDelete: isProductsPage, receiptDelete: isReceivingPage, representativeDelete: isRepresentativesPage, unitDelete: isUnitsPage, warehouseDelete: isWarehousesPage }, record });
@@ -7276,7 +7309,12 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                     Open detail
                                 </button>
                             )}
-                            {showEditAction && (
+                            {isProductsPage && isDeletedProductRecord(selectedRecord) && (
+                                <button className="btn primary" disabled={productSubmitting} onClick={() => restoreProduct(selectedRecord)} type="button">
+                                    {productSubmitting ? 'Restoring...' : 'Restore product'}
+                                </button>
+                            )}
+                            {showEditAction && !(isProductsPage && isDeletedProductRecord(selectedRecord)) && (
                                 <button className="btn secondary" onClick={() => isCompaniesPage ? openCompanyForm(selectedRecord) : isFinanceCategoriesPage ? openFinanceCategoryForm(selectedRecord) : isFinanceTransactionsPage ? openFinanceTransactionForm(selectedRecord) : isPharmaciesPage ? openPharmacyForm(selectedRecord) : isProductCategoriesPage ? openProductCategoryForm(selectedRecord) : isUnitsPage ? openUnitForm(selectedRecord) : isWarehousesPage ? openWarehouseForm(selectedRecord) : isProductsPage ? openProductForm(selectedRecord) : isReceivingPage ? openStockReceiptForm(selectedRecord) : isRepresentativesPage ? openSalesRepresentativeForm(selectedRecord) : openWorkflowModal(null, selectedRecord, { submitLabel: `Save ${recordLabel}`, title: `Edit ${recordLabel}` })} type="button">Edit {recordLabel}</button>
                             )}
                             <button className={isOrdersPage ? 'btn secondary' : 'btn primary'} onClick={() => setDrawerOpen(false)} type="button">Done</button>

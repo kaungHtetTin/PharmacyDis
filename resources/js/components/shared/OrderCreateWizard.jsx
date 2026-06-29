@@ -184,6 +184,7 @@ function stockShortages(lines, productDetails, productAvailability) {
 }
 
 function BasicStep({
+    action,
     companies,
     customers,
     customerLoading,
@@ -199,7 +200,7 @@ function BasicStep({
     warehousesLoading,
 }) {
     return (
-        <Panel eyebrow="Step 1" title="Basic information">
+        <Panel action={action} eyebrow="Step 1" title="Basic information">
             <div className="order-wizard-basic-grid">
                 <PharmacyStorePicker
                     customers={customers}
@@ -282,11 +283,11 @@ function BasicStep({
     );
 }
 
-function ProductSelectionStep({ disabled, loading, onClearSelection, products, search, selectedIds, setSearch, toggleProduct }) {
+function ProductSelectionStep({ action, disabled, loading, onClearSelection, products, search, selectedIds, setSearch, toggleProduct }) {
     const filteredProducts = products.filter((product) => productMatchesSearch(product, search));
 
     return (
-        <Panel eyebrow="Step 2" title="Product selection">
+        <Panel action={action} eyebrow="Step 2" title="Product selection">
             <div className="order-wizard-product-toolbar">
                 <label className="form-field">
                     <span>Search product</span>
@@ -331,9 +332,9 @@ function ProductSelectionStep({ disabled, loading, onClearSelection, products, s
     );
 }
 
-function QuantityStep({ lines, productAvailability, productDetails, updateLine }) {
+function QuantityStep({ action, lines, productAvailability, productDetails, updateLine }) {
     return (
-        <Panel eyebrow="Step 3" title="Unit quantity and FOC">
+        <Panel action={action} eyebrow="Step 3" title="Unit quantity and FOC">
             <div className="order-wizard-quantity-list">
                 {lines.map((line) => {
                     const product = productDetails.find((item) => String(item.id) === String(line.product_id));
@@ -442,7 +443,7 @@ function QuantityStep({ lines, productAvailability, productDetails, updateLine }
     );
 }
 
-function PreviewStep({ blocked, customer, form, isOffice, lines, productDetails, selectedCompany, shortages = [] }) {
+function PreviewStep({ action, blocked, customer, form, isOffice, lines, productDetails, selectedCompany, shortages = [] }) {
     const totals = lines.reduce((summary, line) => {
         const product = productDetails.find((item) => String(item.id) === String(line.product_id));
         const preview = product ? linePreview(line, product) : null;
@@ -455,7 +456,7 @@ function PreviewStep({ blocked, customer, form, isOffice, lines, productDetails,
     }, { focBaseQuantity: 0, lineTotal: 0, requiredBaseQuantity: 0 });
 
     return (
-        <Panel eyebrow="Step 4" title="Final preview and confirm">
+        <Panel action={action} eyebrow="Step 4" title="Final preview and confirm">
             <div className="order-wizard-preview-grid">
                 <article>
                     <span>Company</span>
@@ -776,6 +777,18 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
     }
 
     const activeIndex = tabs.findIndex((tab) => tab.key === activeTab);
+    const stepActions = (
+        <div className="order-wizard-actions">
+            <button className="btn secondary" disabled={activeIndex === 0 || submitting} onClick={goPrevious} type="button">Previous</button>
+            {activeTab === 'preview' ? (
+                <button className="btn primary" disabled={submitting || blocked || shortages.length > 0} onClick={submitOrder} type="button">
+                    {submitting ? 'Submitting...' : 'Confirm order'}
+                </button>
+            ) : (
+                <button className="btn primary" disabled={submitting} onClick={goNext} type="button">Next</button>
+            )}
+        </div>
+    );
 
     return (
         <div className="page-stack order-wizard-page">
@@ -801,8 +814,17 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
                 ))}
             </div>
 
+            {stepWarning && <div className="form-error" role="alert">{stepWarning}</div>}
+            {submitError && <div className="form-error" role="alert">{submitError}</div>}
+            {(companiesResource.error || customersResource.error || representativesResource.error || warehousesResource.error || productListResource.error || productDetailsResource.error) && (
+                <div className="form-error" role="alert">
+                    {companiesResource.error || customersResource.error || representativesResource.error || warehousesResource.error || productListResource.error || productDetailsResource.error}
+                </div>
+            )}
+
             {activeTab === 'basic' && (
                 <BasicStep
+                    action={stepActions}
                     companies={companies}
                     customers={customers}
                     customerLoading={customersResource.loading}
@@ -823,6 +845,7 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
             )}
             {activeTab === 'products' && (
                 <ProductSelectionStep
+                    action={stepActions}
                     disabled={!form.company_id}
                     loading={productListResource.loading}
                     products={productList}
@@ -834,10 +857,11 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
                 />
             )}
             {activeTab === 'quantity' && (
-                <QuantityStep lines={lines} productAvailability={productList} productDetails={productDetails} updateLine={updateLine} />
+                <QuantityStep action={stepActions} lines={lines} productAvailability={productList} productDetails={productDetails} updateLine={updateLine} />
             )}
             {activeTab === 'preview' && (
                 <PreviewStep
+                    action={stepActions}
                     blocked={blocked}
                     customer={selectedCustomer}
                     form={form}
@@ -848,25 +872,6 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
                     shortages={shortages}
                 />
             )}
-
-            {stepWarning && <div className="form-error" role="alert">{stepWarning}</div>}
-            {submitError && <div className="form-error">{submitError}</div>}
-            {(companiesResource.error || customersResource.error || representativesResource.error || warehousesResource.error || productListResource.error || productDetailsResource.error) && (
-                <div className="form-error">
-                    {companiesResource.error || customersResource.error || representativesResource.error || warehousesResource.error || productListResource.error || productDetailsResource.error}
-                </div>
-            )}
-
-            <div className="order-wizard-actions">
-                <button className="btn secondary" disabled={activeIndex === 0 || submitting} onClick={goPrevious} type="button">Previous</button>
-                {activeTab === 'preview' ? (
-                    <button className="btn primary" disabled={submitting || blocked || shortages.length > 0} onClick={submitOrder} type="button">
-                        {submitting ? 'Submitting...' : 'Confirm order'}
-                    </button>
-                ) : (
-                    <button className="btn primary" disabled={submitting} onClick={goNext} type="button">Next</button>
-                )}
-            </div>
         </div>
     );
 }

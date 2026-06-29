@@ -124,6 +124,10 @@ function getActionIcon(action) {
         return 'trash';
     }
 
+    if (label.includes('restore')) {
+        return 'restore';
+    }
+
     if (label.includes('edit')) {
         return 'edit';
     }

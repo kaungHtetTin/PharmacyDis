@@ -5234,6 +5234,14 @@ tbody tr:hover {
     padding-top: 2px;
 }
 
+.order-wizard-page .panel-heading {
+    align-items: center;
+}
+
+.order-wizard-page .panel-heading .order-wizard-actions {
+    flex: 0 0 auto;
+}
+
 @media (max-width: 980px) {
     .order-wizard-basic-grid,
     .order-wizard-preview-grid {
@@ -5283,6 +5291,15 @@ tbody tr:hover {
     .order-wizard-actions {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         display: grid;
+    }
+
+    .order-wizard-page .panel-heading {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .order-wizard-page .panel-heading .order-wizard-actions {
+        width: 100%;
     }
 }
 

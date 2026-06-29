@@ -26,6 +26,7 @@ const paths = {
     printer: 'M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5h20v5a2 2 0 0 1-2 2h-2M6 14h12v7H6zM17 13h.01',
     moreHorizontal: 'M5 12h.01M12 12h.01M19 12h.01',
     check: 'M20 6 9 17l-5-5',
+    restore: 'M3 7v6h6M3.5 13a8.5 8.5 0 1 0 2.49-6.01L3 10',
     arrowRight: 'M5 12h14M13 5l7 7-7 7',
     save: 'M5 3h14l2 2v16H3V3h2ZM7 3v6h10V3M7 21v-8h10v8',
     logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',

@@ -16,6 +16,7 @@ import PaymentDetailPage from './pages/office/PaymentDetailPage';
 import PharmacyDetailPage from './pages/office/PharmacyDetailPage';
 import ProductDetailPage from './pages/office/ProductDetailPage';
 import RepresentativeDetailPage from './pages/office/RepresentativeDetailPage';
+import StockReceivingCreatePage from './pages/office/StockReceivingCreatePage';
 import StockTransferDetailPage from './pages/office/StockTransferDetailPage';
 import StockReceivingDetailPage from './pages/office/StockReceivingDetailPage';
 import SalesDashboardPage from './pages/sales/SalesDashboardPage';
@@ -26,7 +27,7 @@ import SalesPharmacyDetailPage from './pages/sales/SalesPharmacyDetailPage';
 import SalesProfilePage from './pages/sales/SalesProfilePage';
 import { useAuth } from './services/auth.jsx';
 
-const officePages = [...officeNav.map(([key]) => key), 'login', 'profile', 'pharmacies-detail', 'product-detail', 'representatives-detail', 'inventory-detail', 'invoice-detail', 'order-create', 'order-detail', 'payable-detail', 'payment-detail', 'receiving-detail', 'stock-transfer-create', 'stock-transfer-detail'];
+const officePages = [...officeNav.map(([key]) => key), 'login', 'profile', 'pharmacies-detail', 'product-detail', 'representatives-detail', 'inventory-detail', 'invoice-detail', 'order-create', 'order-detail', 'payable-detail', 'payment-detail', 'receiving-create', 'receiving-detail', 'stock-transfer-create', 'stock-transfer-detail'];
 const salesPages = [...salesNav.map(([key]) => key), 'login', 'profile', 'pharmacies-detail', 'order-detail', 'order-submitted'];
 const detailParentPages = {
     'inventory-detail': 'inventory',
@@ -37,6 +38,7 @@ const detailParentPages = {
     'payment-detail': 'payments',
     'pharmacies-detail': 'pharmacies',
     'product-detail': 'products',
+    'receiving-create': 'receiving',
     'receiving-detail': 'receiving',
     'representatives-detail': 'representatives',
     'stock-transfer-create': 'stock-transfers',
@@ -141,7 +143,7 @@ export default function Root() {
 
     return (
         <OfficeLayout
-            activePage={page === 'stock-transfer-create' || page === 'stock-transfer-detail' ? 'stock-transfers' : page === 'inventory-detail' ? 'inventory' : page === 'invoice-detail' ? 'invoices' : page === 'order-create' || page === 'order-detail' ? 'orders' : page === 'payable-detail' ? 'payables' : page === 'payment-detail' ? 'payments' : page === 'product-detail' ? 'products' : page === 'receiving-detail' ? 'receiving' : page === 'representatives-detail' || page === 'pharmacies-detail' ? page.replace('-detail', '') : page}
+            activePage={page === 'stock-transfer-create' || page === 'stock-transfer-detail' ? 'stock-transfers' : page === 'inventory-detail' ? 'inventory' : page === 'invoice-detail' ? 'invoices' : page === 'order-create' || page === 'order-detail' ? 'orders' : page === 'payable-detail' ? 'payables' : page === 'payment-detail' ? 'payments' : page === 'product-detail' ? 'products' : page === 'receiving-create' || page === 'receiving-detail' ? 'receiving' : page === 'representatives-detail' || page === 'pharmacies-detail' ? page.replace('-detail', '') : page}
             getPageUrl={(page) => pageUrl('office', page)}
             onNavigate={(page, params) => navigate('office', page, params)}
         >
@@ -165,12 +167,13 @@ export default function Root() {
             {officeAccessAllowed && page === 'payable-detail' && <PayableDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'payment-detail' && <PaymentDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'product-detail' && <ProductDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
+            {officeAccessAllowed && page === 'receiving-create' && <StockReceivingCreatePage onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'receiving-detail' && <StockReceivingDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'stock-transfer-detail' && <StockTransferDetailPage onNavigate={(page, params) => navigate('office', page, params)} />}
             {officeAccessAllowed && page === 'profile' && <OfficeProfilePage onNavigate={(page) => navigate('office', page)} />}
             {officeAccessAllowed && page === 'users' && <OfficeUsersPage />}
             {officeAccessAllowed && page === 'activity-logs' && <ActivityLogPage />}
-            {officeAccessAllowed && page !== 'dashboard' && page !== 'pharmacies-detail' && page !== 'representatives-detail' && page !== 'invoice-detail' && page !== 'order-create' && page !== 'order-detail' && page !== 'payable-detail' && page !== 'payment-detail' && page !== 'product-detail' && page !== 'receiving-detail' && page !== 'stock-transfer-detail' && page !== 'profile' && page !== 'users' && page !== 'activity-logs' && (
+            {officeAccessAllowed && page !== 'dashboard' && page !== 'pharmacies-detail' && page !== 'representatives-detail' && page !== 'invoice-detail' && page !== 'order-create' && page !== 'order-detail' && page !== 'payable-detail' && page !== 'payment-detail' && page !== 'product-detail' && page !== 'receiving-create' && page !== 'receiving-detail' && page !== 'stock-transfer-detail' && page !== 'profile' && page !== 'users' && page !== 'activity-logs' && (
                 <OfficeModulePage pageKey={page} onNavigate={(page, params) => navigate('office', page, params)} />
             )}
         </OfficeLayout>
