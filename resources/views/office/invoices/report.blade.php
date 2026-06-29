@@ -154,13 +154,13 @@
             }
 
             .invoice-report-table .col-no { width: 9mm; }
-            .invoice-report-table .col-date { width: 22mm; }
-            .invoice-report-table .col-name { width: 50mm; }
-            .invoice-report-table .col-invoice { width: 34mm; }
-            .invoice-report-table .col-due { width: 22mm; }
-            .invoice-report-table .col-amount { width: 26mm; }
-            .invoice-report-table .col-paid { width: 26mm; }
-            .invoice-report-table .col-remark { width: auto; }
+            .invoice-report-table .col-date { width: 24mm; }
+            .invoice-report-table .col-name { width: 72mm; }
+            .invoice-report-table .col-invoice { width: 42mm; }
+            .invoice-report-table .col-due { width: 24mm; }
+            .invoice-report-table .col-amount { width: 24mm; }
+            .invoice-report-table .col-paid { width: 24mm; }
+            .invoice-report-table .col-remark { width: 34mm; }
 
             .invoice-report-table th,
             .invoice-report-table td {
@@ -175,7 +175,14 @@
 
             .invoice-report-table .date-cell,
             .invoice-report-table .invoice-cell {
+                color: #101828;
+                font-weight: 850;
                 white-space: nowrap;
+            }
+
+            .invoice-report-table .remark-cell {
+                font-size: 10px;
+                line-height: 1.35;
             }
 
             .invoice-report-table tfoot td {
@@ -318,7 +325,7 @@
                             <td class="date-cell">{{ $formatDate($invoice->due_date) }}</td>
                             <td class="number-cell">{{ $formatMoney($invoice->total_amount) }}</td>
                             <td class="number-cell">{{ $formatMoney($invoice->paid_amount) }}</td>
-                            <td>{{ $invoice->remark ?: '-' }}</td>
+                            <td class="remark-cell">{{ $invoice->remark ?: '-' }}</td>
                         </tr>
                     @empty
                         <tr>
