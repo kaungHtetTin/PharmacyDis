@@ -133,6 +133,7 @@ export const officeModules = {
         title: 'Inventory',
         description: 'Track product-level available stock in sales default units across warehouses, with optional warehouse filtering.',
         primaryAction: 'Adjust stock',
+        hidePrimaryAction: true,
         columns: [
             { key: 'product', label: 'Product' },
             { key: 'sku', label: 'SKU' },

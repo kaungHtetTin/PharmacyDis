@@ -151,6 +151,15 @@ function newStockTransferLine(productId = '', productName = '') {
     };
 }
 
+const STOCK_TRANSFER_TABS = [
+    { key: 'route', label: 'Warehouse route' },
+    { key: 'products', label: 'Product selection' },
+    { key: 'batches', label: 'Batch quantities' },
+    { key: 'preview', label: 'Final preview and confirm' },
+];
+
+const STOCK_TRANSFER_PRODUCT_PAGE_SIZE = 12;
+
 function newSalesReturnLine(item) {
     return {
         id: `sales-return-line-${item.id}`,
@@ -804,6 +813,18 @@ function formatAmount(value) {
     return Number(value || 0).toLocaleString();
 }
 
+function productMatchesTransferSearch(product, search) {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+        return true;
+    }
+
+    return [product.name, product.sku, product.barcode, product.brand]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+}
+
 function titleCase(value) {
     return String(value || '')
         .replace(/_/g, ' ')
@@ -1088,185 +1109,353 @@ function StockTransferWorkspace({
     submitting = false,
     warehouses = [],
 }) {
+    const [activeTab, setActiveTab] = useState('route');
+    const [productSearch, setProductSearch] = useState('');
+    const [productPage, setProductPage] = useState(1);
+    const [stepWarning, setStepWarning] = useState('');
     const selectedTotal = (form.lines || []).reduce((lineSum, line) => (
         lineSum + (line.items || []).reduce((itemSum, item) => itemSum + Number(item.base_unit_quantity || 0), 0)
     ), 0);
     const selectedBatchCount = (form.lines || []).reduce((sum, line) => sum + (line.items || []).length, 0);
     const selectedProductCount = (form.lines || []).filter((line) => line.product_id && (line.items || []).length > 0).length;
+    const selectedProductIds = (form.lines || []).map((line) => String(line.product_id)).filter(Boolean);
     const routeReady = Boolean(form.company_id && form.source_warehouse_id && form.destination_warehouse_id);
     const selectedCompany = companies.find((company) => String(company.id) === String(form.company_id));
     const sourceWarehouse = warehouses.find((warehouse) => String(warehouse.id) === String(form.source_warehouse_id));
     const destinationWarehouse = warehouses.find((warehouse) => String(warehouse.id) === String(form.destination_warehouse_id));
+    const activeIndex = STOCK_TRANSFER_TABS.findIndex((tab) => tab.key === activeTab);
+    const filteredProducts = products.filter((product) => productMatchesTransferSearch(product, productSearch));
+    const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / STOCK_TRANSFER_PRODUCT_PAGE_SIZE));
+    const currentProductPage = Math.min(productPage, totalProductPages);
+    const productPageStart = filteredProducts.length ? (currentProductPage - 1) * STOCK_TRANSFER_PRODUCT_PAGE_SIZE : 0;
+    const productPageEnd = Math.min(productPageStart + STOCK_TRANSFER_PRODUCT_PAGE_SIZE, filteredProducts.length);
+    const visibleProducts = filteredProducts.slice(productPageStart, productPageEnd);
+
+    useEffect(() => {
+        setProductPage(1);
+    }, [productSearch, products.length]);
+
+    useEffect(() => {
+        if (!routeReady && activeTab !== 'route') {
+            setActiveTab('route');
+        }
+    }, [routeReady, activeTab]);
+
+    function goToStep(tabKey) {
+        const nextIndex = STOCK_TRANSFER_TABS.findIndex((tab) => tab.key === tabKey);
+
+        if (nextIndex < 0) {
+            return;
+        }
+
+        if (nextIndex > 0 && !routeReady) {
+            setStepWarning('Select company, source warehouse, and destination warehouse first.');
+            setActiveTab('route');
+            return;
+        }
+
+        if (nextIndex > 1 && selectedProductIds.length === 0) {
+            setStepWarning('Select at least one product first.');
+            setActiveTab('products');
+            return;
+        }
+
+        if (nextIndex > 2 && selectedTotal <= 0) {
+            setStepWarning('Select at least one available batch quantity to transfer.');
+            setActiveTab('batches');
+            return;
+        }
+
+        setStepWarning('');
+        setActiveTab(tabKey);
+    }
+
+    function nextStep() {
+        goToStep(STOCK_TRANSFER_TABS[Math.min(activeIndex + 1, STOCK_TRANSFER_TABS.length - 1)]?.key || activeTab);
+    }
+
+    function previousStep() {
+        goToStep(STOCK_TRANSFER_TABS[Math.max(activeIndex - 1, 0)]?.key || activeTab);
+    }
+
+    function toggleProduct(product) {
+        const selectedLine = (form.lines || []).find((line) => String(line.product_id) === String(product.id));
+
+        if (selectedLine) {
+            onRemoveLine(selectedLine.id);
+            setStepWarning('');
+            return;
+        }
+
+        onAddLine(product);
+        setStepWarning('');
+    }
+
+    function clearProducts() {
+        (form.lines || []).forEach((line) => onRemoveLine(line.id));
+        setStepWarning('');
+    }
+
+    const stepAction = (
+        <div className="order-wizard-actions">
+            {activeIndex > 0 && <button className="btn secondary" disabled={submitting} onClick={previousStep} type="button">Previous</button>}
+            {activeTab !== 'preview' ? (
+                <button className="btn primary" disabled={submitting} onClick={nextStep} type="button">Next</button>
+            ) : (
+                <button className="btn primary" disabled={!routeReady || selectedTotal <= 0 || submitting} onClick={onSubmit} type="button">
+                    {submitting ? 'Transferring...' : 'Create transfer'}
+                </button>
+            )}
+        </div>
+    );
+    const batchLines = (form.lines || []).filter((line) => line.product_id);
 
     return (
-        <div className="transfer-workspace">
-            <Panel eyebrow="Transfer Setup" title="Warehouse route">
-                <div className={`transfer-route-strip ${routeReady ? 'is-ready' : ''}`}>
-                    <div>
-                        <span>Company</span>
-                        <strong>{selectedCompany?.name || 'Select company'}</strong>
+        <div className="order-wizard-page transfer-workspace">
+            <div className="order-wizard-shell">
+                <div className="order-wizard-topbar">
+                    <div className="order-wizard-tabs" role="tablist">
+                        {STOCK_TRANSFER_TABS.map((tab, index) => (
+                            <button
+                                aria-label={`Step ${index + 1}: ${tab.label}`}
+                                className={tab.key === activeTab ? 'active' : ''}
+                                key={tab.key}
+                                onClick={() => goToStep(tab.key)}
+                                title={tab.label}
+                                type="button"
+                            >
+                                <span>{index + 1}</span>
+                            </button>
+                        ))}
                     </div>
-                    <Icon name="arrowRight" size={18} />
-                    <div>
-                        <span>From</span>
-                        <strong>{sourceWarehouse?.name || 'Source warehouse'}</strong>
-                    </div>
-                    <Icon name="arrowRight" size={18} />
-                    <div>
-                        <span>To</span>
-                        <strong>{destinationWarehouse?.name || 'Destination warehouse'}</strong>
-                    </div>
+                    <div className="order-wizard-step-label">{STOCK_TRANSFER_TABS[activeIndex]?.label}</div>
                 </div>
-                <div className="transfer-route-fields">
-                    <label className="form-field">
-                        <span>Company</span>
-                        <select disabled={submitting} name="company_id" onChange={onChange} required value={form.company_id}>
-                            <option value="" disabled>Select company</option>
-                            {companies.map((company) => (
-                                <option key={company.id} value={company.id}>{company.name}</option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="form-field">
-                        <span>From warehouse</span>
-                        <select disabled={submitting} name="source_warehouse_id" onChange={onChange} required value={form.source_warehouse_id}>
-                            <option value="" disabled>Select source</option>
-                            {warehouses.map((warehouse) => (
-                                <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="form-field">
-                        <span>To warehouse</span>
-                        <select disabled={submitting} name="destination_warehouse_id" onChange={onChange} required value={form.destination_warehouse_id}>
-                            <option value="" disabled>Select destination</option>
-                            {warehouses
-                                .filter((warehouse) => String(warehouse.id) !== String(form.source_warehouse_id))
-                                .map((warehouse) => (
-                                    <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
-                                ))}
-                        </select>
-                    </label>
-                </div>
-            </Panel>
 
-            <Panel
-                eyebrow="Batch Selection"
-                title="Products and available batches"
-                action={<button className="btn secondary" disabled={!routeReady || productsLoading || submitting} onClick={onAddLine} type="button">Add product</button>}
-            >
-                {error && <span className="error-text">{error}</span>}
-                {!routeReady ? (
-                    <p className="helper-copy">Select company, source warehouse, and destination warehouse before adding products.</p>
-                ) : (
-                    <div className="receiving-items">
-                        {(form.lines || []).map((line, index) => {
-                            const selectedItemsByBatch = new Map((line.items || []).map((item) => [String(item.stock_batch_id), item]));
-                            const product = findReceiptProduct(products, line.product_id);
-                            const lineTotal = (line.items || []).reduce((sum, item) => sum + Number(item.base_unit_quantity || 0), 0);
+                {(error || stepWarning) && <div className="form-error">{error || stepWarning}</div>}
 
-                            return (
-                                <article className="receiving-item transfer-product-item" key={line.id}>
-                                    <div className="transfer-product-header">
-                                        <strong>Product #{index + 1}</strong>
-                                        <button className="btn secondary transfer-remove-btn" disabled={submitting} onClick={() => onRemoveLine(line.id)} type="button">Remove</button>
-                                    </div>
-                                    <div className="transfer-product-toolbar">
-                                        <label className="form-field transfer-product-field">
-                                            <span>Product</span>
-                                            <select disabled={productsLoading || submitting} onChange={(event) => onLineProductChange(line.id, event.target.value)} required value={line.product_id}>
-                                                <option value="" disabled>{productsLoading ? 'Loading products' : 'Select product'}</option>
-                                                {products.map((item) => (
-                                                    <option key={item.id} value={item.id}>{item.name}</option>
-                                                ))}
-                                            </select>
-                                        </label>
-                                        <div className="transfer-line-stats">
-                                            <span><strong>{formatAmount(lineTotal)}</strong><small>Base qty</small></span>
-                                            <span><strong>{product?.base_unit?.name || product?.baseUnit?.name || 'Base unit'}</strong><small>Unit</small></span>
-                                            <span><strong>{formatAmount((line.items || []).length)}</strong><small>Batches</small></span>
-                                        </div>
-                                    </div>
-                                    {line.batches_error && <span className="error-text">{line.batches_error}</span>}
-                                    {!line.product_id ? (
-                                        <p className="helper-copy">Choose a product to show source warehouse batches.</p>
-                                    ) : line.batches_loading ? (
-                                        <p className="helper-copy">Loading available batches...</p>
-                                    ) : (line.batches || []).length === 0 ? (
-                                        <p className="helper-copy">No available batches for this product in the source warehouse.</p>
-                                    ) : (
-                                        <div className="transfer-batch-list">
-                                            <div className="transfer-batch-header">
-                                                <span>Batch</span>
-                                                <span>Expiry</span>
-                                                <span>Available</span>
-                                                <span>Transfer qty</span>
+                {activeTab === 'route' && (
+                    <Panel action={stepAction} eyebrow="Step 1" title="Warehouse route">
+                        <div className={`transfer-route-strip ${routeReady ? 'is-ready' : ''}`}>
+                            <div>
+                                <span>Company</span>
+                                <strong>{selectedCompany?.name || 'Select company'}</strong>
+                            </div>
+                            <Icon name="arrowRight" size={18} />
+                            <div>
+                                <span>From</span>
+                                <strong>{sourceWarehouse?.name || 'Source warehouse'}</strong>
+                            </div>
+                            <Icon name="arrowRight" size={18} />
+                            <div>
+                                <span>To</span>
+                                <strong>{destinationWarehouse?.name || 'Destination warehouse'}</strong>
+                            </div>
+                        </div>
+                        <div className="transfer-route-fields">
+                            <label className="form-field">
+                                <span>Company</span>
+                                <select disabled={submitting} name="company_id" onChange={onChange} required value={form.company_id}>
+                                    <option value="" disabled>Select company</option>
+                                    {companies.map((company) => (
+                                        <option key={company.id} value={company.id}>{company.name}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-field">
+                                <span>From warehouse</span>
+                                <select disabled={submitting} name="source_warehouse_id" onChange={onChange} required value={form.source_warehouse_id}>
+                                    <option value="" disabled>Select source</option>
+                                    {warehouses.map((warehouse) => (
+                                        <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="form-field">
+                                <span>To warehouse</span>
+                                <select disabled={submitting} name="destination_warehouse_id" onChange={onChange} required value={form.destination_warehouse_id}>
+                                    <option value="" disabled>Select destination</option>
+                                    {warehouses
+                                        .filter((warehouse) => String(warehouse.id) !== String(form.source_warehouse_id))
+                                        .map((warehouse) => (
+                                            <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>
+                                        ))}
+                                </select>
+                            </label>
+                        </div>
+                    </Panel>
+                )}
+
+                {activeTab === 'products' && (
+                    <Panel action={stepAction} eyebrow="Step 2" title="Product selection">
+                        <div className="order-wizard-product-toolbar">
+                            <label className="form-field">
+                                <span>Search product</span>
+                                <input disabled={!routeReady || productsLoading} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search by product name, SKU, barcode, or brand" type="search" value={productSearch} />
+                            </label>
+                            <article>
+                                <span>Selected</span>
+                                <strong>{selectedProductIds.length}</strong>
+                                <button disabled={!selectedProductIds.length || submitting} onClick={clearProducts} type="button">Clear all</button>
+                            </article>
+                        </div>
+                        {!routeReady && <span className="muted">Select company, source warehouse, and destination warehouse first.</span>}
+                        {productsLoading && <span className="muted">Loading product list...</span>}
+                        {!productsLoading && routeReady && (
+                            <>
+                                <div className="order-wizard-product-list">
+                                    {visibleProducts.map((product) => {
+                                        const selected = selectedProductIds.includes(String(product.id));
+                                        const unit = product.base_unit?.abbreviation || product.base_unit?.name || 'base units';
+
+                                        return (
+                                            <button
+                                                className={selected ? 'order-wizard-product-row selected' : 'order-wizard-product-row'}
+                                                key={product.id}
+                                                onClick={() => toggleProduct(product)}
+                                                type="button"
+                                            >
+                                                <span>
+                                                    <strong>{product.name}</strong>
+                                                    <small>{product.sku || '-'} / {product.barcode || '-'} / {product.brand || '-'}</small>
+                                                </span>
+                                                <span>
+                                                    <small>Stock unit</small>
+                                                    <strong>{unit}</strong>
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                    {!filteredProducts.length && <span className="muted">No products match this search.</span>}
+                                </div>
+                                {filteredProducts.length > STOCK_TRANSFER_PRODUCT_PAGE_SIZE && (
+                                    <PaginationBar
+                                        currentPage={currentProductPage}
+                                        from={productPageStart + 1}
+                                        lastPage={totalProductPages}
+                                        onNext={() => setProductPage((value) => Math.min(totalProductPages, value + 1))}
+                                        onPrevious={() => setProductPage((value) => Math.max(1, value - 1))}
+                                        to={productPageEnd}
+                                        total={filteredProducts.length}
+                                    />
+                                )}
+                            </>
+                        )}
+                    </Panel>
+                )}
+
+                {activeTab === 'batches' && (
+                    <Panel action={stepAction} eyebrow="Step 3" title="Batch quantities">
+                        {!batchLines.length ? (
+                            <p className="helper-copy">Select products first.</p>
+                        ) : (
+                            <div className="receiving-items">
+                                {batchLines.map((line, index) => {
+                                    const selectedItemsByBatch = new Map((line.items || []).map((item) => [String(item.stock_batch_id), item]));
+                                    const product = findReceiptProduct(products, line.product_id);
+                                    const lineTotal = (line.items || []).reduce((sum, item) => sum + Number(item.base_unit_quantity || 0), 0);
+
+                                    return (
+                                        <article className="receiving-item transfer-product-item" key={line.id}>
+                                            <div className="transfer-product-header">
+                                                <strong>{product?.name || line.product_name || `Product #${index + 1}`}</strong>
+                                                <button className="btn secondary transfer-remove-btn" disabled={submitting} onClick={() => onRemoveLine(line.id)} type="button">Remove</button>
                                             </div>
-                                            {line.batches.map((batch) => {
-                                                const selectedItem = selectedItemsByBatch.get(String(batch.id));
-                                                const checked = Boolean(selectedItem);
-                                                const available = Number(batch.available_base_quantity || 0);
-                                                const unit = batch.product?.base_unit?.abbreviation || batch.product?.base_unit?.name || product?.base_unit?.abbreviation || product?.base_unit?.name || 'base units';
-                                                const expiry = batch.expiry_date ? String(batch.expiry_date).slice(0, 10) : '-';
-                                                const quantity = Number(selectedItem?.base_unit_quantity || 0);
-                                                const quantityInvalid = checked && (quantity < 1 || quantity > available);
-
-                                                return (
-                                                    <div className={`transfer-batch-row ${checked ? 'is-selected' : ''} ${quantityInvalid ? 'has-error' : ''}`} key={batch.id}>
-                                                        <label className="checkbox-field">
-                                                            <input checked={checked} disabled={submitting} onChange={(event) => onBatchToggle(line.id, batch, event.target.checked)} type="checkbox" />
-                                                            <span>{batch.batch_no || `Batch #${batch.id}`}</span>
-                                                        </label>
-                                                        <span>{expiry}</span>
-                                                        <span>{formatAmount(available)} {unit}</span>
-                                                        <div className="transfer-qty-control">
-                                                            <input
-                                                                aria-label={`Transfer quantity for ${batch.batch_no || `Batch #${batch.id}`}`}
-                                                                disabled={!checked || submitting}
-                                                                max={available}
-                                                                min="1"
-                                                                onChange={(event) => onBatchQuantityChange(line.id, batch.id, event.target.value)}
-                                                                type="number"
-                                                                value={selectedItem?.base_unit_quantity || ''}
-                                                            />
-                                                            <button
-                                                                className="transfer-max-btn"
-                                                                disabled={!checked || submitting}
-                                                                onClick={() => onBatchQuantityChange(line.id, batch.id, String(available))}
-                                                                type="button"
-                                                            >
-                                                                Max
-                                                            </button>
-                                                            <small>{unit}</small>
-                                                        </div>
+                                            <div className="transfer-line-stats">
+                                                <span><strong>{formatAmount(lineTotal)}</strong><small>Base qty</small></span>
+                                                <span><strong>{product?.base_unit?.name || product?.baseUnit?.name || 'Base unit'}</strong><small>Unit</small></span>
+                                                <span><strong>{formatAmount((line.items || []).length)}</strong><small>Batches</small></span>
+                                            </div>
+                                            {line.batches_error && <span className="error-text">{line.batches_error}</span>}
+                                            {line.batches_loading ? (
+                                                <p className="helper-copy">Loading available batches...</p>
+                                            ) : (line.batches || []).length === 0 ? (
+                                                <p className="helper-copy">No available batches for this product in the source warehouse.</p>
+                                            ) : (
+                                                <div className="transfer-batch-list">
+                                                    <div className="transfer-batch-header">
+                                                        <span>Batch</span>
+                                                        <span>Expiry</span>
+                                                        <span>Available</span>
+                                                        <span>Transfer qty</span>
                                                     </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </article>
-                            );
-                        })}
-                    </div>
-                )}
-                {routeReady && (form.lines || []).length === 0 && (
-                    <p className="helper-copy">Add a product to start selecting available batches.</p>
-                )}
-            </Panel>
+                                                    {line.batches.map((batch) => {
+                                                        const selectedItem = selectedItemsByBatch.get(String(batch.id));
+                                                        const checked = Boolean(selectedItem);
+                                                        const available = Number(batch.available_base_quantity || 0);
+                                                        const unit = batch.product?.base_unit?.abbreviation || batch.product?.base_unit?.name || product?.base_unit?.abbreviation || product?.base_unit?.name || 'base units';
+                                                        const expiry = batch.expiry_date ? String(batch.expiry_date).slice(0, 10) : '-';
+                                                        const quantity = Number(selectedItem?.base_unit_quantity || 0);
+                                                        const quantityInvalid = checked && (quantity < 1 || quantity > available);
 
-            <Panel eyebrow="Transfer Summary" title="Review and submit" className="transfer-summary-panel">
-                <div className="receiving-summary">
-                    <div><span>Products</span><strong>{formatAmount(selectedProductCount)}</strong></div>
-                    <div><span>Batches</span><strong>{formatAmount(selectedBatchCount)}</strong></div>
-                    <div><span>Total base quantity</span><strong>{formatAmount(selectedTotal)}</strong></div>
-                </div>
-                <FormField label="Note" name="note" onChange={onChange} placeholder="Optional transfer note" type="textarea" value={form.note} />
-                <div className="page-heading-actions transfer-submit-actions">
-                    <button className="btn primary" disabled={!routeReady || selectedTotal <= 0 || submitting} onClick={onSubmit} type="button">
-                        {submitting ? 'Transferring...' : 'Create transfer'}
-                    </button>
-                </div>
-            </Panel>
+                                                        return (
+                                                            <div className={`transfer-batch-row ${checked ? 'is-selected' : ''} ${quantityInvalid ? 'has-error' : ''}`} key={batch.id}>
+                                                                <label className="checkbox-field">
+                                                                    <input checked={checked} disabled={submitting} onChange={(event) => onBatchToggle(line.id, batch, event.target.checked)} type="checkbox" />
+                                                                    <span>{batch.batch_no || `Batch #${batch.id}`}</span>
+                                                                </label>
+                                                                <span>{expiry}</span>
+                                                                <span>{formatAmount(available)} {unit}</span>
+                                                                <div className="transfer-qty-control">
+                                                                    <input
+                                                                        aria-label={`Transfer quantity for ${batch.batch_no || `Batch #${batch.id}`}`}
+                                                                        disabled={!checked || submitting}
+                                                                        max={available}
+                                                                        min="1"
+                                                                        onChange={(event) => onBatchQuantityChange(line.id, batch.id, event.target.value)}
+                                                                        type="number"
+                                                                        value={selectedItem?.base_unit_quantity || ''}
+                                                                    />
+                                                                    <button
+                                                                        className="transfer-max-btn"
+                                                                        disabled={!checked || submitting}
+                                                                        onClick={() => onBatchQuantityChange(line.id, batch.id, String(available))}
+                                                                        type="button"
+                                                                    >
+                                                                        Max
+                                                                    </button>
+                                                                    <small>{unit}</small>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </article>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </Panel>
+                )}
+
+                {activeTab === 'preview' && (
+                    <Panel action={stepAction} eyebrow="Step 4" title="Final preview and confirm" className="transfer-summary-panel">
+                        <div className="order-wizard-preview-grid">
+                            <article><span>Company</span><strong>{selectedCompany?.name || '-'}</strong></article>
+                            <article><span>Source</span><strong>{sourceWarehouse?.name || '-'}</strong></article>
+                            <article><span>Destination</span><strong>{destinationWarehouse?.name || '-'}</strong></article>
+                            <article><span>Products</span><strong>{formatAmount(selectedProductCount)}</strong></article>
+                            <article><span>Batches</span><strong>{formatAmount(selectedBatchCount)}</strong></article>
+                            <article><span>Total base quantity</span><strong>{formatAmount(selectedTotal)}</strong></article>
+                        </div>
+                        <div className="order-wizard-preview-lines">
+                            {batchLines.map((line) => {
+                                const product = findReceiptProduct(products, line.product_id);
+
+                                return (
+                                    <div key={line.id}>
+                                        <strong>{product?.name || line.product_name || `Product #${line.product_id}`}</strong>
+                                        <span>{formatAmount((line.items || []).reduce((sum, item) => sum + Number(item.base_unit_quantity || 0), 0))} base units</span>
+                                        <span>{formatAmount((line.items || []).length)} selected batches</span>
+                                    </div>
+                                );
+                            })}
+                            {!batchLines.length && <span className="muted">No products selected.</span>}
+                        </div>
+                        <FormField label="Note" name="note" onChange={onChange} placeholder="Optional transfer note" type="textarea" value={form.note} />
+                    </Panel>
+                )}
+            </div>
         </div>
     );
 }
@@ -3425,7 +3614,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [salesReturnSubmitting, setSalesReturnSubmitting] = useState(false);
     const [deliverySubmitting, setDeliverySubmitting] = useState(false);
     const receivingProductsResource = useApiResource(isReceivingPage && modalOpen && stockReceiptForm.company_id ? `/lookups/products?company_id=${stockReceiptForm.company_id}` : '');
-    const stockTransferProductsResource = useApiResource(isStockTransferCreatePage && stockTransferForm.company_id ? `/lookups/products?company_id=${stockTransferForm.company_id}` : '');
+    const stockTransferProductsResource = useApiResource(isStockTransferCreatePage && stockTransferForm.company_id ? `/lookups/products?company_id=${stockTransferForm.company_id}&limit=1000` : '');
     const stockAdjustmentProductsResource = useApiResource(isStockWorkspacePage && modalOpen && stockAdjustmentForm.company_id ? `/lookups/products?company_id=${stockAdjustmentForm.company_id}` : '');
     const officeOrderCustomersResource = useApiResource(officeOrderModalOpen ? '/lookups/customers' : '');
     const officeOrderRepresentativesResource = useApiResource(officeOrderModalOpen && officeOrderForm.company_id ? `/lookups/sales-representatives?company_id=${officeOrderForm.company_id}` : '');
@@ -5687,12 +5876,18 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         });
         setStockTransferError('');
     };
-    const addStockTransferLine = () => {
+    const addStockTransferLine = (product = null) => {
+        const line = newStockTransferLine(product?.id || '', product?.name || '');
+
         setStockTransferForm((current) => ({
             ...current,
-            lines: [...current.lines, newStockTransferLine()],
+            lines: [...current.lines, line],
         }));
         setStockTransferError('');
+
+        if (product?.id && stockTransferForm.source_warehouse_id) {
+            loadStockTransferLineBatches(line.id, product.id, stockTransferForm.source_warehouse_id);
+        }
     };
     const removeStockTransferLine = (lineId) => {
         setStockTransferForm((current) => {

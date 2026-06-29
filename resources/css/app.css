@@ -3968,6 +3968,10 @@ tbody tr:hover {
     gap: 12px;
 }
 
+.transfer-workspace .order-wizard-shell > .form-error {
+    margin: 8px 0 12px;
+}
+
 .transfer-route-strip {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
