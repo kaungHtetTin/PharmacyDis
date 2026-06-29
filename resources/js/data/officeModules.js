@@ -255,11 +255,11 @@ export const officeModules = {
     invoices: {
         eyebrow: 'Documents',
         title: 'Invoices',
-        description: 'Generate invoices from approved order records, then print sales invoices, delivery vouchers, and payment receipts.',
-        primaryAction: 'Generate invoice from order',
-        primaryActionTarget: 'orders',
+        description: 'Export a PDF-ready invoice report using the current search, company, status, and date filters. The export includes all matching records, not just the current page or Need action list.',
+        primaryAction: 'Export PDF',
         detailActionLabel: 'View invoice',
         detailPageKey: 'invoice-detail',
+        hidePrimaryAction: true,
         showViewAction: false,
         showEditAction: false,
         rowActions: [

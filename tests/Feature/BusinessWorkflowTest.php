@@ -102,6 +102,112 @@ class BusinessWorkflowTest extends TestCase
         $this->assertSame('credit', $invoice->sale_type);
     }
 
+    public function test_invoice_report_lists_all_filtered_invoices_ordered_by_date(): void
+    {
+        $company = Company::query()->firstOrFail();
+        $customer = Customer::query()->firstOrFail();
+
+        foreach (range(1, 30) as $index) {
+            $invoiceDate = \Carbon\Carbon::create(2026, 1, 1)->addDays(30 - $index);
+
+            Invoice::query()->create([
+                'invoice_no' => sprintf('INV-REPORT-%02d', $index),
+                'company_id' => $company->id,
+                'customer_id' => $customer->id,
+                'invoice_date' => $invoiceDate->toDateString(),
+                'due_date' => $invoiceDate->copy()->addDays(30)->toDateString(),
+                'status' => 'issued',
+                'subtotal_amount' => 1000 + $index,
+                'total_amount' => 1000 + $index,
+                'paid_amount' => 100 + $index,
+                'balance_amount' => 900,
+                'remark' => "Report remark {$index}",
+            ]);
+        }
+        Invoice::query()->create([
+            'invoice_no' => 'INV-REPORT-PAID',
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'invoice_date' => '2026-01-15',
+            'due_date' => '2026-02-15',
+            'status' => 'paid',
+            'subtotal_amount' => 2000,
+            'total_amount' => 2000,
+            'paid_amount' => 2000,
+            'balance_amount' => 0,
+            'remark' => 'Paid report row',
+        ]);
+
+        $response = $this->get('/office/invoices/report?' . http_build_query([
+            'company_id' => $company->id,
+            'date_from' => '2026-01-01',
+            'date_to' => '2026-01-31',
+            'search' => 'INV-REPORT',
+            'status' => 'issued',
+        ]))
+            ->assertOk()
+            ->assertSee('INV-REPORT-30')
+            ->assertSee('INV-REPORT-01')
+            ->assertSee($company->name)
+            ->assertSee('Report remark 30')
+            ->assertSee('Save PDF')
+            ->assertSee('Print')
+            ->assertSee('body.invoice-report-page *', false);
+
+        $content = $response->getContent();
+
+        $this->assertLessThan(
+            strpos($content, 'INV-REPORT-01'),
+            strpos($content, 'INV-REPORT-30')
+        );
+
+        $this->get('/office/invoices/report?' . http_build_query([
+            'action_only' => '1',
+            'date_from' => '2026-01-01',
+            'date_to' => '2026-01-31',
+            'search' => 'INV-REPORT',
+        ]))
+            ->assertOk()
+            ->assertSee('INV-REPORT-PAID')
+            ->assertSee('Paid report row');
+
+        Invoice::query()->create([
+            'invoice_no' => 'INV-REPORT-CURRENT-MONTH',
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'invoice_date' => now()->startOfMonth()->addDay()->toDateString(),
+            'due_date' => now()->startOfMonth()->addDays(10)->toDateString(),
+            'status' => 'issued',
+            'subtotal_amount' => 3000,
+            'total_amount' => 3000,
+            'paid_amount' => 0,
+            'balance_amount' => 3000,
+            'remark' => 'Default current month row',
+        ]);
+        Invoice::query()->create([
+            'invoice_no' => 'INV-REPORT-LAST-MONTH',
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'invoice_date' => now()->subMonthNoOverflow()->startOfMonth()->addDay()->toDateString(),
+            'due_date' => now()->toDateString(),
+            'status' => 'issued',
+            'subtotal_amount' => 4000,
+            'total_amount' => 4000,
+            'paid_amount' => 0,
+            'balance_amount' => 4000,
+            'remark' => 'Last month row',
+        ]);
+
+        $this->get('/office/invoices/report?' . http_build_query([
+            'search' => 'INV-REPORT',
+        ]))
+            ->assertOk()
+            ->assertSee(now()->startOfMonth()->toDateString())
+            ->assertSee(now()->endOfMonth()->toDateString())
+            ->assertSee('INV-REPORT-CURRENT-MONTH')
+            ->assertDontSee('INV-REPORT-LAST-MONTH');
+    }
+
     public function test_blocked_customer_company_credit_prevents_sales_order_creation(): void
     {
         $customer = Customer::where('name', 'Aung Pharmacy')->firstOrFail();
@@ -825,6 +931,81 @@ class BusinessWorkflowTest extends TestCase
             ]))
             ->assertOk()
             ->assertJsonCount(0, 'data');
+    }
+
+    public function test_inventory_report_exports_all_matching_rows_with_nearest_expiry(): void
+    {
+        $company = Company::query()->firstOrFail();
+        $warehouse = Warehouse::query()->firstOrFail();
+        $unit = Unit::query()->firstOrCreate(
+            ['abbreviation' => 'RptBottle'],
+            ['name' => 'Report Bottle', 'status' => 'active']
+        );
+        $boxUnit = Unit::query()->firstOrCreate(
+            ['abbreviation' => 'RptBox'],
+            ['name' => 'Report Box', 'status' => 'active']
+        );
+        $product = Product::query()->create([
+            'company_id' => $company->id,
+            'base_unit_id' => $unit->id,
+            'sku' => 'INV-REPORT-STOCK',
+            'name' => 'Inventory Report Stock',
+            'low_stock_threshold_base_units' => 0,
+            'status' => 'active',
+        ]);
+        ProductUnit::query()->create([
+            'product_id' => $product->id,
+            'unit_id' => $unit->id,
+            'conversion_factor_to_base' => 1,
+            'is_base_unit' => true,
+            'is_default_sales_unit' => false,
+            'status' => 'active',
+        ]);
+        ProductUnit::query()->create([
+            'product_id' => $product->id,
+            'unit_id' => $boxUnit->id,
+            'conversion_factor_to_base' => 12,
+            'is_base_unit' => false,
+            'is_default_sales_unit' => true,
+            'status' => 'active',
+        ]);
+
+        StockBatch::query()->create([
+            'company_id' => $company->id,
+            'warehouse_id' => $warehouse->id,
+            'product_id' => $product->id,
+            'batch_no' => 'REPORT-FAR',
+            'expiry_date' => '2026-09-15',
+            'received_base_quantity' => 12,
+            'available_base_quantity' => 12,
+        ]);
+        StockBatch::query()->create([
+            'company_id' => $company->id,
+            'warehouse_id' => $warehouse->id,
+            'product_id' => $product->id,
+            'batch_no' => 'REPORT-NEAR',
+            'expiry_date' => '2026-03-01',
+            'received_base_quantity' => 6,
+            'available_base_quantity' => 6,
+        ]);
+
+        $this->get('/office/inventory/report?' . http_build_query([
+            'action_only' => '1',
+            'company_id' => $company->id,
+            'search' => 'INV-REPORT-STOCK',
+        ]))
+            ->assertOk()
+            ->assertSee('No.')
+            ->assertSee('Company')
+            ->assertSee('Product name')
+            ->assertSee('Qty')
+            ->assertSee('Expire')
+            ->assertSee('Stock value')
+            ->assertSee($company->name)
+            ->assertSee('Inventory Report Stock')
+            ->assertSee('1 RptBox, 6 RptBottle')
+            ->assertSee('01-Mar-2026')
+            ->assertDontSee('15-Sep-2026');
     }
 
     public function test_finance_report_date_range_includes_stock_holding_value(): void

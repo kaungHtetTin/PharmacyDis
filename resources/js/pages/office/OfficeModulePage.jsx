@@ -2708,6 +2708,29 @@ function buildInventoryListEndpoint(filters) {
     return `/office/stock/current?${params.toString()}`;
 }
 
+function buildInventoryReportUrl(filters) {
+    const baseUrl = String(window.appConfig?.baseUrl || '').replace(/\/+$/g, '');
+    const params = new URLSearchParams();
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    if (filters.warehouse_id) {
+        params.set('warehouse_id', filters.warehouse_id);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    return `${baseUrl}/office/inventory/report?${params.toString()}`;
+}
+
 function buildReceivableListEndpoint(filters) {
     const params = new URLSearchParams({
         action_only: filters.action_only ? '1' : '0',
@@ -2935,6 +2958,33 @@ function buildInvoiceListEndpoint(filters, invoiceId = '') {
     }
 
     return `/office/invoices?${params.toString()}`;
+}
+
+function buildInvoiceReportUrl(filters) {
+    const baseUrl = String(window.appConfig?.baseUrl || '').replace(/\/+$/g, '');
+    const params = new URLSearchParams();
+
+    if (filters.search) {
+        params.set('search', filters.search);
+    }
+
+    if (filters.company_id) {
+        params.set('company_id', filters.company_id);
+    }
+
+    if (filters.status) {
+        params.set('status', filters.status);
+    }
+
+    if (filters.date_from) {
+        params.set('date_from', filters.date_from);
+    }
+
+    if (filters.date_to) {
+        params.set('date_to', filters.date_to);
+    }
+
+    return `${baseUrl}/office/invoices/report?${params.toString()}`;
 }
 
 function buildSalesReportEndpoint(filters) {
@@ -3410,6 +3460,12 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const primaryAction = {
         label: screen.primaryAction,
         target: screen.primaryActionTarget,
+    };
+    const openInvoiceReport = () => {
+        window.open(buildInvoiceReportUrl(invoiceListFilters), '_blank', 'noopener,noreferrer');
+    };
+    const openInventoryReport = () => {
+        window.open(buildInventoryReportUrl(inventoryListFilters), '_blank', 'noopener,noreferrer');
     };
     const isActionListPage = isPharmaciesPage || isOrdersPage || isInvoicesPage || isReceivingPage || isInventoryPage || isReceivablesPage || isPayablesPage;
     const actionListMode = isPharmaciesPage
@@ -6497,7 +6553,18 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 </Panel>
             )}
 
-            {!isSettingsPage && !isStockTransferCreatePage && !isLiveReportPage && <Panel eyebrow="Workspace" title={`${screen.title} List`}>
+            {!isSettingsPage && !isStockTransferCreatePage && !isLiveReportPage && (
+                <Panel
+                    action={
+                        isInvoicesPage
+                            ? <button className="btn primary" onClick={openInvoiceReport} type="button">Export PDF</button>
+                            : isInventoryPage
+                                ? <button className="btn primary" onClick={openInventoryReport} type="button">Export PDF</button>
+                                : null
+                    }
+                    eyebrow="Workspace"
+                    title={`${screen.title} List`}
+                >
                 {isActionListPage && (
                     <OperationListModeSwitch
                         actionOnly={Boolean(actionListMode)}
@@ -7027,7 +7094,8 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         total={payablePagination.total}
                     />
                 )}
-            </Panel>}
+                </Panel>
+            )}
 
             <Modal
                 actions={modalScreen.stockReceivingForm && !isReceivingPage ? (

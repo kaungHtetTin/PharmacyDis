@@ -60,6 +60,45 @@ function toSalesUnitQuantity(baseQuantity, product = {}) {
     return Number(baseQuantity || 0) / salesUnitConversion(product);
 }
 
+function formatProductQuantity(baseQuantity, product = {}) {
+    let remaining = Math.max(0, Math.floor(Number(baseQuantity || 0)));
+    const units = (product?.product_units || [])
+        .filter((productUnit) => (productUnit.status || 'active') === 'active')
+        .map((productUnit) => ({
+            conversion: Math.max(1, Number(productUnit.conversion_factor_to_base || 1)),
+            label: productUnit.unit?.abbreviation || productUnit.unit?.name || 'unit',
+        }))
+        .sort((left, right) => right.conversion - left.conversion);
+
+    if (!units.length) {
+        const unit = product.base_unit?.abbreviation || product.base_unit?.name || 'base units';
+
+        return `${money(remaining)} ${unit}`;
+    }
+
+    const parts = [];
+
+    units.forEach((unit) => {
+        const quantity = Math.floor(remaining / unit.conversion);
+
+        if (quantity <= 0) {
+            return;
+        }
+
+        parts.push(`${money(quantity)} ${unit.label}`);
+        remaining -= quantity * unit.conversion;
+    });
+
+    if (remaining > 0) {
+        const baseUnit = units.find((unit) => unit.conversion === 1);
+        const label = baseUnit?.label || product.base_unit?.abbreviation || product.base_unit?.name || 'base units';
+
+        parts.push(`${money(remaining)} ${label}`);
+    }
+
+    return parts.length ? parts.join(', ') : `0 ${units[units.length - 1]?.label || 'base units'}`;
+}
+
 function mapInvoiceItems(items = []) {
     return items.map((item) => ({
         id: item.id,
@@ -499,7 +538,6 @@ export function mapStock(response) {
     return unwrapCollection(response).map((stock) => {
         const available = Number(stock.available_base_quantity || 0);
         const threshold = Number(stock.product?.low_stock_threshold_base_units || 0);
-        const availableSalesQuantity = toSalesUnitQuantity(available, stock.product);
         const expiry = dateOnly(stock.nearest_expiry_date);
         const today = new Date().toISOString().slice(0, 10);
         const nearExpiryLimit = new Date();
@@ -512,7 +550,6 @@ export function mapStock(response) {
                 : available <= threshold
                     ? 'Low Stock'
                     : 'Available';
-        const unit = salesUnitLabel(stock.product);
         const focRules = stock.product?.foc_rules || [];
         const hasActiveFoc = focRules.length > 0;
 
@@ -522,7 +559,7 @@ export function mapStock(response) {
             product: stock.product?.name || `Product #${stock.product_id}`,
             product_id: stock.product_id,
             sku: stock.product?.sku || '-',
-            available: `${money(availableSalesQuantity)} ${unit}`,
+            available: formatProductQuantity(available, stock.product),
             expiry: expiry || '-',
             focOffer: hasActiveFoc ? `${focRules.length} active` : '-',
             focRules: focRules.map((rule) => ({
