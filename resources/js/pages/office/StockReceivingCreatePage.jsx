@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import PageHeader from '../../components/shared/PageHeader';
 import Panel from '../../components/shared/Panel';
+import PaginationBar from '../../components/shared/PaginationBar';
 import useApiResource from '../../hooks/useApiResource';
 import { api } from '../../services/apiClient';
 import { unwrapCollection } from '../../services/screenAdapters';
@@ -11,6 +12,8 @@ const tabs = [
     { key: 'items', label: 'Quantity, cost, and batch' },
     { key: 'preview', label: 'Final preview and confirm' },
 ];
+
+const PRODUCT_SELECTION_PAGE_SIZE = 12;
 
 const blankLine = {
     batch_no: '',
@@ -187,7 +190,17 @@ function BasicStep({ action, companies, form, onChange, warehouses, warehousesLo
 }
 
 function ProductSelectionStep({ action, disabled, loading, onClearSelection, products, search, selectedIds, setSearch, toggleProduct }) {
+    const [page, setPage] = useState(1);
     const filteredProducts = products.filter((product) => productMatchesSearch(product, search));
+    const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_SELECTION_PAGE_SIZE));
+    const currentPage = Math.min(page, totalPages);
+    const pageStart = filteredProducts.length ? (currentPage - 1) * PRODUCT_SELECTION_PAGE_SIZE : 0;
+    const pageEnd = Math.min(pageStart + PRODUCT_SELECTION_PAGE_SIZE, filteredProducts.length);
+    const visibleProducts = filteredProducts.slice(pageStart, pageEnd);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search, products.length]);
 
     return (
         <Panel action={action} eyebrow="Step 2" title="Product selection">
@@ -205,31 +218,44 @@ function ProductSelectionStep({ action, disabled, loading, onClearSelection, pro
             {disabled && <span className="muted">Select a company first.</span>}
             {loading && <span className="muted">Loading product list...</span>}
             {!loading && !disabled && (
-                <div className="order-wizard-product-list">
-                    {filteredProducts.map((product) => {
-                        const selected = selectedIds.includes(String(product.id));
-                        const defaultUnit = getDefaultProductUnit(product);
+                <>
+                    <div className="order-wizard-product-list">
+                        {visibleProducts.map((product) => {
+                            const selected = selectedIds.includes(String(product.id));
+                            const defaultUnit = getDefaultProductUnit(product);
 
-                        return (
-                            <button
-                                className={selected ? 'order-wizard-product-row selected' : 'order-wizard-product-row'}
-                                key={product.id}
-                                onClick={() => toggleProduct(String(product.id))}
-                                type="button"
-                            >
-                                <span>
-                                    <strong>{product.name}</strong>
-                                    <small>{product.sku || '-'} / {product.barcode || '-'} / {product.brand || '-'}</small>
-                                </span>
-                                <span>
-                                    <small>Default receiving unit</small>
-                                    <strong>{defaultUnit?.unit?.name || product.base_unit?.name || 'Base unit'}</strong>
-                                </span>
-                            </button>
-                        );
-                    })}
-                    {!filteredProducts.length && <span className="muted">No products match this search.</span>}
-                </div>
+                            return (
+                                <button
+                                    className={selected ? 'order-wizard-product-row selected' : 'order-wizard-product-row'}
+                                    key={product.id}
+                                    onClick={() => toggleProduct(String(product.id))}
+                                    type="button"
+                                >
+                                    <span>
+                                        <strong>{product.name}</strong>
+                                        <small>{product.sku || '-'} / {product.barcode || '-'} / {product.brand || '-'}</small>
+                                    </span>
+                                    <span>
+                                        <small>Default receiving unit</small>
+                                        <strong>{defaultUnit?.unit?.name || product.base_unit?.name || 'Base unit'}</strong>
+                                    </span>
+                                </button>
+                            );
+                        })}
+                        {!filteredProducts.length && <span className="muted">No products match this search.</span>}
+                    </div>
+                    {filteredProducts.length > PRODUCT_SELECTION_PAGE_SIZE && (
+                        <PaginationBar
+                            currentPage={currentPage}
+                            from={pageStart + 1}
+                            lastPage={totalPages}
+                            onNext={() => setPage((value) => Math.min(totalPages, value + 1))}
+                            onPrevious={() => setPage((value) => Math.max(1, value - 1))}
+                            to={pageEnd}
+                            total={filteredProducts.length}
+                        />
+                    )}
+                </>
             )}
         </Panel>
     );
@@ -394,7 +420,7 @@ export default function StockReceivingCreatePage({ onNavigate }) {
 
     const companiesResource = useApiResource('/lookups/companies');
     const warehousesResource = useApiResource('/office/warehouses?per_page=100');
-    const productsResource = useApiResource(form.company_id ? `/lookups/products?company_id=${form.company_id}` : '');
+    const productsResource = useApiResource(form.company_id ? `/lookups/products?company_id=${form.company_id}&limit=1000` : '');
     const companies = unwrapCollection(companiesResource.data);
     const warehouses = unwrapCollection(warehousesResource.data);
     const products = unwrapCollection(productsResource.data);

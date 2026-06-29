@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import PageHeader from './PageHeader';
 import Panel from './Panel';
+import PaginationBar from './PaginationBar';
 import PharmacyStorePicker from './PharmacyStorePicker';
 import StatusBadge from './StatusBadge';
 import { isBlockedCredit } from './OrderCreditGate';
@@ -15,6 +16,8 @@ const tabs = [
     { key: 'quantity', label: 'Unit quantity and FOC' },
     { key: 'preview', label: 'Final preview and confirm' },
 ];
+
+const PRODUCT_SELECTION_PAGE_SIZE = 12;
 
 function defaultPaymentDueDate() {
     const dueDays = Number(window.appConfig?.invoiceDueDays ?? 30);
@@ -284,7 +287,17 @@ function BasicStep({
 }
 
 function ProductSelectionStep({ action, disabled, loading, onClearSelection, products, search, selectedIds, setSearch, toggleProduct }) {
+    const [page, setPage] = useState(1);
     const filteredProducts = products.filter((product) => productMatchesSearch(product, search));
+    const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_SELECTION_PAGE_SIZE));
+    const currentPage = Math.min(page, totalPages);
+    const pageStart = filteredProducts.length ? (currentPage - 1) * PRODUCT_SELECTION_PAGE_SIZE : 0;
+    const pageEnd = Math.min(pageStart + PRODUCT_SELECTION_PAGE_SIZE, filteredProducts.length);
+    const visibleProducts = filteredProducts.slice(pageStart, pageEnd);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search, products.length]);
 
     return (
         <Panel action={action} eyebrow="Step 2" title="Product selection">
@@ -302,31 +315,44 @@ function ProductSelectionStep({ action, disabled, loading, onClearSelection, pro
             {disabled && <span className="muted">Select a company first.</span>}
             {loading && <span className="muted">Loading product list...</span>}
             {!loading && !disabled && (
-                <div className="order-wizard-product-list">
-                    {filteredProducts.map((product) => {
-                        const selected = selectedIds.includes(product.id);
-                        const unit = product.base_unit?.abbreviation || product.base_unit?.name || 'base units';
+                <>
+                    <div className="order-wizard-product-list">
+                        {visibleProducts.map((product) => {
+                            const selected = selectedIds.includes(product.id);
+                            const unit = product.base_unit?.abbreviation || product.base_unit?.name || 'base units';
 
-                        return (
-                            <button
-                                className={selected ? 'order-wizard-product-row selected' : 'order-wizard-product-row'}
-                                key={product.id}
-                                onClick={() => toggleProduct(product.id)}
-                                type="button"
-                            >
-                                <span>
-                                    <strong>{product.name}</strong>
-                                    <small>{product.sku || '-'} / {product.barcode || '-'}</small>
-                                </span>
-                                <span>
-                                    <small>Available</small>
-                                    <strong>{formatAmount(product.available_base_quantity)} {unit}</strong>
-                                </span>
-                            </button>
-                        );
-                    })}
-                    {!filteredProducts.length && <span className="muted">No products match this search.</span>}
-                </div>
+                            return (
+                                <button
+                                    className={selected ? 'order-wizard-product-row selected' : 'order-wizard-product-row'}
+                                    key={product.id}
+                                    onClick={() => toggleProduct(product.id)}
+                                    type="button"
+                                >
+                                    <span>
+                                        <strong>{product.name}</strong>
+                                        <small>{product.sku || '-'} / {product.barcode || '-'}</small>
+                                    </span>
+                                    <span>
+                                        <small>Available</small>
+                                        <strong>{formatAmount(product.available_base_quantity)} {unit}</strong>
+                                    </span>
+                                </button>
+                            );
+                        })}
+                        {!filteredProducts.length && <span className="muted">No products match this search.</span>}
+                    </div>
+                    {filteredProducts.length > PRODUCT_SELECTION_PAGE_SIZE && (
+                        <PaginationBar
+                            currentPage={currentPage}
+                            from={pageStart + 1}
+                            lastPage={totalPages}
+                            onNext={() => setPage((value) => Math.min(totalPages, value + 1))}
+                            onPrevious={() => setPage((value) => Math.max(1, value - 1))}
+                            to={pageEnd}
+                            total={filteredProducts.length}
+                        />
+                    )}
+                </>
             )}
         </Panel>
     );

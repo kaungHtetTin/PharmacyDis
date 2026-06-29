@@ -81,6 +81,8 @@ class LookupController extends Controller
             ->filter()
             ->unique()
             ->values();
+        $search = trim((string) $request->query('search', ''));
+        $limit = min(max((int) $request->query('limit', 500), 50), 1000);
 
         if ($request->boolean('lightweight')) {
             $stockSummary = StockBatch::query()
@@ -108,20 +110,36 @@ class LookupController extends Controller
                 ->with(['baseUnit:id,name,abbreviation'])
                 ->when($salesRepresentative, fn ($query) => $query->where('products.company_id', $salesRepresentative->company_id))
                 ->when($request->filled('company_id'), fn ($query) => $query->where('products.company_id', $request->company_id))
+                ->when($search !== '', function ($query) use ($search) {
+                    $query->where(function ($query) use ($search) {
+                        $query->where('products.name', 'like', "%{$search}%")
+                            ->orWhere('products.sku', 'like', "%{$search}%")
+                            ->orWhere('products.barcode', 'like', "%{$search}%")
+                            ->orWhere('products.brand', 'like', "%{$search}%");
+                    });
+                })
                 ->where('products.status', 'active')
                 ->orderBy('products.name')
-                ->limit(min(max((int) $request->query('limit', 500), 50), 1000))
+                ->limit($limit)
                 ->get();
         }
 
         return Product::query()
             ->with(['company', 'category', 'baseUnit', 'productUnits.unit', 'focRules' => fn ($query) => $query->where('status', 'active')])
-            ->when($ids->isNotEmpty(), fn ($query) => $query->whereIn('id', $ids))
-            ->when($salesRepresentative, fn ($query) => $query->where('company_id', $salesRepresentative->company_id))
-            ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->when($ids->isEmpty(), fn ($query) => $query->limit(50))
+            ->when($ids->isNotEmpty(), fn ($query) => $query->whereIn('products.id', $ids))
+            ->when($salesRepresentative, fn ($query) => $query->where('products.company_id', $salesRepresentative->company_id))
+            ->when($request->filled('company_id'), fn ($query) => $query->where('products.company_id', $request->company_id))
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($query) use ($search) {
+                    $query->where('products.name', 'like', "%{$search}%")
+                        ->orWhere('products.sku', 'like', "%{$search}%")
+                        ->orWhere('products.barcode', 'like', "%{$search}%")
+                        ->orWhere('products.brand', 'like', "%{$search}%");
+                });
+            })
+            ->where('products.status', 'active')
+            ->orderBy('products.name')
+            ->when($ids->isEmpty(), fn ($query) => $query->limit($limit))
             ->get();
     }
 
