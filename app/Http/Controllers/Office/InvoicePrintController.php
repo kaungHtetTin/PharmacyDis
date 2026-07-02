@@ -20,6 +20,7 @@ class InvoicePrintController extends Controller
             'salesOrder.salesRepresentative.user',
             'items.product',
             'items.unit',
+            'items.salesOrderItem.focUnit',
             'allocations.payment',
         ]);
 

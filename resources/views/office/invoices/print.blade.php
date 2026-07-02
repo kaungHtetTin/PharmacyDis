@@ -1,6 +1,7 @@
 @php
     $settings = $invoiceSettings ?? [];
     $formatMoney = fn ($value) => number_format((float) ($value ?? 0));
+    $formatPercent = fn ($value) => rtrim(rtrim(number_format((float) ($value ?? 0), 2), '0'), '.') . '%';
     $dateFormat = $settings['date_format'] ?? 'd-M-Y';
     $formatDate = fn ($value) => $value ? $value->format($dateFormat) : '-';
     $taxAmount = (float) ($invoice->tax_amount ?? 0);
@@ -82,6 +83,7 @@
                         <col class="invoice-col-exp">
                         <col class="invoice-col-qty">
                         <col class="invoice-col-unit">
+                        <col class="invoice-col-discount">
                         <col class="invoice-col-price">
                         <col class="invoice-col-amount">
                     </colgroup>
@@ -92,32 +94,53 @@
                             <th>Exp</th>
                             <th>Qty</th>
                             <th>Unit</th>
+                            <th>Disc</th>
                             <th>Price</th>
                             <th>Amount</th>
                         </tr>
                     </thead>
                     <tbody>
+                        @php $lineNo = 1; @endphp
                         @forelse ($invoice->items as $item)
                             @php
                                 $batchSummary = $itemBatchSummaries[$item->product_id] ?? ['batch' => '-', 'expiry' => '-'];
+                                $sourceOrderItem = $item->salesOrderItem;
+                                $focQuantity = (int) ($sourceOrderItem?->foc_quantity ?? 0);
+                                $focUnitName = $sourceOrderItem?->focUnit?->name;
+
+                                if ($focQuantity <= 0 && (int) $item->foc_base_unit_quantity > 0) {
+                                    $conversion = max(1, (int) ($sourceOrderItem?->foc_conversion_factor_to_base ?: $item->conversion_factor_to_base ?: 1));
+                                    $focQuantity = (int) ceil((int) $item->foc_base_unit_quantity / $conversion);
+                                    $focUnitName = $focUnitName ?: ($item->unit?->name ?? '-');
+                                }
                             @endphp
                             <tr>
-                                <td>{{ $loop->iteration }}</td>
+                                <td>{{ $lineNo++ }}</td>
                                 <td class="invoice-cell-product">
                                     {{ $item->product?->name ?? 'Product #' . $item->product_id }}
-                                    @if ((int) $item->foc_base_unit_quantity > 0)
-                                        <br><small>FOC: {{ $formatMoney($item->foc_base_unit_quantity) }} base units</small>
-                                    @endif
                                 </td>
                                 <td>{{ $batchSummary['expiry'] }}</td>
                                 <td>{{ $formatMoney($item->quantity) }}</td>
                                 <td>{{ $item->unit?->name ?? '-' }}</td>
+                                <td>{{ $formatPercent($item->discount_percentage) }}</td>
                                 <td>{{ $formatMoney($item->unit_price) }}</td>
                                 <td>{{ $formatMoney($item->line_total) }}</td>
                             </tr>
+                            @if ($focQuantity > 0)
+                                <tr class="invoice-foc-line">
+                                    <td>{{ $lineNo++ }}</td>
+                                    <td class="invoice-cell-product">{{ $item->product?->name ?? 'Product #' . $item->product_id }} <small>FOC</small></td>
+                                    <td>{{ $batchSummary['expiry'] }}</td>
+                                    <td>{{ $formatMoney($focQuantity) }}</td>
+                                    <td>{{ $focUnitName ?: '-' }}</td>
+                                    <td>{{ $formatPercent(0) }}</td>
+                                    <td>{{ $formatMoney(0) }}</td>
+                                    <td>{{ $formatMoney(0) }}</td>
+                                </tr>
+                            @endif
                         @empty
                             <tr>
-                                <td colspan="7" align="center">No invoice items available.</td>
+                                <td colspan="8" align="center">No invoice items available.</td>
                             </tr>
                         @endforelse
                     </tbody>

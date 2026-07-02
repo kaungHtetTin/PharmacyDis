@@ -96,13 +96,29 @@ function calculateManualFocBaseUnits(line, productOptions) {
     return focQuantity * Number(focProductUnit.conversion_factor_to_base || 1);
 }
 
+function clampPercentageInput(value) {
+    if (value === '') {
+        return '';
+    }
+
+    const numericValue = Math.max(0, Math.min(100, Number(value || 0)));
+
+    return Number.isFinite(numericValue) ? String(numericValue) : '0';
+}
+
+function resolveDiscountPercentage(line, product) {
+    return Number(line.discount_percentage === '' || line.discount_percentage == null
+        ? product?.default_discount_percentage ?? 0
+        : line.discount_percentage);
+}
+
 function calculatePreview(line, productOptions) {
     const product = productOptions.find((option) => String(option.id) === String(line.product_id));
     const productUnit = getProductUnits(product).find((unit) => String(unit.unit_id) === String(line.unit_id));
     const quantity = Number(line.quantity || line.orderedQuantity || 0);
     const unitPrice = Number(productUnit?.selling_price || 0);
     const conversion = Number(productUnit?.conversion_factor_to_base || 1);
-    const discount = Number(line.discount_percentage ?? product?.default_discount_percentage ?? 0);
+    const discount = resolveDiscountPercentage(line, product);
     const gross = quantity * unitPrice;
     const discountAmount = gross * (discount / 100);
 
@@ -315,6 +331,7 @@ export default function OrderLineBuilder({
                                         const defaultUnit = getDefaultProductUnit(nextProduct);
 
                                         updateLine(item.id, {
+                                            discount_percentage: nextProduct?.default_discount_percentage ?? 0,
                                             product_id: event.target.value,
                                             product: event.target.selectedOptions[0]?.textContent,
                                             unit_id: defaultUnit?.unit_id || '',
@@ -393,10 +410,18 @@ export default function OrderLineBuilder({
                                 <span>Base qty</span>
                                 <strong>{preview.baseQuantity}</strong>
                             </div>
-                            <div className="order-line-preview">
-                                <span>Discount</span>
-                                <strong>{preview.discount}</strong>
-                            </div>
+                            <label>
+                                <span>Discount %</span>
+                                <input
+                                    disabled={disabled || (productOptions.length > 0 && !selectedProduct)}
+                                    max="100"
+                                    min="0"
+                                    onChange={(event) => updateLine(item.id, { discount_percentage: clampPercentageInput(event.target.value) })}
+                                    step="0.01"
+                                    type="number"
+                                    value={item.discount_percentage ?? selectedProduct?.default_discount_percentage ?? 0}
+                                />
+                            </label>
                             <div className="order-line-preview">
                                 <span>Total</span>
                                 <strong>{preview.lineTotal}</strong>

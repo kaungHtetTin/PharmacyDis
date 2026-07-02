@@ -69,12 +69,28 @@ function formatFocRule(rule) {
         : `Buy ${formatAmount(rule.minimum_quantity_base_units)} base units, FOC ${formatAmount(rule.reward_quantity_base_units)} base units`;
 }
 
+function clampPercentageInput(value) {
+    if (value === '') {
+        return '';
+    }
+
+    const numericValue = Math.max(0, Math.min(100, Number(value || 0)));
+
+    return Number.isFinite(numericValue) ? String(numericValue) : '0';
+}
+
+function resolveDiscountPercentage(line, product) {
+    return Number(line.discount_percentage === '' || line.discount_percentage == null
+        ? product?.default_discount_percentage ?? 0
+        : line.discount_percentage);
+}
+
 function linePreview(line, product) {
     const productUnit = getProductUnits(product).find((unit) => String(unit.unit_id) === String(line.unit_id));
     const quantity = Number(line.quantity || 0);
     const unitPrice = Number(productUnit?.selling_price || 0);
     const conversion = Number(productUnit?.conversion_factor_to_base || 1);
-    const discount = Number(line.discount_percentage ?? product?.default_discount_percentage ?? 0);
+    const discount = resolveDiscountPercentage(line, product);
     const gross = quantity * unitPrice;
     const discountAmount = gross * (discount / 100);
     const orderedBaseQuantity = quantity * conversion;
@@ -438,6 +454,17 @@ function QuantityStep({ action, lines, productAvailability, productDetails, upda
                                     {units.map((unit) => <option key={unit.id} value={unit.unit_id}>{unit.unit?.name || unit.unit_id}</option>)}
                                 </select>
                             </label>
+                            <label className="form-field">
+                                <span>Discount %</span>
+                                <input
+                                    max="100"
+                                    min="0"
+                                    onChange={(event) => updateLine(line.product_id, { discount_percentage: clampPercentageInput(event.target.value) })}
+                                    step="0.01"
+                                    type="number"
+                                    value={line.discount_percentage ?? product?.default_discount_percentage ?? 0}
+                                />
+                            </label>
                             <div className="order-wizard-line-preview">
                                 <span>Price</span>
                                 <strong>{formatAmount(preview?.unitPrice)}</strong>
@@ -512,20 +539,59 @@ function PreviewStep({ action, blocked, customer, form, isOffice, lines, product
             {blocked && <div className="form-error">Company credit is blocked. Order creation is not allowed.</div>}
             {isOffice && !form.warehouse_id && <div className="form-error">Select a warehouse before creating the approved order.</div>}
             {shortages.length > 0 && <div className="form-error">Some selected products exceed available stock. Reduce quantity or FOC before confirming.</div>}
-            <div className="order-wizard-preview-lines">
-                {lines.map((line) => {
-                    const product = productDetails.find((item) => String(item.id) === String(line.product_id));
-                    const unit = getProductUnits(product).find((item) => String(item.unit_id) === String(line.unit_id));
-                    const preview = product ? linePreview(line, product) : null;
+            <div className="order-wizard-preview-table-wrap">
+                <table className="order-wizard-preview-table">
+                    <colgroup>
+                        <col className="order-preview-col-no" />
+                        <col className="order-preview-col-product" />
+                        <col className="order-preview-col-qty" />
+                        <col className="order-preview-col-unit" />
+                        <col className="order-preview-col-discount" />
+                        <col className="order-preview-col-price" />
+                        <col className="order-preview-col-foc" />
+                        <col className="order-preview-col-required" />
+                        <col className="order-preview-col-total" />
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Unit</th>
+                            <th>Disc</th>
+                            <th>Price</th>
+                            <th>FOC</th>
+                            <th>Required</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {lines.map((line, index) => {
+                            const product = productDetails.find((item) => String(item.id) === String(line.product_id));
+                            const unit = getProductUnits(product).find((item) => String(item.unit_id) === String(line.unit_id));
+                            const preview = product ? linePreview(line, product) : null;
 
-                    return (
-                        <div key={line.product_id}>
-                            <strong>{product?.name || `Product #${line.product_id}`}</strong>
-                            <span>{line.quantity} {unit?.unit?.name || 'unit'} / {formatAmount(preview?.requiredBaseQuantity)} {stockUnit(product)} required</span>
-                            <span>FOC {line.foc_quantity || 0} / Line total {formatAmount(preview?.lineTotal)}</span>
-                        </div>
-                    );
-                })}
+                            return (
+                                <tr key={line.product_id}>
+                                    <td>{index + 1}</td>
+                                    <td className="order-preview-product-cell">{product?.name || `Product #${line.product_id}`}</td>
+                                    <td>{formatAmount(line.quantity)}</td>
+                                    <td>{unit?.unit?.name || 'unit'}</td>
+                                    <td>{formatAmount(preview?.discount)}%</td>
+                                    <td>{formatAmount(preview?.unitPrice)}</td>
+                                    <td>{formatAmount(line.foc_quantity || 0)}</td>
+                                    <td>{formatAmount(preview?.requiredBaseQuantity)} {stockUnit(product)}</td>
+                                    <td>{formatAmount(preview?.lineTotal)}</td>
+                                </tr>
+                            );
+                        })}
+                        {!lines.length && (
+                            <tr>
+                                <td colSpan="9">No products selected.</td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
             </div>
         </Panel>
     );
@@ -599,9 +665,13 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
             const existing = current.find((line) => String(line.product_id) === String(productId));
             const product = productDetails.find((item) => String(item.id) === String(productId));
             const defaultUnit = getDefaultProductUnit(product);
+            const defaultDiscountLoaded = product && String(existing?.default_discount_product_id || '') === String(productId);
 
             return {
-                discount_percentage: product?.default_discount_percentage || 0,
+                default_discount_product_id: product ? productId : existing?.default_discount_product_id || '',
+                discount_percentage: defaultDiscountLoaded
+                    ? existing?.discount_percentage ?? product?.default_discount_percentage ?? 0
+                    : product?.default_discount_percentage ?? existing?.discount_percentage ?? 0,
                 foc_quantity: existing?.foc_quantity || '',
                 foc_unit_id: existing?.foc_unit_id || defaultUnit?.unit_id || '',
                 product_id: productId,
@@ -750,7 +820,7 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
     const items = useMemo(() => lines
         .filter((line) => line.product_id && line.unit_id && Number(line.quantity || 0) > 0)
         .map((line) => ({
-            discount_percentage: line.discount_percentage ?? null,
+            discount_percentage: line.discount_percentage === '' ? null : line.discount_percentage ?? null,
             foc_quantity: Number(line.foc_quantity || 0),
             foc_unit_id: Number(line.foc_quantity || 0) > 0 ? line.foc_unit_id || line.unit_id || null : null,
             product_id: line.product_id,

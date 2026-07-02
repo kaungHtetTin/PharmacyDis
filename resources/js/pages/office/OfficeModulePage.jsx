@@ -238,6 +238,7 @@ const blankOfficeOrderLine = {
     quantity: '1',
     foc_unit_id: '',
     foc_quantity: '',
+    discount_percentage: '',
 };
 
 const blankOfficeOrderForm = {
@@ -6312,6 +6313,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
 
             return {
                 ...line,
+                discount_percentage: line.discount_percentage ?? product?.default_discount_percentage ?? 0,
                 unit_id: defaultUnit?.unit_id || '',
                 foc_unit_id: line.foc_unit_id || defaultUnit?.unit_id || '',
             };
@@ -6334,7 +6336,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 quantity: Number(line.quantity || line.orderedQuantity || 1),
                 foc_unit_id: Number(line.foc_quantity || 0) > 0 ? line.foc_unit_id || line.unit_id || null : null,
                 foc_quantity: Number(line.foc_quantity || 0),
-                discount_percentage: line.discount_percentage ?? null,
+                discount_percentage: line.discount_percentage === '' ? null : line.discount_percentage ?? null,
             })),
     });
     const submitOfficeOrderForm = async () => {

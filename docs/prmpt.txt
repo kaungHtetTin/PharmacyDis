@@ -1,0 +1,4 @@
+In order creation tab 3, 
+reduce the text size for, to wrap all input within available width in larage screen. 
+
+in tab 4, preview, i want to show product in table like in invoice in larage screen. 

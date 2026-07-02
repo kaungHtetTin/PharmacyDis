@@ -5066,8 +5066,7 @@ tbody tr:hover {
 }
 
 .order-wizard-product-list,
-.order-wizard-quantity-list,
-.order-wizard-preview-lines {
+.order-wizard-quantity-list {
     display: grid;
     gap: 8px;
 }
@@ -5131,23 +5130,47 @@ tbody tr:hover {
 
 .order-wizard-quantity-row {
     display: grid;
-    grid-template-columns: minmax(210px, 1.35fr) 82px 126px 82px 126px repeat(2, minmax(92px, .55fr));
-    gap: 7px;
+    grid-template-columns: minmax(0, 1.35fr) minmax(72px, .5fr) minmax(96px, .7fr) minmax(72px, .5fr) minmax(96px, .7fr) minmax(86px, .58fr) minmax(90px, .62fr) minmax(98px, .68fr);
+    gap: 8px;
     align-items: end;
+    width: 100%;
+    min-width: 0;
     border: 1px solid var(--compact-card-border);
     border-radius: 7px;
-    padding: 7px 9px;
+    padding: 6px 7px;
     background: var(--compact-card-bg);
 }
 
 .order-wizard-quantity-row .form-field > span {
-    font-size: 9px;
+    overflow-wrap: anywhere;
+    font-size: 8px;
+    line-height: 1.1;
+}
+
+.order-wizard-quantity-row .form-field,
+.order-wizard-quantity-row .order-wizard-line-preview {
+    min-width: 0;
 }
 
 .order-wizard-quantity-row input,
 .order-wizard-quantity-row select {
     min-height: 38px;
     height: 38px;
+    font-size: 11px;
+    font-weight: 750;
+}
+
+.order-wizard-quantity-row input {
+    padding-inline: 8px;
+}
+
+.order-wizard-quantity-row select {
+    padding-left: 8px;
+    padding-right: 26px;
+    background-position:
+        calc(100% - 14px) calc(50% - 2px),
+        calc(100% - 9px) calc(50% - 2px),
+        0 0;
 }
 
 .order-wizard-quantity-title {
@@ -5158,8 +5181,8 @@ tbody tr:hover {
 
 .order-wizard-quantity-title strong {
     overflow-wrap: anywhere;
-    font-size: 13px;
-    line-height: 1.25;
+    font-size: 11px;
+    line-height: 1.2;
 }
 
 .order-wizard-line-preview {
@@ -5167,8 +5190,13 @@ tbody tr:hover {
     align-content: center;
 }
 
+.order-wizard-line-preview span {
+    font-size: 8px;
+    line-height: 1.1;
+}
+
 .order-wizard-line-preview strong {
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.1;
 }
 
@@ -5205,30 +5233,110 @@ tbody tr:hover {
     color: color-mix(in srgb, var(--input-error) 78%, var(--color-muted));
 }
 
-.order-wizard-preview-lines div {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(160px, .6fr) minmax(140px, .5fr);
-    align-items: center;
-    gap: 8px;
+.order-wizard-preview-table-wrap {
+    min-width: 0;
+    overflow-x: auto;
     border: 1px solid var(--compact-card-border);
     border-radius: 8px;
-    min-height: 44px;
-    padding: 8px 10px;
     background: var(--compact-card-bg);
 }
 
-.order-wizard-preview-lines strong {
-    overflow-wrap: anywhere;
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1.25;
+.order-wizard-preview-table {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: collapse;
+    table-layout: fixed;
 }
 
-.order-wizard-preview-lines span {
+.order-wizard-preview-table th {
     color: var(--color-muted);
-    font-size: 10px;
-    font-weight: 700;
+    background: var(--color-soft);
+    font-size: 9px;
+    font-weight: 900;
+    text-align: left;
+    text-transform: uppercase;
+}
+
+.order-wizard-preview-table th,
+.order-wizard-preview-table td {
+    padding: 8px 9px;
+    border-bottom: 1px solid var(--compact-card-border);
+    font-size: 11px;
     line-height: 1.25;
+    vertical-align: top;
+}
+
+.order-wizard-preview-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.order-wizard-preview-table td {
+    color: var(--color-text);
+    font-weight: 750;
+}
+
+.order-wizard-preview-table td:not(.order-preview-product-cell) {
+    white-space: nowrap;
+}
+
+.order-preview-product-cell {
+    overflow-wrap: anywhere;
+    font-weight: 800;
+}
+
+.order-wizard-preview-table th:nth-child(4),
+.order-wizard-preview-table td:nth-child(4),
+.order-wizard-preview-table th:nth-child(8),
+.order-wizard-preview-table td:nth-child(8) {
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.order-preview-col-no {
+    width: 5%;
+}
+
+.order-preview-col-product {
+    width: 28%;
+}
+
+.order-preview-col-qty,
+.order-preview-col-unit,
+.order-preview-col-discount,
+.order-preview-col-price,
+.order-preview-col-foc {
+    width: 8%;
+}
+
+.order-preview-col-required {
+    width: 16%;
+}
+
+.order-preview-col-total {
+    width: 11%;
+}
+
+.order-wizard-preview-table td:nth-child(1),
+.order-wizard-preview-table td:nth-child(3),
+.order-wizard-preview-table td:nth-child(5),
+.order-wizard-preview-table td:nth-child(6),
+.order-wizard-preview-table td:nth-child(7),
+.order-wizard-preview-table td:nth-child(9) {
+    text-align: right;
+}
+
+.order-wizard-preview-table th:nth-child(1),
+.order-wizard-preview-table th:nth-child(3),
+.order-wizard-preview-table th:nth-child(5),
+.order-wizard-preview-table th:nth-child(6),
+.order-wizard-preview-table th:nth-child(7),
+.order-wizard-preview-table th:nth-child(9) {
+    text-align: right;
+}
+
+.order-wizard-preview-table td:nth-child(4),
+.order-wizard-preview-table td:nth-child(8) {
+    color: var(--color-muted);
 }
 
 .order-wizard-actions {
@@ -5266,8 +5374,8 @@ tbody tr:hover {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .order-wizard-preview-lines div {
-        grid-template-columns: 1fr;
+    .order-wizard-preview-table {
+        min-width: 820px;
     }
 }
 
@@ -7987,7 +8095,7 @@ tbody tr:last-child .row-more-list {
 }
 
 .invoice-col-product {
-    width: 42%;
+    width: 36%;
 }
 
 .invoice-col-exp {
@@ -7999,11 +8107,15 @@ tbody tr:last-child .row-more-list {
 }
 
 .invoice-col-unit {
-    width: 9%;
+    width: 8%;
+}
+
+.invoice-col-discount {
+    width: 8%;
 }
 
 .invoice-col-price {
-    width: 11%;
+    width: 10%;
 }
 
 .invoice-col-amount {
@@ -8015,12 +8127,22 @@ tbody tr:last-child .row-more-list {
 .invoice-classic-lines td:nth-child(4),
 .invoice-classic-lines td:nth-child(5),
 .invoice-classic-lines td:nth-child(6),
-.invoice-classic-lines td:nth-child(7) {
+.invoice-classic-lines td:nth-child(7),
+.invoice-classic-lines td:nth-child(8) {
     white-space: nowrap;
 }
 
 .invoice-cell-product {
     white-space: normal;
+}
+
+.invoice-foc-line td {
+    background: #f9fafb;
+}
+
+.invoice-foc-line small {
+    color: #6b7280;
+    font-weight: 700;
 }
 
 .invoice-classic-summary {
