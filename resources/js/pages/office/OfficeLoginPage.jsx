@@ -6,8 +6,8 @@ import { useAuth } from '../../services/auth.jsx';
 export default function OfficeLoginPage({ onLogin }) {
     const { login } = useAuth();
     const [credentials, setCredentials] = useState({
-        email: 'admin@pharmacy.test',
-        password: 'password',
+        email: '',
+        password: '',
         user_type: 'office',
     });
     const [error, setError] = useState('');
@@ -42,12 +42,11 @@ export default function OfficeLoginPage({ onLogin }) {
                     <p>Manage master data, stock, sales orders, invoices, payments, and reports.</p>
                 </div>
                 <div className="crud-grid compact">
-                    <FormField label="Email" name="email" onChange={updateField} placeholder="admin@pharmacy.test" required type="email" value={credentials.email} />
+                    <FormField label="Email" name="email" onChange={updateField} placeholder="name@company.com" required type="email" value={credentials.email} />
                     <FormField label="Password" name="password" onChange={updateField} placeholder="Enter password" required type="password" value={credentials.password} />
                 </div>
                 {error && <span className="error-text">{error}</span>}
                 <div className="login-actions">
-                    <span className="helper-copy">Demo: admin@pharmacy.test / password</span>
                     <button className="btn primary" disabled={submitting} type="submit">{submitting ? 'Signing in...' : 'Sign in'}</button>
                 </div>
             </form>
