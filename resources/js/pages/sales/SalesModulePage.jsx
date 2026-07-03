@@ -248,12 +248,13 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const customers = unwrapCollection(customersResource.data);
     const products = unwrapCollection(productsResource.data);
     const stockRows = unwrapCollection(stockResource.data);
+    const stockPaginationMeta = liveResource.data?.meta || liveResource.data || {};
     const stockPagination = pageKey === 'stock' ? {
-        currentPage: Number(liveResource.data?.meta?.current_page || 1),
-        from: Number(liveResource.data?.meta?.from || 0),
-        lastPage: Number(liveResource.data?.meta?.last_page || 1),
-        to: Number(liveResource.data?.meta?.to || 0),
-        total: Number(liveResource.data?.meta?.total || screen.rows.length),
+        currentPage: Number(stockPaginationMeta.current_page || 1),
+        from: Number(stockPaginationMeta.from || 0),
+        lastPage: Number(stockPaginationMeta.last_page || 1),
+        to: Number(stockPaginationMeta.to || 0),
+        total: Number(stockPaginationMeta.total || screen.rows.length),
     } : null;
     const displayedRows = pageKey === 'stock' ? screen.rows : visibleRows;
     const displayedPagination = stockPagination || {
