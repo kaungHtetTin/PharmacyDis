@@ -369,25 +369,25 @@ class RealDataSeeder extends Seeder
             ['Ipratropium Nebule Ampoule', 'RESP', 'Amp', 1450],
         ];
 
-        $companyCodes = array_keys($companies);
+        $companyCode = 'MEDILIFE';
+        $company = $companies[$companyCode] ?? reset($companies);
+        $companyCode = array_search($company, $companies, true) ?: $companyCode;
 
         for ($index = 0; $index < 100; $index++) {
             [$baseName, $categoryCode, $baseUnitCode, $basePrice] = $medicineNames[$index % count($medicineNames)];
-            $companyCode = $companyCodes[$index % count($companyCodes)];
-            $company = $companies[$companyCode];
             $cycle = intdiv($index, count($medicineNames)) + 1;
             $variantName = $cycle > 1 ? "{$baseName} Pack {$cycle}" : $baseName;
             $brandName = Str::headline(strtolower($companyCode)) . ($index % 2 === 0 ? ' Core' : ' Plus');
             $sku = "{$companyCode}-MED-" . str_pad((string) ($index + 1), 3, '0', STR_PAD_LEFT);
 
-            $product = Product::updateOrCreate(
+            $product = Product::withTrashed()->updateOrCreate(
                 ['sku' => $sku],
                 [
                     'company_id' => $company->id,
                     'product_category_id' => $categories[$categoryCode]->id,
                     'brand' => $brandName,
                     'base_unit_id' => $this->unitMap[$baseUnitCode]->id,
-                    'barcode' => '955' . str_pad((string) ($index + 1), 10, '0', STR_PAD_LEFT),
+                    'barcode' => "{$companyCode}-BAR-" . str_pad((string) ($index + 1), 3, '0', STR_PAD_LEFT),
                     'name' => $variantName,
                     'description' => "Seeded medicine master record for {$variantName}.",
                     'default_discount_percentage' => ($index % 4) * 0.5,
@@ -396,6 +396,10 @@ class RealDataSeeder extends Seeder
                     'status' => 'active',
                 ]
             );
+
+            if ($product->trashed()) {
+                $product->restore();
+            }
 
             $this->seedMedicineUnits($product, $baseUnitCode, $basePrice + ($cycle - 1) * 20);
         }

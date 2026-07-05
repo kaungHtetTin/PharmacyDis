@@ -2,6 +2,7 @@
     $settings = $invoiceSettings ?? [];
     $formatMoney = fn ($value) => number_format((float) ($value ?? 0));
     $formatPercent = fn ($value) => rtrim(rtrim(number_format((float) ($value ?? 0), 2), '0'), '.') . '%';
+    $formatUnit = fn ($unit) => $unit?->abbreviation ?: ($unit?->name ?: '-');
     $dateFormat = $settings['date_format'] ?? 'd-M-Y';
     $formatDate = fn ($value) => $value ? $value->format($dateFormat) : '-';
     $taxAmount = (float) ($invoice->tax_amount ?? 0);
@@ -106,12 +107,12 @@
                                 $batchSummary = $itemBatchSummaries[$item->product_id] ?? ['batch' => '-', 'expiry' => '-'];
                                 $sourceOrderItem = $item->salesOrderItem;
                                 $focQuantity = (int) ($sourceOrderItem?->foc_quantity ?? 0);
-                                $focUnitName = $sourceOrderItem?->focUnit?->name;
+                                $focUnitName = $formatUnit($sourceOrderItem?->focUnit);
 
                                 if ($focQuantity <= 0 && (int) $item->foc_base_unit_quantity > 0) {
                                     $conversion = max(1, (int) ($sourceOrderItem?->foc_conversion_factor_to_base ?: $item->conversion_factor_to_base ?: 1));
                                     $focQuantity = (int) ceil((int) $item->foc_base_unit_quantity / $conversion);
-                                    $focUnitName = $focUnitName ?: ($item->unit?->name ?? '-');
+                                    $focUnitName = $focUnitName !== '-' ? $focUnitName : $formatUnit($item->unit);
                                 }
                             @endphp
                             <tr>
@@ -121,7 +122,7 @@
                                 </td>
                                 <td>{{ $batchSummary['expiry'] }}</td>
                                 <td>{{ $formatMoney($item->quantity) }}</td>
-                                <td>{{ $item->unit?->name ?? '-' }}</td>
+                                <td>{{ $formatUnit($item->unit) }}</td>
                                 <td>{{ $formatPercent($item->discount_percentage) }}</td>
                                 <td>{{ $formatMoney($item->unit_price) }}</td>
                                 <td>{{ $formatMoney($item->line_total) }}</td>
