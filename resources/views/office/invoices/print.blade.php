@@ -206,7 +206,6 @@
                 const copyButton = document.getElementById('copy-invoice-link');
                 const printButtons = document.querySelectorAll('[data-print-invoice]');
                 const openPrintDialog = () => {
-                    window.focus();
                     window.print();
                 };
 
