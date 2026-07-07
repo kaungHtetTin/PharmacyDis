@@ -43,7 +43,8 @@ class DashboardMetricService
             'approved_orders' => SalesOrder::where('sales_representative_id', $salesRepresentativeId)
                 ->where('status', 'approved')
                 ->count(),
-            'monthly_sales' => Invoice::where('sales_representative_id', $salesRepresentativeId)
+            'monthly_sales' => $this->salesInvoiceQuery()
+                ->where('sales_representative_id', $salesRepresentativeId)
                 ->whereMonth('invoice_date', now()->month)
                 ->sum('total_amount'),
             'monthly_performance' => $this->monthlyPerformance($salesRepresentativeId),
@@ -212,7 +213,7 @@ class DashboardMetricService
 
     private function topRepresentatives(): array
     {
-        return Invoice::query()
+        return $this->salesInvoiceQuery()
             ->join('sales_representatives', 'sales_representatives.id', '=', 'invoices.sales_representative_id')
             ->join('users', 'users.id', '=', 'sales_representatives.user_id')
             ->join('companies', 'companies.id', '=', 'sales_representatives.company_id')
@@ -241,7 +242,7 @@ class DashboardMetricService
     private function monthlyPerformance(int $salesRepresentativeId): array
     {
         $months = collect(range(5, 0))->map(fn ($monthsAgo) => now()->copy()->startOfMonth()->subMonths($monthsAgo));
-        $salesByMonth = Invoice::query()
+        $salesByMonth = $this->salesInvoiceQuery()
             ->where('sales_representative_id', $salesRepresentativeId)
             ->whereDate('invoice_date', '>=', $months->first()->toDateString())
             ->get(['invoice_date', 'total_amount'])
@@ -249,6 +250,7 @@ class DashboardMetricService
             ->map(fn ($invoices) => $invoices->sum('total_amount'));
         $ordersByMonth = SalesOrder::query()
             ->where('sales_representative_id', $salesRepresentativeId)
+            ->where('status', '!=', 'cancelled')
             ->whereDate('order_date', '>=', $months->first()->toDateString())
             ->get(['order_date'])
             ->groupBy(fn ($order) => $order->order_date?->format('Y-m'))
@@ -269,5 +271,17 @@ class DashboardMetricService
                 'orderPercent' => (int) round($orders / $maxOrders * 100),
             ];
         })->all();
+    }
+
+    private function salesInvoiceQuery()
+    {
+        return Invoice::query()
+            ->where('invoices.status', '!=', 'void')
+            ->where(function ($query) {
+                $query->whereNull('invoices.sales_order_id')
+                    ->orWhereHas('salesOrder', fn ($orderQuery) => $orderQuery
+                        ->withTrashed()
+                        ->where('status', '!=', 'cancelled'));
+            });
     }
 }

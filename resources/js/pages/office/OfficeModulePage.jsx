@@ -6525,7 +6525,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         onNavigate?.(screen.detailPageKey, params);
     };
     const openInvoicePrintPage = (record) => {
-        const printUrl = invoicePrintPageUrl(record?.id || record?.invoice_id || '');
+        const printUrl = invoicePrintPageUrl(record?.id || record?.invoice_id || '', 'a5');
 
         if (printUrl) {
             window.location.href = printUrl;

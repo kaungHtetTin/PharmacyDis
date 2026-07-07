@@ -35,8 +35,8 @@
             <span class="print-page-size-label">A5 pharmacy invoice</span>
             <div class="print-page-actions">
                 <button data-share-url="{{ $publicShareUrl }}" id="copy-invoice-link" type="button">Copy link</button>
-                <button onclick="window.print()" type="button">Save PDF</button>
-                <button onclick="window.print()" type="button">Print</button>
+                <button data-print-invoice type="button">Save PDF</button>
+                <button data-print-invoice type="button">Print</button>
             </div>
         </div>
 
@@ -204,14 +204,23 @@
         <script>
             (() => {
                 const copyButton = document.getElementById('copy-invoice-link');
+                const printButtons = document.querySelectorAll('[data-print-invoice]');
+                const openPrintDialog = () => {
+                    window.focus();
+                    window.print();
+                };
 
-                if (!copyButton) {
-                    return;
-                }
+                printButtons.forEach((button) => {
+                    button.addEventListener('click', openPrintDialog);
+                });
 
                 const resetLabel = () => {
                     copyButton.textContent = 'Copy link';
                 };
+
+                if (!copyButton) {
+                    return;
+                }
 
                 copyButton.addEventListener('click', async () => {
                     const shareUrl = copyButton.dataset.shareUrl || window.location.href;
@@ -240,11 +249,5 @@
                 });
             })();
         </script>
-
-        @if ($autoPrint)
-            <script>
-                window.addEventListener('load', () => window.print());
-            </script>
-        @endif
     </body>
 </html>

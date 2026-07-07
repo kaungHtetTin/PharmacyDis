@@ -1,7 +1,7 @@
 import Drawer from './Drawer';
 import StatusBadge from './StatusBadge';
 
-export function invoicePrintPageUrl(invoiceId, paperSize = 'a4', autoPrint = false) {
+export function invoicePrintPageUrl(invoiceId, paperSize = 'a5') {
     if (!invoiceId) {
         return '';
     }
@@ -9,11 +9,7 @@ export function invoicePrintPageUrl(invoiceId, paperSize = 'a4', autoPrint = fal
     const baseUrl = String(window.appConfig?.baseUrl || '').replace(/\/+$/g, '');
     const query = new URLSearchParams({ paper: paperSize });
 
-    if (autoPrint) {
-        query.set('print', '1');
-    }
-
-    return `${baseUrl}/invoices/${invoiceId}?${query.toString()}`;
+    return `${baseUrl}/office/invoices/${invoiceId}/print?${query.toString()}`;
 }
 
 export function InvoiceDetailContent({ customerName = '', fallbackInvoice = {}, invoice }) {

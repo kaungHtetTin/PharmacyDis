@@ -319,9 +319,16 @@ class ReportController extends Controller
         [$start, $end, $durationLabel] = $this->reportDateRange($request, $duration, $year, $month);
 
         $rows = DB::table('invoices')
+            ->leftJoin('sales_orders', 'sales_orders.id', '=', 'invoices.sales_order_id')
             ->join('sales_representatives', 'sales_representatives.id', '=', 'invoices.sales_representative_id')
             ->join('users', 'users.id', '=', 'sales_representatives.user_id')
             ->join('companies', 'companies.id', '=', 'invoices.company_id')
+            ->whereNull('invoices.deleted_at')
+            ->where('invoices.status', '!=', 'void')
+            ->where(function ($query) {
+                $query->whereNull('invoices.sales_order_id')
+                    ->orWhere('sales_orders.status', '!=', 'cancelled');
+            })
             ->whereBetween('invoices.invoice_date', [$start->toDateString(), $end->toDateString()])
             ->when($request->filled('company_id'), fn ($query) => $query->where('invoices.company_id', $request->company_id))
             ->select([

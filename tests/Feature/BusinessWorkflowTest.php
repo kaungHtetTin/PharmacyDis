@@ -16,6 +16,7 @@ use App\Models\ProductCategory;
 use App\Models\ProductUnit;
 use App\Models\SalesReturn;
 use App\Models\SalesOrder;
+use App\Models\SalesRepresentative;
 use App\Models\Setting;
 use App\Models\StockBatch;
 use App\Models\StockTransfer;
@@ -655,6 +656,103 @@ class BusinessWorkflowTest extends TestCase
             ->deleteJson("/api/office/orders/{$order->id}")
             ->assertStatus(422)
             ->assertJsonValidationErrors('invoice');
+    }
+
+    public function test_cancelled_orders_are_excluded_from_sales_representative_detail_counts(): void
+    {
+        $salesRep = SalesRepresentative::where('employee_code', 'SR-0001')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $customer = Customer::where('code', 'CUS-0001')->firstOrFail();
+
+        SalesOrder::query()->create([
+            'order_no' => 'SO-CANCELLED-REPORT',
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'sales_representative_id' => $salesRep->id,
+            'order_date' => now()->toDateString(),
+            'requested_delivery_date' => now()->addDay()->toDateString(),
+            'status' => 'cancelled',
+            'subtotal_amount' => 500000,
+            'discount_amount' => 0,
+            'total_amount' => 500000,
+        ]);
+
+        $expectedActiveMonthlyOrders = SalesOrder::query()
+            ->where('sales_representative_id', $salesRep->id)
+            ->where('status', '!=', 'cancelled')
+            ->whereYear('order_date', now()->year)
+            ->whereMonth('order_date', now()->month)
+            ->count();
+
+        $response = $this->withToken($this->officeToken)
+            ->getJson("/api/office/sales-representatives/{$salesRep->id}/detail")
+            ->assertOk();
+
+        $ordersMetric = collect($response->json('metrics'))->firstWhere('label', 'Orders');
+
+        $this->assertSame((string) $expectedActiveMonthlyOrders, $ordersMetric['value']);
+        $this->assertFalse(
+            collect($response->json('salesHistoryRows'))->contains(fn (array $row) => $row['order'] === 'SO-CANCELLED-REPORT')
+        );
+    }
+
+    public function test_cancelled_order_invoices_are_excluded_from_sales_representative_report(): void
+    {
+        $salesRep = SalesRepresentative::where('employee_code', 'SR-0001')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $customer = Customer::where('code', 'CUS-0001')->firstOrFail();
+
+        $cancelledOrder = SalesOrder::query()->create([
+            'order_no' => 'SO-CANCELLED-INVOICE-REPORT',
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'sales_representative_id' => $salesRep->id,
+            'order_date' => now()->toDateString(),
+            'requested_delivery_date' => now()->addDay()->toDateString(),
+            'status' => 'cancelled',
+            'subtotal_amount' => 500000,
+            'discount_amount' => 0,
+            'total_amount' => 500000,
+        ]);
+
+        Invoice::query()->create([
+            'invoice_no' => 'INV-CANCELLED-REPORT',
+            'sales_order_id' => $cancelledOrder->id,
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'sales_representative_id' => $salesRep->id,
+            'invoice_date' => now()->toDateString(),
+            'due_date' => now()->addDays(30)->toDateString(),
+            'status' => 'issued',
+            'subtotal_amount' => 500000,
+            'discount_amount' => 0,
+            'total_amount' => 500000,
+            'paid_amount' => 0,
+            'balance_amount' => 500000,
+        ]);
+
+        $expectedSales = Invoice::query()
+            ->where('sales_representative_id', $salesRep->id)
+            ->where('status', '!=', 'void')
+            ->where(function ($query) {
+                $query->whereNull('sales_order_id')
+                    ->orWhereHas('salesOrder', fn ($orderQuery) => $orderQuery
+                        ->withTrashed()
+                        ->where('status', '!=', 'cancelled'));
+            })
+            ->whereYear('invoice_date', now()->year)
+            ->whereMonth('invoice_date', now()->month)
+            ->sum('total_amount');
+
+        $response = $this->withToken($this->officeToken)
+            ->getJson('/api/office/reports/sales/top-representatives?duration=month')
+            ->assertOk();
+
+        $repRow = collect($response->json('tableRows'))
+            ->first(fn (array $row) => str_contains($row['representative'], $salesRep->employee_code));
+
+        $this->assertNotNull($repRow);
+        $this->assertSame(number_format((float) $expectedSales), $repRow['sales']);
     }
 
     public function test_office_can_post_pharmacy_return_against_delivered_order_and_update_finance_and_stock(): void

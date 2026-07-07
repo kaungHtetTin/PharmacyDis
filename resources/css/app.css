@@ -8034,13 +8034,35 @@ tbody tr:last-child .row-more-list {
     font-size: 10px;
 }
 
+.invoice-classic-header {
+    table-layout: fixed;
+}
+
+.invoice-classic-header td:first-child {
+    width: 45%;
+}
+
+.invoice-classic-header td:last-child {
+    width: 55%;
+}
+
+.invoice-classic-header td,
+.invoice-classic-header h3,
+.invoice-classic-header strong,
+.invoice-classic-header small {
+    overflow: visible;
+    white-space: normal;
+}
+
 .invoice-medicine-company {
     display: block;
+    max-width: 100%;
     margin-top: 2px;
     color: #111827;
     font-size: 14px;
     line-height: 1.15;
     overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .invoice-classic-logo {

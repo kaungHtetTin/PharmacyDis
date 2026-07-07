@@ -38,7 +38,7 @@ export default function InvoiceDetailPage({ onNavigate }) {
     const invoiceId = params.get('invoice_id') || '';
     const invoiceResource = useApiResource(invoiceId ? `/office/invoices?invoice_id=${invoiceId}&per_page=1` : '');
     const [invoice] = invoiceResource.data ? mapInvoices(invoiceResource.data) : [];
-    const printUrl = invoice ? invoicePrintPageUrl(invoice.id) : '';
+    const printUrl = invoice ? invoicePrintPageUrl(invoice.id, 'a5') : '';
     const [remark, setRemark] = useState('');
     const [remarkError, setRemarkError] = useState('');
     const [remarkSaving, setRemarkSaving] = useState(false);

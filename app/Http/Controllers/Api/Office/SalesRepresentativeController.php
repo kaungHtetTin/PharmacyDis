@@ -70,29 +70,26 @@ class SalesRepresentativeController extends Controller
     {
         $salesRepresentative->load(['company', 'user:id,name,email,phone,status']);
 
-        $orders = $salesRepresentative->salesOrders()
+        $orders = $this->activeOrderQuery($salesRepresentative)
             ->with(['company:id,name', 'customer:id,name', 'items.product'])
             ->latest('order_date')
             ->paginate($request->integer('sales_per_page', 10), ['*'], 'sales_page');
 
-        $monthlyOrders = $salesRepresentative->salesOrders()
+        $monthlyOrders = $this->activeOrderQuery($salesRepresentative)
             ->whereYear('order_date', now()->year)
             ->whereMonth('order_date', now()->month);
 
-        $monthlySales = (float) Invoice::query()
-            ->where('sales_representative_id', $salesRepresentative->id)
+        $monthlySales = (float) $this->salesInvoiceQuery($salesRepresentative)
             ->whereYear('invoice_date', now()->year)
             ->whereMonth('invoice_date', now()->month)
             ->sum('total_amount');
 
-        $lastMonthSales = (float) Invoice::query()
-            ->where('sales_representative_id', $salesRepresentative->id)
+        $lastMonthSales = (float) $this->salesInvoiceQuery($salesRepresentative)
             ->whereYear('invoice_date', now()->copy()->subMonth()->year)
             ->whereMonth('invoice_date', now()->copy()->subMonth()->month)
             ->sum('total_amount');
 
-        $yearlySales = (float) Invoice::query()
-            ->where('sales_representative_id', $salesRepresentative->id)
+        $yearlySales = (float) $this->salesInvoiceQuery($salesRepresentative)
             ->whereYear('invoice_date', now()->year)
             ->sum('total_amount');
 
@@ -234,8 +231,7 @@ class SalesRepresentativeController extends Controller
 
         $rows = collect($weeks)->map(function ($week) use ($salesRepresentative) {
             [$label, $start, $end] = $week;
-            $value = (float) Invoice::query()
-                ->where('sales_representative_id', $salesRepresentative->id)
+            $value = (float) $this->salesInvoiceQuery($salesRepresentative)
                 ->whereBetween('invoice_date', [$start->toDateString(), $end->toDateString()])
                 ->sum('total_amount');
 
@@ -254,8 +250,7 @@ class SalesRepresentativeController extends Controller
     {
         $rows = collect(range(1, 12))->map(function ($month) use ($salesRepresentative) {
             $date = now()->copy()->startOfYear()->addMonths($month - 1);
-            $value = (float) Invoice::query()
-                ->where('sales_representative_id', $salesRepresentative->id)
+            $value = (float) $this->salesInvoiceQuery($salesRepresentative)
                 ->whereYear('invoice_date', $date->year)
                 ->whereMonth('invoice_date', $date->month)
                 ->sum('total_amount');
@@ -274,8 +269,7 @@ class SalesRepresentativeController extends Controller
     {
         $currentYear = (int) now()->year;
         $rows = collect(range($currentYear - 4, $currentYear))->map(function ($year) use ($salesRepresentative) {
-            $value = (float) Invoice::query()
-                ->where('sales_representative_id', $salesRepresentative->id)
+            $value = (float) $this->salesInvoiceQuery($salesRepresentative)
                 ->whereYear('invoice_date', $year)
                 ->sum('total_amount');
 
@@ -287,6 +281,25 @@ class SalesRepresentativeController extends Controller
         });
 
         return $this->formatVerticalChartRows($rows);
+    }
+
+    private function activeOrderQuery(SalesRepresentative $salesRepresentative)
+    {
+        return $salesRepresentative->salesOrders()
+            ->where('status', '!=', 'cancelled');
+    }
+
+    private function salesInvoiceQuery(SalesRepresentative $salesRepresentative)
+    {
+        return Invoice::query()
+            ->where('sales_representative_id', $salesRepresentative->id)
+            ->where('invoices.status', '!=', 'void')
+            ->where(function ($query) {
+                $query->whereNull('invoices.sales_order_id')
+                    ->orWhereHas('salesOrder', fn ($orderQuery) => $orderQuery
+                        ->withTrashed()
+                        ->where('status', '!=', 'cancelled'));
+            });
     }
 
     private function formatVerticalChartRows($rows): array
