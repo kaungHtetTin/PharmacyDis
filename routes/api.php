@@ -155,5 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('stock/current', [SalesStockController::class, 'current']);
         Route::get('orders', [SalesSalesOrderController::class, 'index']);
         Route::post('orders', [SalesSalesOrderController::class, 'store']);
+        Route::put('orders/{salesOrder}', [SalesSalesOrderController::class, 'update']);
+        Route::delete('orders/{salesOrder}', [SalesSalesOrderController::class, 'destroy']);
     });
 });

@@ -26,6 +26,8 @@ export default function SalesOrderCreateForm({
     stockError = '',
     stockLoading = false,
     stockRows = [],
+    submitLabel = 'Submit order',
+    submittingLabel = 'Submitting order...',
     submitting = false,
     success = '',
 }) {
@@ -131,7 +133,7 @@ export default function SalesOrderCreateForm({
                     Company and sales representative are fixed by the signed-in sales account. Stock availability includes ordered quantity and manually entered FOC quantity.
                 </p>
                 <button className="btn primary" disabled={blocked || stockBlocked || submitting} type="submit">
-                    {submitting ? 'Submitting order...' : 'Submit order'}
+                    {submitting ? submittingLabel : submitLabel}
                 </button>
             </div>
         </form>

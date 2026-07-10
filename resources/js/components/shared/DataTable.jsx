@@ -230,14 +230,19 @@ export default function DataTable({
     columns,
     rows,
     actions = [],
+    defaultSortDirection = 'asc',
+    defaultSortKey,
     emptyMessage = 'No records found',
     error = '',
     loading = false,
     onRowClick,
 }) {
     const normalizedColumns = columns.map(normalizeColumn);
-    const [sortKey, setSortKey] = useState(normalizedColumns[0]?.key);
-    const [sortDirection, setSortDirection] = useState('asc');
+    const initialSortKey = defaultSortKey === null
+        ? ''
+        : defaultSortKey ?? normalizedColumns.find((column) => column.sortable !== false)?.key;
+    const [sortKey, setSortKey] = useState(initialSortKey);
+    const [sortDirection, setSortDirection] = useState(defaultSortDirection);
 
     const visibleRows = useMemo(() => {
         if (!sortKey || !rows.length) {

@@ -61,6 +61,15 @@ function buildSalesStockEndpoint(filters = blankStockFilters, page = 1) {
     return `/sales/stock/current?${params.toString()}`;
 }
 
+function buildSalesOrderEndpoint(page = 1, perPage = 10) {
+    const params = new URLSearchParams({
+        page: String(page),
+        per_page: String(perPage),
+    });
+
+    return `/sales/orders?${params.toString()}`;
+}
+
 function SubmittedOrderPage({ onNavigate }) {
     const routeSearchParams = new URLSearchParams(window.location.search);
     const orderId = routeSearchParams.get('order_id') || '';
@@ -176,22 +185,24 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const baseScreen = salesModules[pageKey] || salesModules.stock;
     const [stockFilters, setStockFilters] = useState(blankStockFilters);
     const [stockPage, setStockPage] = useState(1);
-    const liveEndpoint = pageKey === 'stock' ? buildSalesStockEndpoint(stockFilters, stockPage) : getSalesEndpoint(pageKey);
+    const [orderPage, setOrderPage] = useState(1);
+    const listPageSize = baseScreen.pageSize || 10;
+    const liveEndpoint = pageKey === 'stock'
+        ? buildSalesStockEndpoint(stockFilters, stockPage)
+        : pageKey === 'orders'
+            ? buildSalesOrderEndpoint(orderPage, listPageSize)
+            : getSalesEndpoint(pageKey);
     const liveResource = useApiResource(liveEndpoint);
     const [pharmacySearch, setPharmacySearch] = useState('');
     const [debouncedPharmacySearch, setDebouncedPharmacySearch] = useState('');
-    const customerLookupQuery = new URLSearchParams({
-        limit: '30',
-        search: debouncedPharmacySearch,
-    });
-    const customersResource = useApiResource(pageKey === 'new-order' ? `/lookups/customers?${customerLookupQuery.toString()}` : '');
-    const productsResource = useApiResource(pageKey === 'new-order' ? '/lookups/products' : '');
-    const stockResource = useApiResource(pageKey === 'new-order' ? '/sales/stock/current?per_page=100' : '', { keepPreviousData: true });
     const liveRows = liveResource.data ? mapSalesRows(pageKey, liveResource.data) : [];
     const screen = liveEndpoint ? applyLiveRows(baseScreen, liveRows) : baseScreen;
     const [drawerOpen, setDrawerOpen] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
     const [focDialogRecord, setFocDialogRecord] = useState(null);
+    const [deleteOrderRecord, setDeleteOrderRecord] = useState(null);
+    const [deleteOrderError, setDeleteOrderError] = useState('');
+    const [deletingOrder, setDeletingOrder] = useState(false);
     const [pageIndex, setPageIndex] = useState(0);
     const [selectedRecord, setSelectedRecord] = useState(screen.rows[0]);
     const [orderForm, setOrderForm] = useState({ customer_id: '', requested_delivery_date: '', payment_due_date: defaultPaymentDueDate(), tax_amount: '0', note: '' });
@@ -199,6 +210,13 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
     const [submitError, setSubmitError] = useState('');
     const [submitSuccess, setSubmitSuccess] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const customerLookupQuery = new URLSearchParams({
+        limit: '30',
+        search: debouncedPharmacySearch,
+    });
+    const customersResource = useApiResource(pageKey === 'new-order' ? `/lookups/customers?${customerLookupQuery.toString()}` : '');
+    const productsResource = useApiResource(pageKey === 'new-order' ? '/lookups/products' : '');
+    const stockResource = useApiResource(pageKey === 'new-order' ? '/sales/stock/current?per_page=100' : '', { keepPreviousData: true });
     const pageSize = screen.pageSize || 6;
     const totalPages = Math.max(1, Math.ceil(screen.rows.length / pageSize));
     const pageStart = pageIndex * pageSize;
@@ -256,8 +274,16 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
         to: Number(stockPaginationMeta.to || 0),
         total: Number(stockPaginationMeta.total || screen.rows.length),
     } : null;
-    const displayedRows = pageKey === 'stock' ? screen.rows : visibleRows;
-    const displayedPagination = stockPagination || {
+    const orderPaginationMeta = liveResource.data?.meta || liveResource.data || {};
+    const orderPagination = pageKey === 'orders' ? {
+        currentPage: Number(orderPaginationMeta.current_page || 1),
+        from: Number(orderPaginationMeta.from || 0),
+        lastPage: Number(orderPaginationMeta.last_page || 1),
+        to: Number(orderPaginationMeta.to || 0),
+        total: Number(orderPaginationMeta.total || screen.rows.length),
+    } : null;
+    const displayedRows = pageKey === 'stock' || pageKey === 'orders' ? screen.rows : visibleRows;
+    const displayedPagination = stockPagination || orderPagination || {
         currentPage: pageIndex + 1,
         from: screen.rows.length ? pageStart + 1 : 0,
         lastPage: totalPages,
@@ -339,6 +365,39 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
         setPageIndex(0);
     }
 
+    function goToOrderPage(page) {
+        setOrderPage(Math.max(1, page));
+    }
+
+    function openDeleteOrder(record) {
+        setDeleteOrderRecord(record);
+        setDeleteOrderError('');
+    }
+
+    async function deletePendingOrder() {
+        if (!deleteOrderRecord?.id) {
+            return;
+        }
+
+        setDeletingOrder(true);
+        setDeleteOrderError('');
+
+        try {
+            await api.delete(`/sales/orders/${deleteOrderRecord.id}`);
+            setDeleteOrderRecord(null);
+
+            if (screen.rows.length <= 1 && displayedPagination.currentPage > 1) {
+                goToOrderPage(displayedPagination.currentPage - 1);
+            } else {
+                liveResource.refresh?.();
+            }
+        } catch (requestError) {
+            setDeleteOrderError(requestError.message);
+        } finally {
+            setDeletingOrder(false);
+        }
+    }
+
     function updateOrderForm(event) {
         setOrderForm((current) => ({ ...current, [event.target.name]: event.target.value }));
         setSubmitError('');
@@ -381,7 +440,6 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     foc_quantity: Number(line.foc_quantity || 0),
                 })),
             };
-
             const response = await api.post('/sales/orders', payload);
             const [submittedOrder] = mapOrders({ data: [response.data || response] });
             if (submittedOrder) {
@@ -468,7 +526,23 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     showDate={screen.showDate}
                 />
                 <DataTable
+                    actions={pageKey === 'orders' ? [
+                        {
+                            label: 'Edit order',
+                            icon: 'edit',
+                            shouldShow: (record) => record.status_value === 'submitted',
+                            onClick: (record) => onNavigate?.('new-order', { order_id: record.id }),
+                        },
+                        {
+                            label: 'Delete order',
+                            icon: 'trash',
+                            variant: 'danger',
+                            shouldShow: (record) => record.status_value === 'submitted',
+                            onClick: openDeleteOrder,
+                        },
+                    ] : []}
                     columns={tableColumns}
+                    defaultSortKey={pageKey === 'orders' ? null : undefined}
                     error={liveResource.error}
                     loading={liveResource.loading}
                     onRowClick={pageKey === 'stock' ? undefined : openRecord}
@@ -481,9 +555,13 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                     loading={liveResource.loading}
                     onNext={pageKey === 'stock'
                         ? () => setStockPage((page) => Math.min(displayedPagination.lastPage, page + 1))
+                        : pageKey === 'orders'
+                            ? () => goToOrderPage(Math.min(displayedPagination.lastPage, displayedPagination.currentPage + 1))
                         : () => setPageIndex((page) => Math.min(totalPages - 1, page + 1))}
                     onPrevious={pageKey === 'stock'
                         ? () => setStockPage((page) => Math.max(1, page - 1))
+                        : pageKey === 'orders'
+                            ? () => goToOrderPage(displayedPagination.currentPage - 1)
                         : () => setPageIndex((page) => Math.max(0, page - 1))}
                     to={displayedPagination.to}
                     total={displayedPagination.total}
@@ -528,6 +606,24 @@ export default function SalesModulePage({ onNavigate, pageKey }) {
                         </article>
                     ))}
                 </div>
+            </Modal>
+
+            <Modal
+                actions={(
+                    <>
+                        <button className="btn secondary" disabled={deletingOrder} onClick={() => setDeleteOrderRecord(null)} type="button">Keep order</button>
+                        {deleteOrderError && <span className="submit-disabled-note">{deleteOrderError}</span>}
+                        <button className="btn danger" disabled={deletingOrder} onClick={deletePendingOrder} type="button">{deletingOrder ? 'Deleting...' : 'Delete order'}</button>
+                    </>
+                )}
+                busy={deletingOrder}
+                onClose={() => setDeleteOrderRecord(null)}
+                open={Boolean(deleteOrderRecord)}
+                title={`Delete ${deleteOrderRecord?.order || 'order'}`}
+            >
+                <p className="helper-copy">
+                    This removes the pending order from order history and voids its unpaid invoice. Orders already approved, delivered, rejected, or paid cannot be deleted from the sales app.
+                </p>
             </Modal>
 
             <Drawer

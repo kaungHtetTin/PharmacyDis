@@ -1,0 +1,39 @@
+{
+  "name": "Medi Mart Sales",
+  "short_name": "Sales",
+  "description": "Sales representative workspace for orders, stock, pharmacies, and order history.",
+  "start_url": "/sales/dashboard",
+  "scope": "/sales/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f766e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/pwa/sales-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa/sales-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Order",
+      "short_name": "Order",
+      "url": "/sales/new-order",
+      "icons": [{ "src": "/pwa/sales-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Order History",
+      "short_name": "History",
+      "url": "/sales/orders",
+      "icons": [{ "src": "/pwa/sales-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

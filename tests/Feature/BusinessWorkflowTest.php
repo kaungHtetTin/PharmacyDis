@@ -280,6 +280,146 @@ class BusinessWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_sales_order_history_sorts_newest_date_time_first(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+
+        $olderOrder = $this->withToken($this->salesToken)
+            ->postJson('/api/sales/orders', [
+                'customer_id' => $customer->id,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertCreated()
+            ->json('data');
+
+        $newerOrder = $this->withToken($this->salesToken)
+            ->postJson('/api/sales/orders', [
+                'customer_id' => $customer->id,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertCreated()
+            ->json('data');
+
+        $response = $this->withToken($this->salesToken)
+            ->getJson('/api/sales/orders?per_page=2')
+            ->assertOk();
+
+        $this->assertSame($newerOrder['id'], $response->json('data.0.id'));
+        $this->assertSame($olderOrder['id'], $response->json('data.1.id'));
+    }
+
+    public function test_sales_representative_can_delete_own_pending_order(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+
+        $createdOrder = $this->withToken($this->salesToken)
+            ->postJson('/api/sales/orders', [
+                'customer_id' => $customer->id,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertCreated()
+            ->json('data');
+
+        $invoiceId = Invoice::where('sales_order_id', $createdOrder['id'])->value('id');
+
+        $this->withToken($this->salesToken)
+            ->deleteJson("/api/sales/orders/{$createdOrder['id']}")
+            ->assertNoContent();
+
+        $this->assertSoftDeleted('sales_orders', ['id' => $createdOrder['id'], 'status' => 'cancelled']);
+        $this->assertDatabaseHas('invoices', [
+            'id' => $invoiceId,
+            'status' => 'void',
+            'paid_amount' => 0,
+            'balance_amount' => 0,
+        ]);
+
+        $ordersResponse = $this->withToken($this->salesToken)
+            ->getJson('/api/sales/orders?per_page=100')
+            ->assertOk();
+
+        $this->assertNotContains($createdOrder['id'], collect($ordersResponse->json('data'))->pluck('id')->all());
+    }
+
+    public function test_sales_representative_can_edit_own_pending_order(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+
+        $createdOrder = $this->withToken($this->salesToken)
+            ->postJson('/api/sales/orders', [
+                'customer_id' => $customer->id,
+                'payment_due_date' => now()->addDays(10)->toDateString(),
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertCreated()
+            ->json('data');
+
+        $this->withToken($this->salesToken)
+            ->putJson("/api/sales/orders/{$createdOrder['id']}", [
+                'customer_id' => $customer->id,
+                'requested_delivery_date' => now()->addDays(3)->toDateString(),
+                'payment_due_date' => now()->addDays(20)->toDateString(),
+                'note' => 'Updated from sales app',
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 2],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'submitted')
+            ->assertJsonPath('data.items.0.quantity', 2);
+
+        $order = SalesOrder::with('invoices')->findOrFail($createdOrder['id']);
+        $invoice = $order->invoices->first();
+
+        $this->assertEquals(2, $order->items()->first()->quantity);
+        $this->assertEquals('Updated from sales app', $order->note);
+        $this->assertEquals(now()->addDays(20)->toDateString(), $invoice->due_date->toDateString());
+        $this->assertEquals((float) $order->total_amount, (float) $invoice->total_amount);
+        $this->assertEquals((float) $order->total_amount, (float) $invoice->balance_amount);
+    }
+
+    public function test_sales_representative_cannot_delete_non_pending_order(): void
+    {
+        $order = SalesOrder::where('order_no', 'SO-DEMO-1000')->firstOrFail();
+
+        $this->withToken($this->salesToken)
+            ->deleteJson("/api/sales/orders/{$order->id}")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('status');
+    }
+
+    public function test_sales_representative_cannot_edit_non_pending_order(): void
+    {
+        $order = SalesOrder::where('order_no', 'SO-DEMO-1000')->firstOrFail();
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+
+        $this->withToken($this->salesToken)
+            ->putJson("/api/sales/orders/{$order->id}", [
+                'customer_id' => $customer->id,
+                'items' => [
+                    ['product_id' => $product->id, 'unit_id' => $unit->id, 'quantity' => 1],
+                ],
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('status');
+    }
+
     public function test_foc_rules_are_announcements_and_manual_foc_is_recorded(): void
     {
         $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();

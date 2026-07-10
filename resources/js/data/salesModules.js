@@ -56,6 +56,7 @@ export const salesModules = {
         description: 'Track submitted, approved, rejected, delivered, and completed orders with status timelines.',
         primaryAction: 'Create order',
         primaryActionTarget: 'new-order',
+        pageSize: 10,
         showDate: true,
         filters: [
             { label: 'Status', options: ['All', 'Submitted', 'Approved', 'Rejected', 'Delivered'] },
