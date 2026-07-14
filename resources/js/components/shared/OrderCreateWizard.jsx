@@ -131,7 +131,7 @@ function productDetailUrl(selectedProductIds) {
     return `/lookups/products?ids=${selectedProductIds.join(',')}`;
 }
 
-function productListUrl(companyId, warehouseId = '', isOffice = false) {
+function productListUrl(companyId, warehouseId = '', isOffice = false, editOrderId = '') {
     if (!companyId) {
         return '';
     }
@@ -144,6 +144,10 @@ function productListUrl(companyId, warehouseId = '', isOffice = false) {
 
     if (isOffice && warehouseId) {
         params.set('warehouse_id', warehouseId);
+    }
+
+    if (isOffice && editOrderId) {
+        params.set('order_id', editOrderId);
     }
 
     return `/lookups/products?${params.toString()}`;
@@ -617,7 +621,7 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
     const { user } = useAuth();
     const params = new URLSearchParams(window.location.search);
     const isOffice = mode === 'office';
-    const editOrderId = !isOffice ? params.get('order_id') || '' : '';
+    const editOrderId = params.get('order_id') || '';
     const isEditing = Boolean(editOrderId);
     const lockedCompany = user?.sales_representative?.company;
     const [activeTab, setActiveTab] = useState('basic');
@@ -642,11 +646,11 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
     const [loadedEditOrderId, setLoadedEditOrderId] = useState('');
 
     const companiesResource = useApiResource(isOffice ? '/lookups/companies' : '');
-    const editOrderResource = useApiResource(isEditing ? `/sales/orders?order_id=${editOrderId}&per_page=1` : '');
+    const editOrderResource = useApiResource(isEditing ? `/${isOffice ? 'office' : 'sales'}/orders?order_id=${editOrderId}&per_page=1` : '');
     const customersResource = useApiResource(customerLookupUrl(debouncedCustomerSearch, form.customer_id));
     const representativesResource = useApiResource(isOffice && form.company_id ? `/lookups/sales-representatives?company_id=${form.company_id}` : '');
     const warehousesResource = useApiResource(isOffice ? '/office/warehouses?per_page=100' : '');
-    const productListResource = useApiResource(productListUrl(form.company_id, form.warehouse_id, isOffice));
+    const productListResource = useApiResource(productListUrl(form.company_id, form.warehouse_id, isOffice, editOrderId));
     const productDetailsResource = useApiResource(productDetailUrl(selectedProductIds));
     const companies = unwrapCollection(companiesResource.data);
     const customers = unwrapCollection(customersResource.data);
@@ -686,8 +690,12 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
             return;
         }
 
-        if (editOrder.status_value !== 'submitted') {
-            setSubmitError('Only pending submitted orders can be edited from the sales app.');
+        const editableStatuses = isOffice ? ['submitted', 'approved', 'invoiced'] : ['submitted'];
+
+        if (!editableStatuses.includes(editOrder.status_value)) {
+            setSubmitError(isOffice
+                ? 'Only submitted, approved, or invoiced orders can be edited.'
+                : 'Only pending submitted orders can be edited from the sales app.');
             setLoadedEditOrderId(editOrderId);
             return;
         }
@@ -698,9 +706,9 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
             note: editOrder.note || '',
             payment_due_date: dateInputValue(editOrder.payment_due_date) || defaultPaymentDueDate(),
             requested_delivery_date: dateInputValue(editOrder.requested_delivery_date),
-            sales_representative_id: '',
+            sales_representative_id: editOrder.sales_representative_id || '',
             tax_amount: String(editOrder.tax_amount ?? 0),
-            warehouse_id: '',
+            warehouse_id: editOrder.warehouse_id || '',
         });
         setCustomerSearch(editOrder.pharmacy || '');
         setSelectedProductIds([...new Set((editOrder.order_items_raw || []).map((line) => line.product_id).filter(Boolean))]);
@@ -709,7 +717,7 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
         setStepWarning('');
         setSubmitError('');
         setLoadedEditOrderId(editOrderId);
-    }, [editOrderId, editOrderResource.loading, editOrderResource.data, isEditing, loadedEditOrderId, lockedCompany?.id, user?.sales_representative?.company_id]);
+    }, [editOrderId, editOrderResource.loading, editOrderResource.data, isEditing, isOffice, loadedEditOrderId, lockedCompany?.id, user?.sales_representative?.company_id]);
 
     useEffect(() => {
         setLines((current) => selectedProductIds.map((productId) => {
@@ -909,7 +917,7 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
                 } : {}),
             };
             const response = isEditing
-                ? await api.put(`/sales/orders/${editOrderId}`, payload)
+                ? await api.put(`/${isOffice ? 'office' : 'sales'}/orders/${editOrderId}`, payload)
                 : await api.post(isOffice ? '/office/orders' : '/sales/orders', payload);
             const [order] = mapOrders({ data: [response.data || response] });
 
@@ -917,7 +925,7 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
                 window.sessionStorage.setItem('sales:last-submitted-order', JSON.stringify(order));
             }
 
-            onNavigate?.(isOffice ? 'order-detail' : isEditing ? 'orders' : 'order-submitted', { order_id: order?.id || response.data?.id || response.id || '' });
+            onNavigate?.(isOffice ? 'order-detail' : isEditing ? 'orders' : 'order-submitted', { order_id: order?.id || response.data?.id || response.id || editOrderId || '' });
         } catch (error) {
             setSubmitError(error.message);
         } finally {
@@ -943,7 +951,11 @@ export default function OrderCreateWizard({ mode = 'sales', onNavigate }) {
         <div className="page-stack order-wizard-page">
             <PageHeader
                 action={isOffice || isEditing ? <button className="btn secondary" onClick={() => onNavigate?.('orders')} type="button">Back to orders</button> : null}
-                description={isEditing ? 'Update the pending order before office approval. Approved, delivered, rejected, or paid orders cannot be edited here.' : 'Create an order by confirming account details, selecting products, entering quantities and FOC, then reviewing before submit.'}
+                description={isEditing
+                    ? isOffice
+                        ? 'Update the order details, selected products, quantities, and FOC before delivery.'
+                        : 'Update the pending order before office approval. Approved, delivered, rejected, or paid orders cannot be edited here.'
+                    : 'Create an order by confirming account details, selecting products, entering quantities and FOC, then reviewing before submit.'}
                 eyebrow="Order Entry"
                 title={isEditing ? `Edit ${editOrder?.order || 'order'}` : 'New order'}
             />

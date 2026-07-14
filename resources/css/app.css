@@ -7629,6 +7629,10 @@ tbody tr:last-child .row-more-list {
     backdrop-filter: blur(14px) saturate(125%);
 }
 
+.modal-actions:empty {
+    display: none;
+}
+
 .submit-disabled-note {
     margin-right: auto;
     color: var(--input-error);

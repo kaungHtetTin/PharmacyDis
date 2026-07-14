@@ -48,4 +48,10 @@ class SalesOrder extends Model
     {
         return $this->hasMany(Invoice::class);
     }
+
+    public function latestReservationMovement()
+    {
+        return $this->morphOne(StockMovement::class, 'reference')
+            ->ofMany(['id' => 'max'], fn ($query) => $query->where('movement_type', 'reserve'));
+    }
 }

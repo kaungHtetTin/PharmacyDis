@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\SalesRepresentative;
 use App\Models\StockBatch;
+use App\Models\StockMovement;
 use App\Models\Unit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -85,12 +86,24 @@ class LookupController extends Controller
         $limit = min(max((int) $request->query('limit', 500), 50), 1000);
 
         if ($request->boolean('lightweight')) {
+            $editingOrderId = $request->integer('order_id');
             $stockSummary = StockBatch::query()
                 ->select([
                     'company_id',
                     'product_id',
                     DB::raw('SUM(available_base_quantity) as available_base_quantity'),
                 ])
+                ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->integer('warehouse_id')))
+                ->groupBy('company_id', 'product_id');
+            $orderReservationSummary = StockMovement::query()
+                ->select([
+                    'company_id',
+                    'product_id',
+                    DB::raw("SUM(CASE WHEN movement_type = 'reserve' THEN ABS(base_unit_quantity) ELSE -ABS(base_unit_quantity) END) as reserved_base_quantity"),
+                ])
+                ->where('reference_type', \App\Models\SalesOrder::class)
+                ->where('reference_id', $editingOrderId ?: 0)
+                ->whereIn('movement_type', ['reserve', 'release'])
                 ->when($request->filled('warehouse_id'), fn ($query) => $query->where('warehouse_id', $request->integer('warehouse_id')))
                 ->groupBy('company_id', 'product_id');
 
@@ -101,11 +114,15 @@ class LookupController extends Controller
                     'products.name',
                     'products.sku',
                     'products.barcode',
-                    DB::raw('COALESCE(stock_summary.available_base_quantity, 0) as available_base_quantity'),
+                    DB::raw('(COALESCE(stock_summary.available_base_quantity, 0) + COALESCE(order_reservations.reserved_base_quantity, 0)) as available_base_quantity'),
                 ])
                 ->leftJoinSub($stockSummary, 'stock_summary', function ($join) {
                     $join->on('stock_summary.product_id', '=', 'products.id')
                         ->on('stock_summary.company_id', '=', 'products.company_id');
+                })
+                ->leftJoinSub($orderReservationSummary, 'order_reservations', function ($join) {
+                    $join->on('order_reservations.product_id', '=', 'products.id')
+                        ->on('order_reservations.company_id', '=', 'products.company_id');
                 })
                 ->with(['baseUnit:id,name,abbreviation'])
                 ->when($salesRepresentative, fn ($query) => $query->where('products.company_id', $salesRepresentative->company_id))

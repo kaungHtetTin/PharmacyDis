@@ -156,6 +156,7 @@ export function mapOrders(response) {
             company_id: order.company_id,
             customer_id: order.customer_id,
             sales_representative_id: order.sales_representative_id || '',
+            warehouse_id: order.warehouse_id || '',
             invoice_id: invoice?.id || '',
             invoice: invoice?.invoice_no || '',
             invoiceBalance: money(invoice?.balance_amount || 0),

@@ -71,6 +71,7 @@ export default function OrderDetailPage({ onNavigate }) {
     const warehouses = unwrapCollection(warehousesResource.data);
     const status = orderStatusValue(order);
     const canApprove = status === 'submitted';
+    const canEdit = ['submitted', 'approved', 'invoiced'].includes(status);
     const canGenerateInvoice = status === 'approved';
     const canDeliver = ['approved', 'invoiced'].includes(status);
     const canOpenInvoice = Boolean(order?.invoice_id);
@@ -178,6 +179,7 @@ export default function OrderDetailPage({ onNavigate }) {
             <PageHeader
                 action={(
                     <div className="page-heading-actions">
+                        {canEdit && <button className="btn secondary" disabled={busy} onClick={() => onNavigate?.('order-edit', { order_id: order.id })} type="button">Edit order</button>}
                         {canApprove && <button className="btn primary" disabled={busy || warehousesResource.loading} onClick={openApproval} type="button">Approve order</button>}
                         {canGenerateInvoice && <button className="btn primary" disabled={busy} onClick={generateInvoice} type="button">Generate invoice</button>}
                         {canDeliver && <button className="btn secondary" disabled={busy} onClick={deliverOrder} type="button">Deliver stock</button>}

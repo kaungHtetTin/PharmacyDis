@@ -13,7 +13,7 @@ import { invoicePrintPageUrl } from '../../components/shared/InvoiceDetailDrawer
 import Modal from '../../components/shared/Modal';
 import OrderCreateForm from '../../components/shared/OrderCreateForm';
 import { getCompanyCreditStatus, isBlockedCredit, normalizeCreditStatuses } from '../../components/shared/OrderCreditGate';
-import OrderLineBuilder from '../../components/shared/OrderLineBuilder';
+import OrderLineBuilder, { getOrderStockStatus } from '../../components/shared/OrderLineBuilder';
 import PageHeader from '../../components/shared/PageHeader';
 import PaginationBar from '../../components/shared/PaginationBar';
 import Panel from '../../components/shared/Panel';
@@ -252,6 +252,13 @@ const blankOfficeOrderForm = {
     note: '',
     auto_approve: true,
 };
+
+const officeOrderTabs = [
+    { key: 'basic', label: 'Basic information' },
+    { key: 'products', label: 'Product selection' },
+    { key: 'quantity', label: 'Unit quantity and FOC' },
+    { key: 'preview', label: 'Final preview and confirm' },
+];
 
 const blankSalesRepresentativeForm = {
     name: '',
@@ -1733,7 +1740,9 @@ function OfficeOrderForm({
     lines,
     lockedCustomer = null,
     onChange,
+    onCancel,
     onLineChange,
+    onSubmit,
     products = [],
     productsLoading = false,
     representatives = [],
@@ -1745,13 +1754,51 @@ function OfficeOrderForm({
     warehouses = [],
     warehousesLoading = false,
     warehouseRequired = true,
+    submitLabel = 'Save order changes',
 }) {
+    const [activeTab, setActiveTab] = useState('basic');
+    const [stepWarning, setStepWarning] = useState('');
+    const [productSearch, setProductSearch] = useState('');
     const selectedCustomer = customers.find((customer) => String(customer.id) === String(form.customer_id)) || lockedCustomer;
+    const selectedCompany = companies.find((company) => String(company.id) === String(form.company_id));
     const selectedCredit = selectedCustomer?.credit_statuses?.find((credit) => String(credit.company_id) === String(form.company_id))
         || selectedCustomer?.creditStatuses?.find((credit) => String(credit.company_id) === String(form.company_id));
     const creditStatus = titleCase(selectedCredit?.credit_status || selectedCredit?.status || 'ready');
     const outstandingBalance = selectedCredit?.outstanding_balance ?? selectedCredit?.outstanding ?? 0;
     const blocked = isBlockedCredit(creditStatus);
+    const activeIndex = officeOrderTabs.findIndex((tab) => tab.key === activeTab);
+    const selectedProductIds = lines.map((line) => String(line.product_id || '')).filter(Boolean);
+    const selectedLines = lines.filter((line) => line.product_id);
+    const filteredProducts = products.filter((product) => {
+        const query = productSearch.trim().toLowerCase();
+
+        if (!query) {
+            return true;
+        }
+
+        return [product.name, product.sku, product.barcode, product.brand]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(query));
+    });
+    const { shortages } = getOrderStockStatus(lines, products, stockRows);
+    const totals = selectedLines.reduce((summary, line) => {
+        const product = products.find((item) => String(item.id) === String(line.product_id));
+        const productUnit = (product?.product_units || product?.productUnits || []).find((unit) => String(unit.unit_id) === String(line.unit_id));
+        const quantity = Number(line.quantity || line.orderedQuantity || 0);
+        const conversion = Number(productUnit?.conversion_factor_to_base || 1);
+        const unitPrice = Number(productUnit?.selling_price || 0);
+        const discount = Number(line.discount_percentage === '' || line.discount_percentage == null ? product?.default_discount_percentage ?? 0 : line.discount_percentage);
+        const focUnit = (product?.product_units || product?.productUnits || []).find((unit) => String(unit.unit_id) === String(line.foc_unit_id || line.unit_id));
+        const focBaseQuantity = Number(line.foc_quantity || 0) * Number(focUnit?.conversion_factor_to_base || 1);
+        const gross = quantity * unitPrice;
+        const lineTotal = Math.max(0, gross - (gross * (discount / 100)));
+
+        return {
+            focBaseQuantity: summary.focBaseQuantity + focBaseQuantity,
+            lineTotal: summary.lineTotal + lineTotal,
+            requiredBaseQuantity: summary.requiredBaseQuantity + (quantity * conversion) + focBaseQuantity,
+        };
+    }, { focBaseQuantity: 0, lineTotal: 0, requiredBaseQuantity: 0 });
     const customerOptions = selectedCustomer?.id && !customers.some((customer) => String(customer.id) === String(selectedCustomer.id))
         ? [selectedCustomer, ...customers]
         : customers;
@@ -1762,84 +1809,404 @@ function OfficeOrderForm({
             : warehouseRequired
                 ? 'Select warehouse'
                 : 'Keep current reservation';
+    const routeReady = Boolean(form.company_id && form.customer_id && form.payment_due_date && (!warehouseRequired || form.warehouse_id));
+
+    function getDefaultProductUnit(product) {
+        const units = product?.product_units || product?.productUnits || [];
+
+        return units.find((unit) => unit.is_default_sales_unit)
+            || units.find((unit) => unit.is_base_unit)
+            || units[0];
+    }
+
+    function productUnitLabel(product, unitId) {
+        const unit = (product?.product_units || product?.productUnits || []).find((item) => String(item.unit_id) === String(unitId));
+
+        return unit?.unit?.name || unit?.unit?.abbreviation || '-';
+    }
+
+    function linePreview(line) {
+        const product = products.find((item) => String(item.id) === String(line.product_id));
+        const productUnit = (product?.product_units || product?.productUnits || []).find((unit) => String(unit.unit_id) === String(line.unit_id));
+        const quantity = Number(line.quantity || line.orderedQuantity || 0);
+        const conversion = Number(productUnit?.conversion_factor_to_base || 1);
+        const unitPrice = Number(productUnit?.selling_price || 0);
+        const discount = Number(line.discount_percentage === '' || line.discount_percentage == null ? product?.default_discount_percentage ?? 0 : line.discount_percentage);
+        const focUnit = (product?.product_units || product?.productUnits || []).find((unit) => String(unit.unit_id) === String(line.foc_unit_id || line.unit_id));
+        const focBaseQuantity = Number(line.foc_quantity || 0) * Number(focUnit?.conversion_factor_to_base || 1);
+        const orderedBaseQuantity = quantity * conversion;
+        const gross = quantity * unitPrice;
+
+        return {
+            discount,
+            lineTotal: Math.max(0, gross - (gross * (discount / 100))),
+            product,
+            requiredBaseQuantity: orderedBaseQuantity + focBaseQuantity,
+            unitPrice,
+        };
+    }
+
+    function replaceBlankWith(nextLine) {
+        const hasOnlyBlankLine = lines.length === 1 && !lines[0].product_id;
+
+        return hasOnlyBlankLine ? [nextLine] : [...lines, nextLine];
+    }
+
+    function toggleProduct(product) {
+        const selected = selectedProductIds.includes(String(product.id));
+
+        if (selected) {
+            const nextLines = lines.filter((line) => String(line.product_id) !== String(product.id));
+            onLineChange(nextLines.length ? nextLines : [{ ...blankOfficeOrderLine, id: `office-order-line-${Date.now()}` }]);
+            setStepWarning('');
+            return;
+        }
+
+        const defaultUnit = getDefaultProductUnit(product);
+
+        onLineChange(replaceBlankWith({
+            ...blankOfficeOrderLine,
+            id: `office-order-line-${product.id}-${Date.now()}`,
+            product_id: product.id,
+            unit_id: defaultUnit?.unit_id || '',
+            foc_unit_id: defaultUnit?.unit_id || '',
+            quantity: '1',
+            discount_percentage: product.default_discount_percentage ?? 0,
+        }));
+        setStepWarning('');
+    }
+
+    function clearProducts() {
+        onLineChange([{ ...blankOfficeOrderLine, id: `office-order-line-${Date.now()}` }]);
+        setStepWarning('');
+    }
+
+    function validateStep(tabKey) {
+        if (tabKey === 'basic') {
+            if (!form.customer_id) {
+                return 'Select a pharmacy before continuing.';
+            }
+
+            if (!form.company_id) {
+                return 'Select a company before continuing.';
+            }
+
+            if (warehouseRequired && !form.warehouse_id) {
+                return 'Select a warehouse before continuing.';
+            }
+
+            if (!form.payment_due_date) {
+                return 'Select a payment due date before continuing.';
+            }
+        }
+
+        if (tabKey === 'products') {
+            if (productsLoading) {
+                return 'Wait for products to finish loading before continuing.';
+            }
+
+            if (!selectedProductIds.length) {
+                return 'Select at least one product before continuing.';
+            }
+        }
+
+        if (tabKey === 'quantity') {
+            if (!selectedLines.length) {
+                return 'Select at least one product before continuing.';
+            }
+
+            if (selectedLines.some((line) => !line.unit_id)) {
+                return 'Select a unit for each selected product before continuing.';
+            }
+
+            if (selectedLines.some((line) => Number(line.quantity || line.orderedQuantity || 0) <= 0)) {
+                return 'Enter quantity for each selected product before continuing.';
+            }
+
+            if (shortages.length > 0) {
+                return 'Some selected products exceed available stock. Reduce quantity or FOC before continuing.';
+            }
+        }
+
+        return '';
+    }
+
+    function goToTab(tabKey) {
+        const currentIndex = officeOrderTabs.findIndex((tab) => tab.key === activeTab);
+        const targetIndex = officeOrderTabs.findIndex((tab) => tab.key === tabKey);
+
+        if (targetIndex <= currentIndex) {
+            setStepWarning('');
+            setActiveTab(tabKey);
+            return;
+        }
+
+        for (let index = currentIndex; index < targetIndex; index += 1) {
+            const warning = validateStep(officeOrderTabs[index].key);
+
+            if (warning) {
+                setStepWarning(warning);
+                setActiveTab(officeOrderTabs[index].key);
+                return;
+            }
+        }
+
+        setStepWarning('');
+        setActiveTab(tabKey);
+    }
+
+    function goPrevious() {
+        goToTab(officeOrderTabs[Math.max(0, activeIndex - 1)].key);
+    }
+
+    function goNext() {
+        const warning = validateStep(activeTab);
+
+        if (warning) {
+            setStepWarning(warning);
+            return;
+        }
+
+        setStepWarning('');
+        goToTab(officeOrderTabs[Math.min(officeOrderTabs.length - 1, activeIndex + 1)].key);
+    }
+
+    function submitFromPreview() {
+        const warning = validateStep('quantity');
+
+        if (warning || blocked || (warehouseRequired && !form.warehouse_id)) {
+            setStepWarning(warning || (blocked ? 'Company credit is blocked. Order creation is not allowed.' : 'Select a warehouse before saving this order.'));
+            return;
+        }
+
+        setStepWarning('');
+        onSubmit?.();
+    }
+
+    const stepAction = (
+        <div className="order-wizard-actions">
+            <button className="btn secondary" disabled={submitting} onClick={onCancel} type="button">Cancel</button>
+            <button className="btn secondary" disabled={activeIndex === 0 || submitting} onClick={goPrevious} type="button">Previous</button>
+            {activeTab === 'preview' ? (
+                <button className="btn primary" disabled={submitting || blocked || shortages.length > 0 || !selectedLines.length || (warehouseRequired && !form.warehouse_id)} onClick={submitFromPreview} type="button">
+                    {submitting ? 'Saving...' : submitLabel}
+                </button>
+            ) : (
+                <button className="btn primary" disabled={submitting} onClick={goNext} type="button">Next</button>
+            )}
+        </div>
+    );
 
     return (
-        <div className="order-create-form sales-order-create-form">
-            <section className="order-setup-card">
-                <div className="section-heading">
-                    <div>
-                        <p className="eyebrow">Admin order</p>
-                        <h2>Pharmacy, company, and approval setup</h2>
-                    </div>
+        <div className="order-create-form sales-order-create-form order-wizard-page">
+            <div className="order-wizard-topbar">
+                <div className="order-wizard-tabs" role="tablist">
+                    {officeOrderTabs.map((tab, index) => (
+                        <button
+                            aria-label={`Step ${index + 1}: ${tab.label}`}
+                            className={tab.key === activeTab ? 'active' : ''}
+                            key={tab.key}
+                            onClick={() => goToTab(tab.key)}
+                            title={tab.label}
+                            type="button"
+                        >
+                            <span>{index + 1}</span>
+                        </button>
+                    ))}
                 </div>
-                <div className="sales-order-context-grid">
-                    <label className="form-field order-route-company">
-                        <span>Company</span>
-                        <select disabled={submitting} name="company_id" onChange={onChange} required value={form.company_id}>
-                            <option value="" disabled>Select company</option>
-                            {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-                        </select>
-                    </label>
-                    <label className="form-field order-route-pharmacy">
-                        <span>Pharmacy</span>
-                        <select disabled={Boolean(lockedCustomer?.id) || submitting} name="customer_id" onChange={onChange} required value={form.customer_id}>
-                            <option value="" disabled>Select pharmacy</option>
-                            {customerOptions.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
-                        </select>
-                    </label>
-                    <label className="form-field order-route-sales">
-                        <span>Sales representative</span>
-                        <select disabled={!form.company_id || representativesLoading || submitting} name="sales_representative_id" onChange={onChange} value={form.sales_representative_id}>
-                            <option value="">{representativesLoading ? 'Loading representatives' : 'No representative'}</option>
-                            {representatives.map((representative) => (
-                                <option key={representative.id} value={representative.id}>
-                                    {representative.user?.name || representative.employee_code || `Rep #${representative.id}`}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="form-field order-route-warehouse">
-                        <span>Reserve from warehouse</span>
-                        <select disabled={warehousesLoading || submitting} name="warehouse_id" onChange={onChange} required={warehouseRequired} value={form.warehouse_id}>
-                            <option value="" disabled={warehouseRequired}>{warehousePlaceholder}</option>
-                            {warehouses.map((warehouse) => (
-                                <option key={warehouse.id} value={warehouse.id}>
-                                    {warehouse.name}{warehouse.code ? ` (${warehouse.code})` : ''}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <FormField className="order-route-date" label="Requested delivery date" name="requested_delivery_date" onChange={onChange} type="date" value={form.requested_delivery_date} />
-                    <FormField className="order-route-date" label="Payment due date" name="payment_due_date" onChange={onChange} required type="date" value={form.payment_due_date} />
-                    <FormField className="order-route-date" label="Tax amount" name="tax_amount" onChange={onChange} type="number" value={form.tax_amount} />
-                    <article className={`order-credit-summary ${blocked ? 'is-blocked' : ''}`}>
-                        <div>
-                            <span>Company credit</span>
-                            <StatusBadge value={creditStatus} />
-                        </div>
-                        <strong>{blocked ? 'Order creation is blocked' : 'Order creation is allowed'}</strong>
-                        <small>{selectedCredit?.reason || 'No overdue balance for this company.'}</small>
-                        <small>Outstanding: {formatAmount(outstandingBalance)}</small>
-                    </article>
-                    <label className="form-field sales-order-note">
-                        <span>Order note</span>
-                        <textarea disabled={submitting} name="note" onChange={onChange} placeholder="Optional note for warehouse or finance" rows="3" value={form.note} />
-                    </label>
-                </div>
-            </section>
+                <div className="order-wizard-step-label">{officeOrderTabs[activeIndex]?.label}</div>
+            </div>
 
-            <OrderLineBuilder
-                allowFallback={false}
-                disabled={!form.company_id || blocked || productsLoading || submitting}
-                onChange={onLineChange}
-                productOptions={products}
-                stockError={stockError}
-                stockLoading={stockLoading}
-                stockRows={stockRows}
-                value={lines}
-                warehouseId={form.warehouse_id}
-            />
-            {error && <span className="error-text">{error}</span>}
+            {(error || stepWarning) && <div className="form-error" role="alert">{error || stepWarning}</div>}
+
+            {activeTab === 'basic' && (
+                <Panel action={stepAction} eyebrow="Step 1" title="Basic information">
+                    <div className="sales-order-context-grid">
+                        <label className="form-field order-route-company">
+                            <span>Company</span>
+                            <select disabled={submitting} name="company_id" onChange={onChange} required value={form.company_id}>
+                                <option value="" disabled>Select company</option>
+                                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+                            </select>
+                        </label>
+                        <label className="form-field order-route-pharmacy">
+                            <span>Pharmacy</span>
+                            <select disabled={Boolean(lockedCustomer?.id) || submitting} name="customer_id" onChange={onChange} required value={form.customer_id}>
+                                <option value="" disabled>Select pharmacy</option>
+                                {customerOptions.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
+                            </select>
+                        </label>
+                        <label className="form-field order-route-sales">
+                            <span>Sales representative</span>
+                            <select disabled={!form.company_id || representativesLoading || submitting} name="sales_representative_id" onChange={onChange} value={form.sales_representative_id}>
+                                <option value="">{representativesLoading ? 'Loading representatives' : 'No representative'}</option>
+                                {representatives.map((representative) => (
+                                    <option key={representative.id} value={representative.id}>
+                                        {representative.user?.name || representative.employee_code || `Rep #${representative.id}`}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="form-field order-route-warehouse">
+                            <span>Reserve from warehouse</span>
+                            <select disabled={warehousesLoading || submitting} name="warehouse_id" onChange={onChange} required={warehouseRequired} value={form.warehouse_id}>
+                                <option value="" disabled={warehouseRequired}>{warehousePlaceholder}</option>
+                                {warehouses.map((warehouse) => (
+                                    <option key={warehouse.id} value={warehouse.id}>
+                                        {warehouse.name}{warehouse.code ? ` (${warehouse.code})` : ''}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <FormField className="order-route-date" label="Requested delivery date" name="requested_delivery_date" onChange={onChange} type="date" value={form.requested_delivery_date} />
+                        <FormField className="order-route-date" label="Payment due date" name="payment_due_date" onChange={onChange} required type="date" value={form.payment_due_date} />
+                        <FormField className="order-route-date" label="Tax amount" name="tax_amount" onChange={onChange} type="number" value={form.tax_amount} />
+                        <article className={`order-credit-summary ${blocked ? 'is-blocked' : ''}`}>
+                            <div>
+                                <span>Company credit</span>
+                                <StatusBadge value={creditStatus} />
+                            </div>
+                            <strong>{blocked ? 'Order creation is blocked' : 'Order creation is allowed'}</strong>
+                            <small>{selectedCredit?.reason || 'No overdue balance for this company.'}</small>
+                            <small>Outstanding: {formatAmount(outstandingBalance)}</small>
+                        </article>
+                        <label className="form-field sales-order-note">
+                            <span>Order note</span>
+                            <textarea disabled={submitting} name="note" onChange={onChange} placeholder="Optional note for warehouse or finance" rows="3" value={form.note} />
+                        </label>
+                    </div>
+                </Panel>
+            )}
+
+            {activeTab === 'products' && (
+                <Panel action={stepAction} eyebrow="Step 2" title="Product selection">
+                    <div className="order-wizard-product-toolbar">
+                        <label className="form-field">
+                            <span>Search product</span>
+                            <input disabled={!routeReady || productsLoading || submitting} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search by product name, SKU, barcode, or brand" type="search" value={productSearch} />
+                        </label>
+                        <article>
+                            <span>Selected</span>
+                            <strong>{selectedProductIds.length}</strong>
+                            <button disabled={!selectedProductIds.length || submitting} onClick={clearProducts} type="button">Clear all</button>
+                        </article>
+                    </div>
+                    {!routeReady && <span className="muted">Complete basic information first.</span>}
+                    {productsLoading && <span className="muted">Loading product list...</span>}
+                    {!productsLoading && routeReady && (
+                        <div className="order-wizard-product-list">
+                            {filteredProducts.map((product) => {
+                                const selected = selectedProductIds.includes(String(product.id));
+                                const unit = product.base_unit?.abbreviation || product.base_unit?.name || 'base units';
+
+                                return (
+                                    <button
+                                        className={selected ? 'order-wizard-product-row selected' : 'order-wizard-product-row'}
+                                        key={product.id}
+                                        onClick={() => toggleProduct(product)}
+                                        type="button"
+                                    >
+                                        <span>
+                                            <strong>{product.name}</strong>
+                                            <small>{product.sku || '-'} / {product.barcode || '-'} / {product.brand || '-'}</small>
+                                        </span>
+                                        <span>
+                                            <small>Available</small>
+                                            <strong>{formatAmount(product.available_base_quantity)} {unit}</strong>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                            {!filteredProducts.length && <span className="muted">No products match this search.</span>}
+                        </div>
+                    )}
+                </Panel>
+            )}
+
+            {activeTab === 'quantity' && (
+                <Panel action={stepAction} eyebrow="Step 3" title="Unit quantity and FOC">
+                    <OrderLineBuilder
+                        allowFallback={false}
+                        disabled={!form.company_id || blocked || productsLoading || submitting}
+                        onChange={onLineChange}
+                        productOptions={products}
+                        stockError={stockError}
+                        stockLoading={stockLoading}
+                        stockRows={stockRows}
+                        value={lines}
+                        warehouseId={form.warehouse_id}
+                    />
+                </Panel>
+            )}
+
+            {activeTab === 'preview' && (
+                <Panel action={stepAction} eyebrow="Step 4" title="Final preview and confirm">
+                    <div className="order-wizard-preview-grid">
+                        <article><span>Company</span><strong>{selectedCompany?.name || '-'}</strong></article>
+                        <article><span>Pharmacy</span><strong>{selectedCustomer?.name || '-'}</strong></article>
+                        <article><span>Payment due date</span><strong>{form.payment_due_date || '-'}</strong></article>
+                        <article><span>Products</span><strong>{selectedLines.length}</strong></article>
+                        <article><span>Manual FOC</span><strong>{formatAmount(totals.focBaseQuantity)} base units</strong></article>
+                        <article><span>Order total</span><strong>{formatAmount(totals.lineTotal + Number(form.tax_amount || 0))}</strong></article>
+                    </div>
+                    {blocked && <div className="form-error">Company credit is blocked. Order creation is not allowed.</div>}
+                    {warehouseRequired && !form.warehouse_id && <div className="form-error">Select a warehouse before saving this order.</div>}
+                    {shortages.length > 0 && <div className="form-error">Some selected products exceed available stock. Reduce quantity or FOC before saving.</div>}
+                    <div className="order-wizard-preview-table-wrap">
+                        <table className="order-wizard-preview-table">
+                            <colgroup>
+                                <col className="order-preview-col-no" />
+                                <col className="order-preview-col-product" />
+                                <col className="order-preview-col-qty" />
+                                <col className="order-preview-col-unit" />
+                                <col className="order-preview-col-discount" />
+                                <col className="order-preview-col-price" />
+                                <col className="order-preview-col-foc" />
+                                <col className="order-preview-col-required" />
+                                <col className="order-preview-col-total" />
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>No</th>
+                                    <th>Product</th>
+                                    <th>Qty</th>
+                                    <th>Unit</th>
+                                    <th>Disc</th>
+                                    <th>Price</th>
+                                    <th>FOC</th>
+                                    <th>Required</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {selectedLines.map((line, index) => {
+                                    const preview = linePreview(line);
+
+                                    return (
+                                        <tr key={line.id || line.product_id}>
+                                            <td>{index + 1}</td>
+                                            <td className="order-preview-product-cell">{preview.product?.name || `Product #${line.product_id}`}</td>
+                                            <td>{formatAmount(line.quantity || line.orderedQuantity)}</td>
+                                            <td>{productUnitLabel(preview.product, line.unit_id)}</td>
+                                            <td>{formatAmount(preview.discount)}%</td>
+                                            <td>{formatAmount(preview.unitPrice)}</td>
+                                            <td>{formatAmount(line.foc_quantity || 0)}</td>
+                                            <td>{formatAmount(preview.requiredBaseQuantity)} base units</td>
+                                            <td>{formatAmount(preview.lineTotal)}</td>
+                                        </tr>
+                                    );
+                                })}
+                                {!selectedLines.length && (
+                                    <tr>
+                                        <td colSpan="9">No products selected.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </Panel>
+            )}
+
             <p className="helper-copy">
                 Orders can be changed until delivery. Approved or invoiced edits re-reserve stock from the selected warehouse by nearest expiry date.
             </p>
@@ -6602,7 +6969,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 }
 
                 if (action.orderAction === 'edit') {
-                    openOfficeOrderEditForm(record);
+                    onNavigate?.('order-edit', { order_id: record?.id || '' });
                     return;
                 }
 
@@ -7295,7 +7662,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             )}
 
             <Modal
-                actions={modalScreen.stockReceivingForm && !isReceivingPage ? (
+                actions={officeOrderModalOpen ? (
+                    <></>
+                ) : modalScreen.stockReceivingForm && !isReceivingPage ? (
                     <>
                         <button className="btn secondary" onClick={closeWorkflowModal} type="button">Cancel</button>
                         <button className="btn primary" onClick={closeWorkflowModal} type="button">Save receiving and update stock</button>
@@ -7321,7 +7690,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                             lines={officeOrderLines}
                             lockedCustomer={officeOrderLockedCustomer}
                             onChange={updateOfficeOrderForm}
+                            onCancel={closeWorkflowModal}
                             onLineChange={updateOfficeOrderLines}
+                            onSubmit={submitOfficeOrderForm}
                             products={officeOrderProducts}
                             productsLoading={officeOrderProductsResource.loading}
                             representatives={officeOrderRepresentatives}
@@ -7330,6 +7701,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                             stockLoading={officeOrderStockResource.loading}
                             stockRows={officeOrderStockRows}
                             submitting={officeOrderSubmitting}
+                            submitLabel={modalSubmitLabel}
                             warehouses={receivingWarehouses}
                             warehousesLoading={receivingWarehousesResource.loading}
                             warehouseRequired={officeOrderRequiresWarehouse}
@@ -7533,7 +7905,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                                         }
 
                                         if (action.orderAction === 'edit') {
-                                            openOfficeOrderEditForm(selectedRecord);
+                                            onNavigate?.('order-edit', { order_id: selectedRecord?.id || '' });
                                             return;
                                         }
 
