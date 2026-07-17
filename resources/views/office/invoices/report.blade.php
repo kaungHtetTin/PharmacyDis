@@ -2,6 +2,7 @@
     $formatMoney = fn ($value) => number_format((float) ($value ?? 0));
     $formatDate = fn ($value) => $value ? $value->format('d-M-Y') : '-';
     $totalAmount = $invoices->sum('total_amount');
+    $cashBackAmount = $invoices->sum('cash_back_amount');
     $paidAmount = $invoices->sum('paid_amount');
     $dateFrom = $filters['date_from'] ?? '';
     $dateTo = $filters['date_to'] ?? '';
@@ -113,7 +114,7 @@
 
             .invoice-report-summary {
                 display: grid;
-                grid-template-columns: repeat(3, minmax(0, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 8px;
                 margin-bottom: 14px;
             }
@@ -155,12 +156,13 @@
 
             .invoice-report-table .col-no { width: 9mm; }
             .invoice-report-table .col-date { width: 24mm; }
-            .invoice-report-table .col-name { width: 72mm; }
-            .invoice-report-table .col-invoice { width: 42mm; }
+            .invoice-report-table .col-name { width: 60mm; }
+            .invoice-report-table .col-invoice { width: 38mm; }
             .invoice-report-table .col-due { width: 24mm; }
             .invoice-report-table .col-amount { width: 24mm; }
+            .invoice-report-table .col-cash-back { width: 24mm; }
             .invoice-report-table .col-paid { width: 24mm; }
-            .invoice-report-table .col-remark { width: 34mm; }
+            .invoice-report-table .col-remark { width: 30mm; }
 
             .invoice-report-table th,
             .invoice-report-table td {
@@ -289,6 +291,7 @@
             <section class="invoice-report-summary">
                 <span>Records<strong>{{ number_format($invoices->count()) }}</strong></span>
                 <span>Total amount<strong>{{ $formatMoney($totalAmount) }}</strong></span>
+                <span>Cash back<strong>{{ $formatMoney($cashBackAmount) }}</strong></span>
                 <span>Total paid<strong>{{ $formatMoney($paidAmount) }}</strong></span>
             </section>
 
@@ -300,6 +303,7 @@
                     <col class="col-invoice">
                     <col class="col-due">
                     <col class="col-amount">
+                    <col class="col-cash-back">
                     <col class="col-paid">
                     <col class="col-remark">
                 </colgroup>
@@ -311,6 +315,7 @@
                         <th>Invoice No.</th>
                         <th>Due date</th>
                         <th>Amount</th>
+                        <th>Cash back</th>
                         <th>Paid</th>
                         <th>Remark</th>
                     </tr>
@@ -324,12 +329,13 @@
                             <td class="invoice-cell">{{ $invoice->invoice_no }}</td>
                             <td class="date-cell">{{ $formatDate($invoice->due_date) }}</td>
                             <td class="number-cell">{{ $formatMoney($invoice->total_amount) }}</td>
+                            <td class="number-cell">{{ $formatMoney($invoice->cash_back_amount) }}</td>
                             <td class="number-cell">{{ $formatMoney($invoice->paid_amount) }}</td>
                             <td class="remark-cell">{{ $invoice->remark ?: '-' }}</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" align="center">No invoices match the selected filters.</td>
+                            <td colspan="9" align="center">No invoices match the selected filters.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -337,6 +343,7 @@
                     <tr>
                         <td colspan="5" class="number-cell">Total</td>
                         <td class="number-cell">{{ $formatMoney($totalAmount) }}</td>
+                        <td class="number-cell">{{ $formatMoney($cashBackAmount) }}</td>
                         <td class="number-cell">{{ $formatMoney($paidAmount) }}</td>
                         <td></td>
                     </tr>

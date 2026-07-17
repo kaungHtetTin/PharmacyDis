@@ -25,6 +25,8 @@ class InvoiceResource extends JsonResource
             'subtotal_amount' => $this->subtotal_amount,
             'discount_amount' => $this->discount_amount,
             'tax_amount' => $this->tax_amount,
+            'cash_back_amount' => $this->cash_back_amount ?? 0,
+            'cash_back_limit_amount' => round((float) $this->total_amount + (float) ($this->cash_back_amount ?? 0), 2),
             'foc_value_amount' => $this->foc_value_amount,
             'total_amount' => $this->total_amount,
             'paid_amount' => $this->paid_amount,

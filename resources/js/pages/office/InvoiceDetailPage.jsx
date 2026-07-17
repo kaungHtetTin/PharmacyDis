@@ -15,6 +15,7 @@ function InvoiceSnapshot({ invoice }) {
         ['Subtotal', invoice.subtotalAmount],
         ['Discount', invoice.discountAmount],
         ['Tax', invoice.taxAmount],
+        ['Cash back', invoice.cashBackAmount],
         ['Total', invoice.amount],
         ['Paid', invoice.paidAmount || invoice.paid || '-'],
         ['Balance', invoice.balanceAmount],
@@ -45,14 +46,16 @@ export default function InvoiceDetailPage({ onNavigate }) {
     const [remarkSuccess, setRemarkSuccess] = useState('');
     const [saleType, setSaleType] = useState('cash');
     const [dueDate, setDueDate] = useState('');
+    const [cashBackAmount, setCashBackAmount] = useState('0');
 
     useEffect(() => {
         setRemark(invoice?.remark || '');
         setSaleType(invoice?.sale_type || 'cash');
         setDueDate(invoice?.due_date || '');
+        setCashBackAmount(String(invoice?.cash_back_amount ?? 0));
         setRemarkError('');
         setRemarkSuccess('');
-    }, [invoice?.id, invoice?.remark, invoice?.sale_type, invoice?.due_date]);
+    }, [invoice?.id, invoice?.remark, invoice?.sale_type, invoice?.due_date, invoice?.cash_back_amount]);
 
     const saveRemark = async () => {
         if (!invoice?.id) {
@@ -64,7 +67,25 @@ export default function InvoiceDetailPage({ onNavigate }) {
         setRemarkSuccess('');
 
         try {
-            await api.patch(`/office/invoices/${invoice.id}/print-details`, { due_date: dueDate, remark, sale_type: saleType });
+            const parsedCashBack = Number(cashBackAmount || 0);
+            const cashBackLimit = Number(invoice.cash_back_limit_amount || 0);
+
+            if (!Number.isFinite(parsedCashBack) || parsedCashBack < 0) {
+                setRemarkError('Cash back amount must be zero or more.');
+                return;
+            }
+
+            if (parsedCashBack > cashBackLimit) {
+                setRemarkError('Cash back amount cannot exceed the invoice total amount.');
+                return;
+            }
+
+            await api.patch(`/office/invoices/${invoice.id}/print-details`, {
+                due_date: dueDate,
+                remark,
+                sale_type: saleType,
+                cash_back_amount: parsedCashBack,
+            });
             setRemarkSuccess('Invoice print details saved.');
             invoiceResource.refresh();
         } catch (error) {
@@ -174,6 +195,18 @@ export default function InvoiceDetailPage({ onNavigate }) {
                                 onChange={(event) => setDueDate(event.target.value)}
                                 type="date"
                                 value={dueDate}
+                            />
+                        </label>
+                        <label className="form-field invoice-print-cash-back-field">
+                            <span>Cash back amount</span>
+                            <input
+                                disabled={remarkSaving}
+                                max={invoice.cash_back_limit_amount || 0}
+                                min="0"
+                                onChange={(event) => setCashBackAmount(event.target.value)}
+                                step="0.01"
+                                type="number"
+                                value={cashBackAmount}
                             />
                         </label>
                         <label className="form-field sales-order-note">

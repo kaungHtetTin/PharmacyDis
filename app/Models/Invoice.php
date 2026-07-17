@@ -15,6 +15,7 @@ class Invoice extends Model
     protected $casts = [
         'invoice_date' => 'date',
         'due_date' => 'date',
+        'cash_back_amount' => 'decimal:2',
     ];
 
     public function salesOrder()

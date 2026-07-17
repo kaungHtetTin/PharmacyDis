@@ -92,15 +92,29 @@ class BusinessWorkflowTest extends TestCase
             ->patchJson("/api/office/invoices/{$invoice->id}/print-details", [
                 'remark' => 'Deliver before noon.',
                 'sale_type' => 'credit',
+                'cash_back_amount' => 10000,
             ])
             ->assertOk()
             ->assertJsonPath('data.remark', 'Deliver before noon.')
-            ->assertJsonPath('data.sale_type', 'credit');
+            ->assertJsonPath('data.sale_type', 'credit')
+            ->assertJsonPath('data.total_amount', '186000.00')
+            ->assertJsonPath('data.balance_amount', '90000.00');
 
         $invoice->refresh();
 
         $this->assertSame('Deliver before noon.', $invoice->remark);
         $this->assertSame('credit', $invoice->sale_type);
+        $this->assertEquals(10000, (float) $invoice->cash_back_amount);
+        $this->assertEquals(186000, (float) $invoice->total_amount);
+        $this->assertEquals(90000, (float) $invoice->balance_amount);
+        $this->assertEquals(90000, (float) CustomerBalance::where('customer_id', $invoice->customer_id)->where('company_id', $invoice->company_id)->value('balance_amount'));
+
+        $this->withToken($this->officeToken)
+            ->patchJson("/api/office/invoices/{$invoice->id}/print-details", [
+                'cash_back_amount' => 196001,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('cash_back_amount');
     }
 
     public function test_invoice_report_lists_all_filtered_invoices_ordered_by_date(): void

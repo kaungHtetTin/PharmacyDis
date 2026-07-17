@@ -358,7 +358,11 @@ class SalesOrderService
         foreach ($order->invoices()->with('items')->get() as $invoice) {
             $invoice->items()->delete();
             $taxAmount = (float) ($invoice->tax_amount ?? 0);
-            $invoiceTotal = round((float) $order->total_amount + $taxAmount, 2);
+            $cashBackAmount = round(min(
+                (float) ($invoice->cash_back_amount ?? 0),
+                max(0, (float) $order->total_amount + $taxAmount)
+            ), 2);
+            $invoiceTotal = round(max(0, (float) $order->total_amount + $taxAmount - $cashBackAmount), 2);
 
             $invoice->update([
                 'company_id' => $order->company_id,
@@ -367,6 +371,7 @@ class SalesOrderService
                 'subtotal_amount' => $order->subtotal_amount,
                 'discount_amount' => $order->discount_amount,
                 'foc_value_amount' => $order->foc_value_amount,
+                'cash_back_amount' => $cashBackAmount,
                 'total_amount' => $invoiceTotal,
                 'balance_amount' => max(0, $invoiceTotal - (float) $invoice->paid_amount),
                 'due_date' => $order->payment_due_date?->toDateString() ?? $invoice->due_date?->toDateString() ?? now()->addDays((int) config('billing.invoice_due_days', 30))->toDateString(),

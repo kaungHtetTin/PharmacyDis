@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\InvoiceResource;
 use App\Models\Invoice;
 use App\Models\SalesOrder;
+use App\Services\CustomerBalanceService;
 use App\Services\InvoiceService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class InvoiceController extends Controller
 {
@@ -70,37 +73,72 @@ class InvoiceController extends Controller
         return new InvoiceResource($invoice);
     }
 
-    public function updateRemark(Request $request, Invoice $invoice)
+    public function updateRemark(Request $request, Invoice $invoice, CustomerBalanceService $customerBalanceService)
     {
         $validated = $request->validate([
             'due_date' => ['nullable', 'date'],
             'remark' => ['nullable', 'string', 'max:2000'],
             'sale_type' => ['nullable', 'string', 'in:cash,credit'],
+            'cash_back_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        $invoiceUpdates = [];
+        $updatedInvoice = DB::transaction(function () use ($customerBalanceService, $invoice, $validated) {
+            $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
+            $invoiceUpdates = [];
 
-        if (array_key_exists('due_date', $validated)) {
-            $invoiceUpdates['due_date'] = $validated['due_date'];
-        }
+            if (array_key_exists('due_date', $validated)) {
+                $invoiceUpdates['due_date'] = $validated['due_date'];
+            }
 
-        if (array_key_exists('remark', $validated)) {
-            $invoiceUpdates['remark'] = $validated['remark'];
-        }
+            if (array_key_exists('remark', $validated)) {
+                $invoiceUpdates['remark'] = $validated['remark'];
+            }
 
-        if (array_key_exists('sale_type', $validated)) {
-            $invoiceUpdates['sale_type'] = $validated['sale_type'] ?? 'cash';
-        }
+            if (array_key_exists('sale_type', $validated)) {
+                $invoiceUpdates['sale_type'] = $validated['sale_type'] ?? 'cash';
+            }
 
-        if ($invoiceUpdates !== []) {
-            $invoice->update($invoiceUpdates);
-        }
+            if (array_key_exists('cash_back_amount', $validated)) {
+                if ($invoice->status === 'void') {
+                    throw ValidationException::withMessages([
+                        'cash_back_amount' => 'Void invoices cannot receive cash back adjustments.',
+                    ]);
+                }
 
-        if (array_key_exists('due_date', $invoiceUpdates) && $invoice->sales_order_id) {
-            $invoice->salesOrder()->update(['payment_due_date' => $invoiceUpdates['due_date']]);
-        }
+                $cashBackAmount = round((float) ($validated['cash_back_amount'] ?? 0), 2);
+                $cashBackLimit = round((float) $invoice->total_amount + (float) ($invoice->cash_back_amount ?? 0), 2);
 
-        return new InvoiceResource($invoice->fresh([
+                if ($cashBackAmount > $cashBackLimit) {
+                    throw ValidationException::withMessages([
+                        'cash_back_amount' => 'Cash back amount cannot exceed the invoice total amount.',
+                    ]);
+                }
+
+                $totalAmount = round($cashBackLimit - $cashBackAmount, 2);
+                $paidAmount = (float) $invoice->paid_amount;
+
+                $invoiceUpdates['cash_back_amount'] = $cashBackAmount;
+                $invoiceUpdates['total_amount'] = $totalAmount;
+                $invoiceUpdates['balance_amount'] = max(0, $totalAmount - $paidAmount);
+                $invoiceUpdates['status'] = $paidAmount >= $totalAmount ? 'paid' : ($paidAmount > 0 ? 'partial' : 'issued');
+            }
+
+            if ($invoiceUpdates !== []) {
+                $invoice->update($invoiceUpdates);
+            }
+
+            if (array_key_exists('due_date', $invoiceUpdates) && $invoice->sales_order_id) {
+                $invoice->salesOrder()->update(['payment_due_date' => $invoiceUpdates['due_date']]);
+            }
+
+            if (array_key_exists('cash_back_amount', $invoiceUpdates)) {
+                $customerBalanceService->refresh((int) $invoice->customer_id, (int) $invoice->company_id);
+            }
+
+            return $invoice;
+        });
+
+        return new InvoiceResource($updatedInvoice->fresh([
             'company',
             'customer',
             'salesOrder.company',

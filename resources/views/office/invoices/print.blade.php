@@ -6,6 +6,7 @@
     $dateFormat = $settings['date_format'] ?? 'd-M-Y';
     $formatDate = fn ($value) => $value ? $value->format($dateFormat) : '-';
     $taxAmount = (float) ($invoice->tax_amount ?? 0);
+    $cashBackAmount = (float) ($invoice->cash_back_amount ?? 0);
     $netTotal = (float) $invoice->total_amount;
     $orderNo = $invoice->salesOrder?->order_no ?? '-';
     $faviconUrl = asset('favicon.png');
@@ -164,6 +165,12 @@
                                     <td>Commercial Tax</td>
                                     <td align="right">{{ $formatMoney($taxAmount) }}</td>
                                 </tr>
+                                @if ($cashBackAmount > 0)
+                                    <tr>
+                                        <td>Cash Back</td>
+                                        <td align="right">{{ $formatMoney($cashBackAmount) }}</td>
+                                    </tr>
+                                @endif
                                 <tr>
                                     <td><b>Net Total</b></td>
                                     <td align="right"><b>{{ $formatMoney($netTotal) }} {{ $settings['currency'] ?? 'MMK' }}</b></td>

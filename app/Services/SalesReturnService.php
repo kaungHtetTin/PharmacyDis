@@ -123,13 +123,16 @@ class SalesReturnService
             }
 
             $salesReturn->update(['total_amount' => $returnTotal]);
-            $totalAmount = max(0, (float) $invoice->total_amount - $returnTotal);
+            $grossAmount = max(0, (float) $invoice->total_amount + (float) ($invoice->cash_back_amount ?? 0) - $returnTotal);
+            $cashBackAmount = round(min((float) ($invoice->cash_back_amount ?? 0), $grossAmount), 2);
+            $totalAmount = max(0, round($grossAmount - $cashBackAmount, 2));
             $paidAmount = (float) $invoice->paid_amount;
             $balanceAmount = max(0, $totalAmount - $paidAmount);
 
             $invoice->update([
                 'subtotal_amount' => max(0, (float) $invoice->subtotal_amount - $subtotalReturn),
                 'discount_amount' => max(0, (float) $invoice->discount_amount - $discountReturn),
+                'cash_back_amount' => $cashBackAmount,
                 'total_amount' => $totalAmount,
                 'balance_amount' => $balanceAmount,
                 'status' => $paidAmount >= $totalAmount ? 'paid' : ($paidAmount > 0 ? 'partial' : 'issued'),
