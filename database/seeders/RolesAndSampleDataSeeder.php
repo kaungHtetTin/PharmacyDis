@@ -687,6 +687,7 @@ class RolesAndSampleDataSeeder extends Seeder
             $commissionRate = (float) ($product->commission_rate_percentage ?? 0);
             $commissionAmount = $grossLineTotal * $commissionRate / 100;
             $lineTotal = max(0, $grossLineTotal - $commissionAmount);
+            $baseUnitCost = $baseQuantity > 0 ? round($lineTotal / $baseQuantity, 6) : 0;
             $subtotal += $grossLineTotal;
             $commissionTotal += $commissionAmount;
 
@@ -727,6 +728,8 @@ class RolesAndSampleDataSeeder extends Seeder
                 ],
                 [
                     'expiry_date' => $item['expiry_date'] ?? null,
+                    'base_unit_cost' => $baseUnitCost,
+                    'cost_source' => 'receipt',
                     'received_base_quantity' => $baseQuantity,
                     'available_base_quantity' => $available,
                     'reserved_base_quantity' => $reserved,

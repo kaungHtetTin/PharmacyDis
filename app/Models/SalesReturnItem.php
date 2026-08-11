@@ -12,6 +12,7 @@ class SalesReturnItem extends Model
     protected $guarded = [];
 
     protected $casts = [
+        'base_unit_cost' => 'decimal:6',
         'expiry_date' => 'date',
     ];
 

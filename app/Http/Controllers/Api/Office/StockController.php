@@ -12,6 +12,7 @@ use App\Models\StockMovement;
 use App\Models\StockTransfer;
 use App\Services\NumberGeneratorService;
 use App\Services\ProductUnitConversionService;
+use App\Services\StockCostService;
 use App\Services\StockTransferService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -75,7 +76,7 @@ class StockController extends Controller
                 DB::raw('SUM(stock_batches.available_base_quantity) as available_base_quantity'),
                 DB::raw('SUM(stock_batches.reserved_base_quantity) as reserved_base_quantity'),
                 DB::raw('SUM(stock_batches.sold_base_quantity) as sold_base_quantity'),
-                DB::raw('SUM(stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0)) as stock_value_amount'),
+                DB::raw('SUM(stock_batches.available_base_quantity * COALESCE(stock_batches.base_unit_cost, batch_costs.base_unit_cost, 0)) as stock_value_amount'),
                 DB::raw('MIN(stock_batches.expiry_date) as nearest_expiry_date'),
             ])
             ->with(['product:id,name,sku,base_unit_id,low_stock_threshold_base_units', 'product.baseUnit:id,name,abbreviation', 'product.productUnits.unit:id,name,abbreviation'])
@@ -150,8 +151,8 @@ class StockController extends Controller
             })
             ->select([
                 'stock_batches.*',
-                DB::raw('COALESCE(batch_costs.base_unit_cost, 0) as base_unit_cost_amount'),
-                DB::raw('stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0) as stock_value_amount'),
+                DB::raw('COALESCE(stock_batches.base_unit_cost, batch_costs.base_unit_cost, 0) as base_unit_cost_amount'),
+                DB::raw('stock_batches.available_base_quantity * COALESCE(stock_batches.base_unit_cost, batch_costs.base_unit_cost, 0) as stock_value_amount'),
             ])
             ->with(['warehouse:id,name,code'])
             ->where('stock_batches.company_id', $product->company_id)
@@ -203,7 +204,7 @@ class StockController extends Controller
                     ->whereRaw("batch_costs.batch_key = COALESCE(stock_batches.batch_no, '')")
                     ->whereRaw("batch_costs.expiry_key = COALESCE(stock_batches.expiry_date, '1000-01-01')");
             })
-            ->sum(DB::raw('stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0)'));
+            ->sum(DB::raw('stock_batches.available_base_quantity * COALESCE(stock_batches.base_unit_cost, batch_costs.base_unit_cost, 0)'));
 
         $paginated = $query->paginate($request->integer('per_page', 15));
         $paginated->getCollection()->load(['product:id,name,sku,base_unit_id', 'product.baseUnit:id,name,abbreviation']);
@@ -247,15 +248,17 @@ class StockController extends Controller
     public function adjust(
         StoreStockAdjustmentRequest $request,
         ProductUnitConversionService $conversionService,
-        NumberGeneratorService $numberGeneratorService
+        NumberGeneratorService $numberGeneratorService,
+        StockCostService $stockCostService
     ) {
         $data = $request->validated();
 
-        return DB::transaction(function () use ($data, $request, $conversionService, $numberGeneratorService) {
+        return DB::transaction(function () use ($data, $request, $conversionService, $numberGeneratorService, $stockCostService) {
             $product = Product::query()
                 ->where('company_id', $data['company_id'])
                 ->findOrFail($data['product_id']);
-            $baseQuantity = $conversionService->toBaseQuantity($product, (int) $data['unit_id'], (int) $data['quantity']);
+            $productUnit = $conversionService->resolve($product, (int) $data['unit_id']);
+            $baseQuantity = (int) $data['quantity'] * (int) $productUnit->conversion_factor_to_base;
             $adjustment = StockAdjustment::create([
                 'adjustment_no' => $numberGeneratorService->next(StockAdjustment::class, 'adjustment_no', 'ADJ'),
                 'company_id' => $data['company_id'],
@@ -280,9 +283,35 @@ class StockController extends Controller
                     'available_base_quantity' => 0,
                 ]);
 
+                $hasEnteredCost = array_key_exists('unit_cost', $data) && $data['unit_cost'] !== null;
+                $baseUnitCost = $hasEnteredCost
+                    ? round((float) $data['unit_cost'] / (int) $productUnit->conversion_factor_to_base, 6)
+                    : $stockCostService->effectiveBatchCost($batch);
+                $costSource = $hasEnteredCost ? 'manual_adjustment' : 'existing_batch';
+
+                if ($baseUnitCost === null) {
+                    $baseUnitCost = $stockCostService->latestReceiptCost(
+                        (int) $data['company_id'],
+                        (int) $product->id,
+                        now()
+                    );
+                    $costSource = 'latest_receipt_estimate';
+                }
+
+                if ($baseUnitCost === null) {
+                    throw ValidationException::withMessages([
+                        'unit_cost' => 'Enter the cost per selected unit because this product has no purchase-cost history.',
+                    ]);
+                }
+
+                $stockCostService->applyIncomingCost($batch, $baseQuantity, $baseUnitCost, $costSource);
                 $batch->increment('received_base_quantity', $baseQuantity);
                 $batch->increment('available_base_quantity', $baseQuantity);
-                $adjustment->update(['stock_batch_id' => $batch->id]);
+                $adjustment->update([
+                    'stock_batch_id' => $batch->id,
+                    'base_unit_cost' => $baseUnitCost,
+                    'cost_source' => $costSource,
+                ]);
 
                 StockMovement::create([
                     'company_id' => $data['company_id'],

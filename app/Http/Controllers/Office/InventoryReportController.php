@@ -27,7 +27,7 @@ class InventoryReportController extends Controller
                 $request->filled('warehouse_id') ? 'stock_batches.warehouse_id' : DB::raw('NULL as warehouse_id'),
                 'stock_batches.product_id',
                 DB::raw('SUM(stock_batches.available_base_quantity) as available_base_quantity'),
-                DB::raw('SUM(stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0)) as stock_value_amount'),
+                DB::raw('SUM(stock_batches.available_base_quantity * COALESCE(stock_batches.base_unit_cost, batch_costs.base_unit_cost, 0)) as stock_value_amount'),
                 DB::raw('MIN(stock_batches.expiry_date) as nearest_expiry_date'),
             ])
             ->with(['company:id,name', 'product:id,name,sku,base_unit_id,low_stock_threshold_base_units', 'product.baseUnit:id,name,abbreviation', 'product.productUnits.unit:id,name,abbreviation'])

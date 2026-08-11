@@ -13,6 +13,7 @@ class StockTransferService
 {
     public function __construct(
         private NumberGeneratorService $numberGeneratorService,
+        private StockCostService $stockCostService,
     ) {
     }
 
@@ -79,6 +80,7 @@ class StockTransferService
             foreach ($requestedItems as $requestedItem) {
                 $sourceBatch = $sourceBatches->get($requestedItem['stock_batch_id']);
                 $moved = (int) $requestedItem['base_unit_quantity'];
+                $sourceCost = $this->stockCostService->effectiveBatchCost($sourceBatch);
                 $sourceBatch->decrement('available_base_quantity', $moved);
                 $sourceBatch->decrement('received_base_quantity', min($moved, (int) $sourceBatch->received_base_quantity));
 
@@ -93,6 +95,7 @@ class StockTransferService
                     'available_base_quantity' => 0,
                 ]);
 
+                $this->stockCostService->applyIncomingCost($destinationBatch, $moved, $sourceCost, 'transfer');
                 $destinationBatch->increment('received_base_quantity', $moved);
                 $destinationBatch->increment('available_base_quantity', $moved);
 

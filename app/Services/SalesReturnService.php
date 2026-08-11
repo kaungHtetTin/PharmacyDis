@@ -17,6 +17,7 @@ class SalesReturnService
     public function __construct(
         private CustomerBalanceService $customerBalanceService,
         private NumberGeneratorService $numberGeneratorService,
+        private StockCostService $stockCostService,
     ) {
     }
 
@@ -83,6 +84,14 @@ class SalesReturnService
                 $lineReturn = min(round((float) $invoiceItem->line_total * $ratio, 2), (float) $invoiceItem->line_total);
                 $batchNo = $itemData['batch_no'] ?? null;
                 $batchNo = $batchNo ?: "{$salesReturn->return_no}-" . str_pad((string) ($index + 1), 3, '0', STR_PAD_LEFT);
+                $baseUnitCost = $this->stockCostService->salesOrderProductCost(
+                    $salesReturn->sales_order_id,
+                    (int) $invoiceItem->product_id
+                ) ?? $this->stockCostService->latestReceiptCost(
+                    (int) $salesReturn->company_id,
+                    (int) $invoiceItem->product_id,
+                    $salesReturn->return_date
+                );
 
                 SalesReturnItem::create([
                     'sales_return_id' => $salesReturn->id,
@@ -94,6 +103,7 @@ class SalesReturnService
                     'quantity' => $quantity,
                     'conversion_factor_to_base' => $invoiceItem->conversion_factor_to_base,
                     'base_unit_quantity' => $baseQuantity,
+                    'base_unit_cost' => $baseUnitCost,
                     'unit_price' => $invoiceItem->unit_price,
                     'discount_amount' => $itemDiscountReturn,
                     'line_total' => $lineReturn,
@@ -102,7 +112,7 @@ class SalesReturnService
                     'reason' => $itemData['reason'] ?? null,
                 ]);
 
-                $this->receiveReturnedStock($salesReturn, $invoiceItem, $baseQuantity, $batchNo, $itemData, $actor);
+                $this->receiveReturnedStock($salesReturn, $invoiceItem, $baseQuantity, $baseUnitCost, $batchNo, $itemData, $actor);
 
                 $invoiceItem->update([
                     'quantity' => max(0, (int) $invoiceItem->quantity - $quantity),
@@ -152,7 +162,7 @@ class SalesReturnService
         });
     }
 
-    private function receiveReturnedStock(SalesReturn $salesReturn, InvoiceItem $invoiceItem, int $baseQuantity, string $batchNo, array $itemData, ?User $actor): void
+    private function receiveReturnedStock(SalesReturn $salesReturn, InvoiceItem $invoiceItem, int $baseQuantity, ?float $baseUnitCost, string $batchNo, array $itemData, ?User $actor): void
     {
         $batch = StockBatch::query()->firstOrCreate([
             'company_id' => $salesReturn->company_id,
@@ -167,6 +177,7 @@ class SalesReturnService
             'expired_base_quantity' => 0,
         ]);
 
+        $this->stockCostService->applyIncomingCost($batch, $baseQuantity, $baseUnitCost, 'original_sale_return');
         $batch->increment('received_base_quantity', $baseQuantity);
 
         match ($itemData['condition']) {

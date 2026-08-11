@@ -117,6 +117,7 @@ const blankStockAdjustmentForm = {
     unit_id: '',
     adjustment_type: 'increase',
     quantity: '1',
+    unit_cost: '',
     batch_no: '',
     expiry_date: '',
     reason: '',
@@ -1084,6 +1085,16 @@ function StockAdjustmentForm({
                 <FormField label="Quantity" name="quantity" onChange={onChange} required type="number" value={form.quantity} />
                 {showBatchFields && (
                     <>
+                        <FormField
+                            label="Cost per selected unit"
+                            min="0"
+                            name="unit_cost"
+                            onChange={onChange}
+                            placeholder="Use latest purchase cost"
+                            step="0.01"
+                            type="number"
+                            value={form.unit_cost}
+                        />
                         <FormField label="Batch number" name="batch_no" onChange={onChange} placeholder="Auto-generated if empty" value={form.batch_no} />
                         <FormField label="Expiry date" name="expiry_date" onChange={onChange} type="date" value={form.expiry_date} />
                     </>
@@ -6148,6 +6159,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 return {
                     ...current,
                     adjustment_type: value,
+                    unit_cost: '',
                     batch_no: '',
                     expiry_date: '',
                 };
@@ -6159,6 +6171,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     };
     const stockAdjustmentPayload = () => ({
         ...stockAdjustmentForm,
+        unit_cost: stockAdjustmentForm.adjustment_type === 'increase' && stockAdjustmentForm.unit_cost !== ''
+            ? stockAdjustmentForm.unit_cost
+            : null,
         batch_no: stockAdjustmentForm.adjustment_type === 'increase' ? stockAdjustmentForm.batch_no || null : null,
         expiry_date: stockAdjustmentForm.adjustment_type === 'increase' ? stockAdjustmentForm.expiry_date || null : null,
         reason: stockAdjustmentForm.reason || null,

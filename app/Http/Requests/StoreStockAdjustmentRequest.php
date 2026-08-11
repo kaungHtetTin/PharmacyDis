@@ -20,6 +20,7 @@ class StoreStockAdjustmentRequest extends FormRequest
             'unit_id' => ['required', 'exists:units,id'],
             'adjustment_type' => ['required', 'in:increase,decrease,damage,expiry'],
             'quantity' => ['required', 'integer', 'min:1'],
+            'unit_cost' => ['nullable', 'numeric', 'min:0'],
             'batch_no' => ['nullable', 'string'],
             'expiry_date' => ['nullable', 'date'],
             'reason' => ['nullable', 'string'],

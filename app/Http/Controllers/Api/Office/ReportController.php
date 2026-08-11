@@ -548,7 +548,7 @@ class ReportController extends Controller
                     ->whereRaw("batch_costs.expiry_key = COALESCE(stock_batches.expiry_date, '1000-01-01')");
             })
             ->when($companyId, fn ($query) => $query->where('stock_batches.company_id', $companyId))
-            ->sum(DB::raw('stock_batches.available_base_quantity * COALESCE(batch_costs.base_unit_cost, 0)'));
+            ->sum(DB::raw('stock_batches.available_base_quantity * COALESCE(stock_batches.base_unit_cost, batch_costs.base_unit_cost, 0)'));
     }
 
     private function receiptBatchCostSubquery()

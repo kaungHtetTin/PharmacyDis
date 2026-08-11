@@ -11,6 +11,10 @@ class StockAdjustment extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'base_unit_cost' => 'decimal:6',
+    ];
+
     public function product()
     {
         return $this->belongsTo(Product::class);

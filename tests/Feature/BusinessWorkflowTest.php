@@ -25,6 +25,7 @@ use App\Models\Warehouse;
 use Database\Seeders\RolesAndSampleDataSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -983,6 +984,8 @@ class BusinessWorkflowTest extends TestCase
         $this->assertEquals($originalInvoiceTotal - $expectedReturnAmount, (float) $invoice->total_amount);
         $this->assertEquals($originalInvoiceTotal - $expectedReturnAmount, (float) $invoice->balance_amount);
         $this->assertEquals($returnBaseQuantity, $returnBatch->available_base_quantity);
+        $this->assertGreaterThan(0, (float) $returnBatch->base_unit_cost);
+        $this->assertSame('original_sale_return', $returnBatch->cost_source);
         $this->assertEquals($expectedReturnAmount, (float) $response['total_amount']);
         $this->assertDatabaseHas('sales_return_items', [
             'sales_return_id' => $response['id'],
@@ -990,6 +993,16 @@ class BusinessWorkflowTest extends TestCase
             'condition' => 'sellable',
             'base_unit_quantity' => $returnBaseQuantity,
         ]);
+        $this->assertGreaterThan(
+            0,
+            (float) DB::table('sales_return_items')
+                ->where('sales_return_id', $response['id'])
+                ->value('base_unit_cost')
+        );
+        $this->assertGreaterThan(
+            0,
+            (float) $returnBatch->available_base_quantity * (float) $returnBatch->base_unit_cost
+        );
         $this->assertDatabaseHas('stock_movements', [
             'reference_type' => SalesReturn::class,
             'reference_id' => $response['id'],
@@ -1144,6 +1157,100 @@ class BusinessWorkflowTest extends TestCase
         $this->assertArrayHasKey('stock_value_amount', $response->json('summary'));
         $this->assertGreaterThan(0, $response->json('summary.stock_value_amount'));
         $this->assertArrayHasKey('stock_value_amount', $response->json('data.0'));
+    }
+
+    public function test_adjustment_increase_stores_cost_and_legacy_batches_keep_receipt_cost_fallback(): void
+    {
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $productUnit = ProductUnit::query()
+            ->where('product_id', $product->id)
+            ->orderByDesc('conversion_factor_to_base')
+            ->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->value('warehouse_id');
+        $unitCost = 75000;
+        $quantity = 2;
+        $expectedBaseCost = $unitCost / (int) $productUnit->conversion_factor_to_base;
+
+        $this->withToken($this->officeToken)
+            ->postJson('/api/office/stock/adjustments', [
+                'company_id' => $company->id,
+                'warehouse_id' => $warehouseId,
+                'product_id' => $product->id,
+                'unit_id' => $productUnit->unit_id,
+                'adjustment_type' => 'increase',
+                'quantity' => $quantity,
+                'unit_cost' => $unitCost,
+                'batch_no' => 'ADJ-COST-001',
+                'reason' => 'Count correction with known cost',
+            ])
+            ->assertCreated();
+
+        $adjustmentBatch = StockBatch::query()
+            ->where('company_id', $company->id)
+            ->where('warehouse_id', $warehouseId)
+            ->where('product_id', $product->id)
+            ->where('batch_no', 'ADJ-COST-001')
+            ->firstOrFail();
+
+        $this->assertEqualsWithDelta($expectedBaseCost, (float) $adjustmentBatch->base_unit_cost, 0.000001);
+        $this->assertSame('manual_adjustment', $adjustmentBatch->cost_source);
+        $this->assertDatabaseHas('stock_adjustments', [
+            'stock_batch_id' => $adjustmentBatch->id,
+            'cost_source' => 'manual_adjustment',
+        ]);
+
+        $this->withToken($this->officeToken)
+            ->postJson('/api/office/stock/adjustments', [
+                'company_id' => $company->id,
+                'warehouse_id' => $warehouseId,
+                'product_id' => $product->id,
+                'unit_id' => $productUnit->unit_id,
+                'adjustment_type' => 'increase',
+                'quantity' => 1,
+                'batch_no' => 'ADJ-AUTO-COST-001',
+                'reason' => 'Older client without a cost field',
+            ])
+            ->assertCreated();
+        $automaticCostBatch = StockBatch::query()
+            ->where('batch_no', 'ADJ-AUTO-COST-001')
+            ->firstOrFail();
+
+        $this->assertGreaterThan(0, (float) $automaticCostBatch->base_unit_cost);
+        $this->assertSame('latest_receipt_estimate', $automaticCostBatch->cost_source);
+
+        $batchResponse = $this->withToken($this->officeToken)
+            ->getJson("/api/office/stock/products/{$product->id}/batches?warehouse_id={$warehouseId}&per_page=100")
+            ->assertOk();
+        $adjustmentRow = collect($batchResponse->json('data'))->firstWhere('id', $adjustmentBatch->id);
+
+        $this->assertNotNull($adjustmentRow);
+        $this->assertGreaterThan(0, (float) $adjustmentRow['stock_value_amount']);
+
+        $legacyBatch = StockBatch::query()
+            ->where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->where('id', '!=', $adjustmentBatch->id)
+            ->where('available_base_quantity', '>', 0)
+            ->firstOrFail();
+        $legacyBatch->update(['base_unit_cost' => null, 'cost_source' => null]);
+
+        $legacyResponse = $this->withToken($this->officeToken)
+            ->getJson("/api/office/stock/products/{$product->id}/batches?warehouse_id={$legacyBatch->warehouse_id}&per_page=100")
+            ->assertOk();
+        $legacyRow = collect($legacyResponse->json('data'))->firstWhere('id', $legacyBatch->id);
+
+        $this->assertNotNull($legacyRow);
+        $this->assertGreaterThan(0, (float) $legacyRow['base_unit_cost_amount']);
+        $this->assertGreaterThan(0, (float) $legacyRow['stock_value_amount']);
+
+        $this->artisan('stock:backfill-batch-costs')
+            ->assertExitCode(0);
+        $this->assertNotNull($legacyBatch->fresh()->base_unit_cost);
+        $this->assertSame('receipt_backfill', $legacyBatch->fresh()->cost_source);
     }
 
     public function test_inventory_shows_soft_deleted_products_while_available_stock_remains(): void
