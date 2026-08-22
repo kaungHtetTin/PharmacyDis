@@ -493,7 +493,7 @@ Exit criterion: old application remains operational with the additive schema.
 
 ### Phase 2 — Server-side domain logic
 
-Status: **Application complete**. The automated suite passes all 42 tests.
+Status: **Application complete**. The automated suite passes all 43 tests.
 
 - Implement central settlement calculation.
 - Refactor return posting and payment allocation.

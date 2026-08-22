@@ -29,10 +29,12 @@ use App\Models\Unit;
 use App\Models\Warehouse;
 use Database\Seeders\RolesAndSampleDataSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Http\Middleware\PreventRequestsDuringMaintenance;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Services\InvoiceSettlementService;
+use App\Services\FinancialReportService;
 use Tests\TestCase;
 
 class BusinessWorkflowTest extends TestCase
@@ -46,19 +48,22 @@ class BusinessWorkflowTest extends TestCase
     {
         parent::setUp();
 
+        $this->withoutMiddleware(PreventRequestsDuringMaintenance::class);
         $this->seed(RolesAndSampleDataSeeder::class);
 
-        $this->salesToken = $this->postJson('/api/auth/login', [
+        $salesLogin = $this->postJson('/api/auth/login', [
             'email' => 'mayzin@pharmacy.test',
             'password' => 'password',
             'user_type' => 'sales',
-        ])->json('token');
+        ])->assertOk();
+        $this->salesToken = (string) $salesLogin->json('token');
 
-        $this->officeToken = $this->postJson('/api/auth/login', [
+        $officeLogin = $this->postJson('/api/auth/login', [
             'email' => 'admin@pharmacy.test',
             'password' => 'password',
             'user_type' => 'office',
-        ])->json('token');
+        ])->assertOk();
+        $this->officeToken = (string) $officeLogin->json('token');
     }
 
     public function test_office_admin_can_manage_invoice_print_settings(): void
@@ -1685,7 +1690,7 @@ class BusinessWorkflowTest extends TestCase
             ->assertDontSee('15-Sep-2026');
     }
 
-    public function test_finance_report_date_range_includes_stock_holding_value(): void
+    public function test_finance_report_labels_stock_value_as_a_current_snapshot(): void
     {
         $dateFrom = now()->startOfMonth()->toDateString();
         $dateTo = now()->endOfMonth()->toDateString();
@@ -1696,8 +1701,160 @@ class BusinessWorkflowTest extends TestCase
         $metrics = collect($response->json('metrics'));
         $duration = collect($response->json('summary'))->firstWhere('label', 'Duration');
 
-        $this->assertTrue($metrics->contains('label', 'Stock holding value'));
+        $stockValue = $metrics->firstWhere('label', 'Current stock holding value');
+        $this->assertNotNull($stockValue);
+        $this->assertStringContainsString('Current snapshot', $stockValue['note']);
         $this->assertSame("{$dateFrom} to {$dateTo}", $duration['note']);
+    }
+
+    public function test_finance_report_keeps_customer_credit_separate_and_reconciles_rankings(): void
+    {
+        $date = now()->toDateString();
+        $company = Company::create([
+            'name' => 'Finance Integrity Company',
+            'code' => 'FIN-INTEGRITY',
+            'status' => 'active',
+        ]);
+        $customerA = Customer::create(['name' => 'Outstanding Pharmacy', 'code' => 'FIN-CUST-A', 'status' => 'active']);
+        $customerB = Customer::create(['name' => 'Credit Pharmacy', 'code' => 'FIN-CUST-B', 'status' => 'active']);
+        $warehouse = Warehouse::firstOrFail();
+
+        $invoiceA = Invoice::create([
+            'invoice_no' => 'INV-FIN-INTEGRITY-A',
+            'company_id' => $company->id,
+            'customer_id' => $customerA->id,
+            'invoice_date' => $date,
+            'due_date' => $date,
+            'status' => 'issued',
+            'settlement_status' => 'unpaid',
+            'subtotal_amount' => 100,
+            'total_amount' => 100,
+            'original_total_amount' => 100,
+            'net_collectible_amount' => 90,
+            'cash_back_amount' => 10,
+            'cash_back_approved_at' => now(),
+            'balance_amount' => 90,
+        ]);
+        $invoiceB = Invoice::create([
+            'invoice_no' => 'INV-FIN-INTEGRITY-B',
+            'company_id' => $company->id,
+            'customer_id' => $customerB->id,
+            'invoice_date' => $date,
+            'due_date' => $date,
+            'status' => 'issued',
+            'settlement_status' => 'overpaid',
+            'subtotal_amount' => 100,
+            'total_amount' => 100,
+            'original_total_amount' => 100,
+            'return_credit_amount' => 100,
+            'net_collectible_amount' => 0,
+            'paid_amount' => 100,
+            'balance_amount' => 0,
+        ]);
+        $salesReturn = SalesReturn::create([
+            'return_no' => 'SRN-FIN-INTEGRITY',
+            'credit_note_no' => 'CRN-FIN-INTEGRITY',
+            'invoice_id' => $invoiceB->id,
+            'company_id' => $company->id,
+            'customer_id' => $customerB->id,
+            'warehouse_id' => $warehouse->id,
+            'return_date' => $date,
+            'status' => 'posted',
+            'total_amount' => 100,
+            'posted_at' => now(),
+        ]);
+        $payment = Payment::create([
+            'payment_no' => 'PAY-FIN-INTEGRITY',
+            'company_id' => $company->id,
+            'customer_id' => $customerB->id,
+            'payment_date' => $date,
+            'amount' => 100,
+            'payment_method' => 'cash',
+        ]);
+        DB::table('payment_allocations')->insert([
+            'payment_id' => $payment->id,
+            'invoice_id' => $invoiceB->id,
+            'allocated_amount' => 100,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        CustomerCredit::create([
+            'credit_no' => 'CCR-FIN-INTEGRITY',
+            'company_id' => $company->id,
+            'customer_id' => $customerB->id,
+            'invoice_id' => $invoiceB->id,
+            'amount' => 100,
+            'available_amount' => 100,
+            'status' => 'available',
+            'source_type' => SalesReturn::class,
+            'source_id' => $salesReturn->id,
+            'idempotency_key' => 'credit-fin-integrity',
+            'credit_date' => $date,
+        ]);
+
+        $payableA = CompanyPayable::create([
+            'company_id' => $company->id,
+            'payable_date' => $date,
+            'amount' => 100,
+            'paid_amount' => 0,
+            'balance_amount' => 0,
+            'status' => 'unpaid',
+        ]);
+        $payableB = CompanyPayable::create([
+            'company_id' => $company->id,
+            'payable_date' => $date,
+            'amount' => 100,
+            'paid_amount' => 100,
+            'balance_amount' => 100,
+            'status' => 'paid',
+        ]);
+        CompanyPayment::create([
+            'payment_no' => 'CPAY-FIN-INTEGRITY',
+            'company_id' => $company->id,
+            'company_payable_id' => $payableB->id,
+            'payment_date' => $date,
+            'amount' => 100,
+            'payment_method' => 'cash',
+        ]);
+
+        $snapshot = app(FinancialReportService::class)->periodSnapshot(now()->startOfDay(), now()->endOfDay(), $company->id);
+        $this->assertEquals(200, $snapshot['gross_sales']);
+        $this->assertEquals(100, $snapshot['return_credits']);
+        $this->assertEquals(10, $snapshot['cash_back']);
+        $this->assertEquals(90, $snapshot['net_sales']);
+        $this->assertEquals(90, $snapshot['receivable_as_of']);
+        $this->assertEquals(100, $snapshot['customer_credit_liability']);
+        $this->assertEquals(100, $snapshot['payable_as_of']);
+        $this->assertEquals(100, $snapshot['collection_rate']);
+
+        $response = $this->withToken($this->officeToken)
+            ->getJson('/api/office/reports/finance/overview?' . http_build_query([
+                'duration' => 'month',
+                'date_from' => $date,
+                'date_to' => $date,
+                'company_id' => $company->id,
+            ]))
+            ->assertOk();
+        $metrics = collect($response->json('metrics'));
+        $insights = collect($response->json('insights'));
+        $rows = collect($response->json('tableRows'));
+        $outstandingRow = $rows->first(fn (array $row) => str_contains($row['name'], 'Outstanding Pharmacy'));
+        $creditRow = $rows->first(fn (array $row) => str_contains($row['name'], 'Credit Pharmacy'));
+
+        $this->assertSame('90', $metrics->firstWhere('label', 'Receivable as of')['value']);
+        $this->assertSame('100', $metrics->firstWhere('label', 'Customer credits')['value']);
+        $this->assertTrue($metrics->contains('label', 'Net cash margin'));
+        $this->assertFalse($metrics->contains('label', 'Profit margin'));
+        $this->assertSame('100', $insights->firstWhere('label', 'Payable as of')['value']);
+        $this->assertSame('100%', $insights->firstWhere('label', 'Collection performance')['value']);
+        $this->assertSame('100', $outstandingRow['grossSales']);
+        $this->assertSame('0', $outstandingRow['returns']);
+        $this->assertSame('10', $outstandingRow['cashBack']);
+        $this->assertSame('90', $outstandingRow['netSales']);
+        $this->assertSame('90', $outstandingRow['balance']);
+        $this->assertSame('100', $creditRow['returns']);
+        $this->assertSame('0', $creditRow['netSales']);
+        $this->assertSame('0', $creditRow['balance']);
     }
 
     public function test_payment_allocation_updates_invoice_balance(): void

@@ -71,10 +71,12 @@ The repaired supplier transaction is one linked company payment for 7,520 agains
 
 ## Application Verification
 
-- Laravel test suite: 42 passed.
+- Laravel test suite: 43 passed.
 - Production frontend build: passed.
 - Added regression coverage for full and partial tiered-FOC returns, explicit FOC disposition, charged FOC adjustments, commission approval, customer credits, supplier-payment retry safety, and stock-cost valuation.
 - Manual role-based browser acceptance remains part of the production deployment smoke test; it was not recorded as complete in this local verification.
+
+The follow-up reporting controls also verify that receivables and payables are clamped per document before aggregation, customer credit remains a separate liability, collection performance uses opening receivable plus period activity, stock value is labeled as a current snapshot, and company/pharmacy rankings reconcile gross sales through returns and cash back to net sales. On the isolated restored copy, the corrected August collection-performance denominator is 233,283,578 and the resulting collection rate is 29.3%; receivable as of remains 164,996,686 because that backup has no available customer-credit offset. Event-based payable as of at 2026-08-31 is 338,653,122.50.
 
 ## Required Human Approval Gate
 

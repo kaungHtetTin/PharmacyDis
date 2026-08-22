@@ -84,9 +84,14 @@ The legacy `invoices.status` field remains during compatibility rollout. `settle
 - Cash back: approved amount by approval date; legacy fallback is invoice date.
 - Net sales: gross sales minus returns and cash back occurring in the selected period.
 - Collections: customer payment amount by payment date.
-- Receivable as of: invoice, return, cash-back, and payment events through the selected end date.
+- Collection performance: customer payments in the period divided by the collectible amount available, defined as opening per-invoice receivable plus period gross sales and FOC charges less period returns and cash back; displayed at no more than 100%, with excess represented as customer credit.
+- Receivable as of: calculate each invoice independently from invoice, return, cash-back, charge, and allocated-payment events through the selected end date; clamp each invoice at zero before summing. Never offset one customer's credit against another customer's receivable.
+- Customer credits: present available overpayments separately as liabilities; do not net them into the gross receivable asset.
 - Supplier outcome: linked `company_payments` by payment date.
-- Stock holding: available base quantity multiplied by resolved base-unit cost.
+- Payable as of: calculate each payable independently from its original amount and linked supplier payments through the selected end date; clamp each payable at zero before summing.
+- Stock holding: current available base quantity multiplied by resolved base-unit cost. Until a historical cost/quantity ledger is available, label this explicitly as a current snapshot and do not imply that the report date filter applies.
+- Company/pharmacy performance: show gross invoice sales, returns, cash back, and net sales separately; rank by net sales so the table reconciles to the headline event-date formula.
+- Net cash margin: net cash divided by cash income. Do not label this measure as profit margin because it excludes COGS and accrual expenses.
 - Missing inventory cost is an exception count/value, never a silent zero-valued success.
 - Void and soft-deleted documents are excluded consistently unless a user explicitly requests a void audit.
 

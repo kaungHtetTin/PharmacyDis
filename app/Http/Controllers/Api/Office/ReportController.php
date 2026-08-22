@@ -66,14 +66,10 @@ class ReportController extends Controller
         $incomeTotal = $customerIncome + $ledgerIncome;
         $outcomeTotal = $supplierOutcome + $ledgerOutcome;
         $netCash = $incomeTotal - $outcomeTotal;
-        $payableTotal = (float) DB::table('company_payables')
-            ->whereNull('deleted_at')
-            ->whereBetween('payable_date', [$start->toDateString(), $end->toDateString()])
-            ->when($companyId, fn ($query) => $query->where('company_id', $companyId))
-            ->sum('balance_amount');
+        $payableTotal = $financialSnapshot['payable_as_of'];
         $stockHoldingValue = $this->stockHoldingValue($companyId);
-        $collectionRate = $netSalesTotal > 0 ? round(($customerIncome / $netSalesTotal) * 100, 1) : 0;
-        $profitMargin = $incomeTotal > 0 ? round(($netCash / $incomeTotal) * 100, 1) : 0;
+        $collectionRate = $financialSnapshot['collection_rate'];
+        $netCashMargin = $incomeTotal > 0 ? round(($netCash / $incomeTotal) * 100, 1) : 0;
 
         $incomeBuckets = $this->emptyFinanceBucketValues($buckets);
         foreach ((clone $customerPaymentQuery)->select('payment_date', 'amount')->get() as $row) {
@@ -105,9 +101,9 @@ class ReportController extends Controller
         }
 
         $performanceRows = $companyId
-            ? $this->financeTopPharmacies($start, $end, $companyId)
-            : $this->financeTopCompanies($start, $end);
-        $maxPerformance = max(1, (float) $performanceRows->max('sales_total'));
+            ? $this->financeTopPharmacies($start, $end, $companyId, $financialReportService)
+            : $this->financeTopCompanies($start, $end, $financialReportService);
+        $maxPerformance = max(1, (float) $performanceRows->max(fn ($row) => abs((float) $row->sales_total)));
         $topPerformance = $performanceRows->first();
         $tableLabel = $companyId ? 'Pharmacy' : 'Company';
 
@@ -123,8 +119,8 @@ class ReportController extends Controller
                 ['label' => 'Receivable as of', 'value' => number_format($receivableTotal), 'note' => 'Event-based open balance at period end'],
                 ['label' => 'Customer credits', 'value' => number_format($financialSnapshot['customer_credit_liability']), 'note' => 'Available overpayment liability at period end'],
                 ['label' => 'FOC charges', 'value' => number_format($financialSnapshot['customer_charge_adjustments']), 'note' => 'Approved customer charge adjustments in period'],
-                ['label' => 'Stock holding value', 'value' => number_format($stockHoldingValue), 'note' => $costCoverage['unresolved_batch_count'] > 0 ? "Warning: {$costCoverage['unresolved_batch_count']} batches have unresolved cost" : 'All available batches have a resolved cost'],
-                ['label' => 'Profit margin', 'value' => "{$profitMargin}%", 'note' => 'Net cash against income'],
+                ['label' => 'Current stock holding value', 'value' => number_format($stockHoldingValue), 'note' => $costCoverage['unresolved_batch_count'] > 0 ? "Current snapshot; warning: {$costCoverage['unresolved_batch_count']} batches have unresolved cost" : 'Current snapshot at report run time; date filter does not apply'],
+                ['label' => 'Net cash margin', 'value' => "{$netCashMargin}%", 'note' => 'Net cash divided by cash income; not accounting profit'],
             ],
             'lineChart' => [
                 'eyebrow' => 'Profit Trend',
@@ -138,13 +134,13 @@ class ReportController extends Controller
             ],
             'barChart' => [
                 'eyebrow' => $companyId ? 'Marketing Analysis' : 'Company Performance',
-                'title' => ($companyId ? 'Top pharmacies by sales - ' : 'Top companies by sales - ') . $durationLabel,
+                'title' => ($companyId ? 'Top pharmacies by net sales - ' : 'Top companies by net sales - ') . $durationLabel,
                 'series' => $performanceRows->map(fn ($row) => [
                     'label' => $row->name ?: "{$tableLabel} #{$row->id}",
                     'value' => (float) $row->sales_total,
                     'displayValue' => number_format((float) $row->sales_total),
-                    'percent' => (int) round(((float) $row->sales_total / $maxPerformance) * 100),
-                    'note' => number_format((int) $row->invoice_count) . ' invoices / ' . number_format((float) $row->balance_total) . ' balance',
+                    'percent' => (int) round((abs((float) $row->sales_total) / $maxPerformance) * 100),
+                    'note' => number_format((float) $row->gross_sales_total) . ' gross - ' . number_format((float) $row->return_total) . ' returns - ' . number_format((float) $row->cash_back_total) . ' cash back',
                 ])->values(),
             ],
             'insights' => [
@@ -156,17 +152,17 @@ class ReportController extends Controller
                 [
                     'label' => 'Collection performance',
                     'value' => "{$collectionRate}%",
-                    'note' => 'Customer payments collected against net sales',
+                    'note' => number_format($customerIncome) . ' collected from ' . number_format($financialSnapshot['collectible_available']) . ' available (opening receivable + period activity)',
                 ],
                 [
                     'label' => $companyId ? 'Marketing focus' : 'Best company',
                     'value' => $topPerformance?->name ?: 'No sales',
-                    'note' => $topPerformance ? number_format((float) $topPerformance->sales_total) . ' sales in period' : 'Try another month or year',
+                    'note' => $topPerformance ? number_format((float) $topPerformance->sales_total) . ' net sales in period' : 'Try another month or year',
                 ],
                 [
-                    'label' => 'Payable pressure',
+                    'label' => 'Payable as of',
                     'value' => number_format($payableTotal),
-                    'note' => 'Supplier payable balance in selected period',
+                    'note' => 'Per-payable open balance at the selected end date',
                 ],
             ],
             'summary' => [
@@ -174,6 +170,7 @@ class ReportController extends Controller
                 ['label' => 'Duration', 'value' => $durationLabel, 'note' => $start->toDateString() . ' to ' . $end->toDateString()],
                 ['label' => 'Ledger scope', 'value' => $includeFreeLedger ? 'Included' : 'Company-only', 'note' => $includeFreeLedger ? 'Free finance ledger is included in cash totals' : 'Free finance ledger is excluded because it is not linked to company'],
                 ['label' => 'Date basis', 'value' => 'Event date', 'note' => 'Invoices, returns, cash back, and payments use their own effective dates'],
+                ['label' => 'Opening receivable', 'value' => number_format($financialSnapshot['opening_receivable']), 'note' => 'Per-invoice balance immediately before the selected period'],
                 ['label' => 'Sales reconciliation', 'value' => number_format($netSalesTotal), 'note' => number_format($salesTotal) . ' gross - ' . number_format($salesReturnTotal) . ' returns - ' . number_format($cashBackTotal) . ' cash back'],
                 ['label' => 'Commission', 'value' => number_format($financialSnapshot['commission_net']), 'note' => number_format($financialSnapshot['commission_gross']) . ' gross - ' . number_format($financialSnapshot['commission_reversed']) . ' reversed'],
             ],
@@ -181,16 +178,22 @@ class ReportController extends Controller
                 ['key' => 'rank', 'label' => 'Rank'],
                 ['key' => 'name', 'label' => $tableLabel],
                 ['key' => 'invoices', 'label' => 'Invoices'],
-                ['key' => 'sales', 'label' => 'Sales'],
-                ['key' => 'balance', 'label' => 'Balance'],
-                ['key' => 'share', 'label' => 'Sales share'],
+                ['key' => 'grossSales', 'label' => 'Gross sales'],
+                ['key' => 'returns', 'label' => 'Returns'],
+                ['key' => 'cashBack', 'label' => 'Cash back'],
+                ['key' => 'netSales', 'label' => 'Net sales'],
+                ['key' => 'balance', 'label' => 'Receivable as of'],
+                ['key' => 'share', 'label' => 'Net-sales share'],
             ],
             'tableRows' => $performanceRows->values()->map(fn ($row, $index) => [
                 'id' => $row->id,
                 'rank' => '#' . ($index + 1),
                 'name' => trim(($row->code ? "{$row->code} / " : '') . ($row->name ?: "{$tableLabel} #{$row->id}")),
                 'invoices' => number_format((int) $row->invoice_count),
-                'sales' => number_format((float) $row->sales_total),
+                'grossSales' => number_format((float) $row->gross_sales_total),
+                'returns' => number_format((float) $row->return_total),
+                'cashBack' => number_format((float) $row->cash_back_total),
+                'netSales' => number_format((float) $row->sales_total),
                 'balance' => number_format((float) $row->balance_total),
                 'share' => $salesTotal > 0 ? round(((float) $row->sales_total / $salesTotal) * 100, 1) . '%' : '0%',
             ]),
@@ -585,46 +588,109 @@ class ReportController extends Controller
             );
     }
 
-    private function financeTopCompanies(Carbon $start, Carbon $end)
+    private function financeTopCompanies(Carbon $start, Carbon $end, FinancialReportService $financialReportService)
     {
-        return DB::table('invoices')
-            ->join('companies', 'companies.id', '=', 'invoices.company_id')
-            ->whereNull('invoices.deleted_at')
-            ->where('invoices.status', '!=', 'void')
-            ->whereBetween('invoices.invoice_date', [$start->toDateString(), $end->toDateString()])
-            ->select([
-                'companies.id',
-                'companies.code',
-                'companies.name',
-                DB::raw('COUNT(invoices.id) as invoice_count'),
-                DB::raw('SUM(invoices.total_amount) as sales_total'),
-                DB::raw('SUM(invoices.balance_amount) as balance_total'),
-            ])
-            ->groupBy('companies.id', 'companies.code', 'companies.name')
-            ->orderByDesc('sales_total')
-            ->limit(10)
-            ->get();
+        return $this->financePerformanceRows($start, $end, null, $financialReportService);
     }
 
-    private function financeTopPharmacies(Carbon $start, Carbon $end, string $companyId)
+    private function financeTopPharmacies(Carbon $start, Carbon $end, string $companyId, FinancialReportService $financialReportService)
     {
-        return DB::table('invoices')
-            ->join('customers', 'customers.id', '=', 'invoices.customer_id')
+        return $this->financePerformanceRows($start, $end, $companyId, $financialReportService);
+    }
+
+    private function financePerformanceRows(Carbon $start, Carbon $end, ?string $companyId, FinancialReportService $financialReportService)
+    {
+        $from = $start->toDateString();
+        $to = $end->toDateString();
+        $entityColumn = $companyId ? 'customer_id' : 'company_id';
+
+        $grossRows = DB::table('invoices')
             ->whereNull('invoices.deleted_at')
             ->where('invoices.status', '!=', 'void')
-            ->where('invoices.company_id', $companyId)
-            ->whereBetween('invoices.invoice_date', [$start->toDateString(), $end->toDateString()])
-            ->select([
-                'customers.id',
-                'customers.code',
-                'customers.name',
-                DB::raw('COUNT(invoices.id) as invoice_count'),
-                DB::raw('SUM(invoices.total_amount) as sales_total'),
-                DB::raw('SUM(invoices.balance_amount) as balance_total'),
-            ])
-            ->groupBy('customers.id', 'customers.code', 'customers.name')
-            ->orderByDesc('sales_total')
-            ->limit(10)
+            ->where(function ($query) {
+                $query->whereNull('invoices.sales_order_id')
+                    ->orWhereNotExists(fn ($orders) => $orders->selectRaw('1')
+                        ->from('sales_orders')
+                        ->whereColumn('sales_orders.id', 'invoices.sales_order_id')
+                        ->where('sales_orders.status', 'cancelled'));
+            })
+            ->whereBetween('invoices.invoice_date', [$from, $to])
+            ->when($companyId, fn ($query) => $query->where('invoices.company_id', $companyId))
+            ->selectRaw("{$entityColumn} as entity_id, COUNT(invoices.id) as invoice_count, SUM(COALESCE(NULLIF(original_total_amount, 0), total_amount)) as gross_sales_total")
+            ->groupBy($entityColumn)
+            ->get()
+            ->keyBy('entity_id');
+        $returnRows = DB::table('sales_returns as sr')
+            ->join('invoices as i', 'i.id', '=', 'sr.invoice_id')
+            ->whereNull('sr.deleted_at')
+            ->where('sr.status', 'posted')
+            ->whereNull('i.deleted_at')
+            ->where('i.status', '!=', 'void')
+            ->where(function ($query) {
+                $query->whereNull('i.sales_order_id')
+                    ->orWhereNotExists(fn ($orders) => $orders->selectRaw('1')
+                        ->from('sales_orders')
+                        ->whereColumn('sales_orders.id', 'i.sales_order_id')
+                        ->where('sales_orders.status', 'cancelled'));
+            })
+            ->whereBetween('sr.return_date', [$from, $to])
+            ->when($companyId, fn ($query) => $query->where('sr.company_id', $companyId))
+            ->selectRaw("sr.{$entityColumn} as entity_id, SUM(sr.total_amount) as return_total")
+            ->groupBy("sr.{$entityColumn}")
             ->get();
+        $cashBackRows = DB::table('invoices')
+            ->whereNull('deleted_at')
+            ->where('status', '!=', 'void')
+            ->where(function ($query) {
+                $query->whereNull('invoices.sales_order_id')
+                    ->orWhereNotExists(fn ($orders) => $orders->selectRaw('1')
+                        ->from('sales_orders')
+                        ->whereColumn('sales_orders.id', 'invoices.sales_order_id')
+                        ->where('sales_orders.status', 'cancelled'));
+            })
+            ->where('cash_back_amount', '>', 0)
+            ->where(function ($query) use ($from, $to) {
+                $query->whereBetween(DB::raw('DATE(cash_back_approved_at)'), [$from, $to])
+                    ->orWhere(function ($legacy) use ($from, $to) {
+                        $legacy->whereNull('cash_back_approved_at')->whereBetween('invoice_date', [$from, $to]);
+                    });
+            })
+            ->when($companyId, fn ($query) => $query->where('company_id', $companyId))
+            ->selectRaw("{$entityColumn} as entity_id, SUM(cash_back_amount) as cash_back_total")
+            ->groupBy($entityColumn)
+            ->get();
+
+        $returnRows = $returnRows->keyBy('entity_id');
+        $cashBackRows = $cashBackRows->keyBy('entity_id');
+        $entityIds = $grossRows->keys()->merge($returnRows->keys())->merge($cashBackRows->keys())->unique()->values();
+        if ($entityIds->isEmpty()) {
+            return collect();
+        }
+
+        $masterTable = $companyId ? 'customers' : 'companies';
+        $entities = DB::table($masterTable)->whereIn('id', $entityIds)->get(['id', 'code', 'name'])->keyBy('id');
+        $balanceRows = $financialReportService->receivableBalancesAsOf($to, $companyId);
+        $balances = $balanceRows
+            ->groupBy(fn ($row) => $companyId ? $row['customer_id'] : $row['company_id'])
+            ->map(fn ($rows) => round((float) $rows->sum('balance'), 2));
+
+        return $entityIds->map(function ($entityId) use ($grossRows, $returnRows, $cashBackRows, $entities, $balances) {
+            $gross = (float) ($grossRows->get($entityId)?->gross_sales_total ?? 0);
+            $returns = (float) ($returnRows->get($entityId)?->return_total ?? 0);
+            $cashBack = (float) ($cashBackRows->get($entityId)?->cash_back_total ?? 0);
+            $entity = $entities->get($entityId);
+
+            return (object) [
+                'id' => (int) $entityId,
+                'code' => $entity?->code,
+                'name' => $entity?->name,
+                'invoice_count' => (int) ($grossRows->get($entityId)?->invoice_count ?? 0),
+                'gross_sales_total' => round($gross, 2),
+                'return_total' => round($returns, 2),
+                'cash_back_total' => round($cashBack, 2),
+                'sales_total' => round($gross - $returns - $cashBack, 2),
+                'balance_total' => round((float) ($balances->get($entityId) ?? 0), 2),
+            ];
+        })->sortByDesc('sales_total')->take(10)->values();
     }
 }
