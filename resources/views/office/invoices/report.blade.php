@@ -3,6 +3,8 @@
     $formatDate = fn ($value) => $value ? $value->format('d-M-Y') : '-';
     $totalAmount = $invoices->sum('total_amount');
     $cashBackAmount = $invoices->sum('cash_back_amount');
+    $returnCreditAmount = $invoices->sum('return_credit_amount');
+    $netCollectibleAmount = $invoices->sum('net_collectible_amount');
     $paidAmount = $invoices->sum('paid_amount');
     $dateFrom = $filters['date_from'] ?? '';
     $dateTo = $filters['date_to'] ?? '';
@@ -316,7 +318,10 @@
                         <th>Due date</th>
                         <th>Amount</th>
                         <th>Cash back</th>
+                        <th>Returns</th>
+                        <th>Net collectible</th>
                         <th>Paid</th>
+                        <th>Balance</th>
                         <th>Remark</th>
                     </tr>
                 </thead>
@@ -330,12 +335,15 @@
                             <td class="date-cell">{{ $formatDate($invoice->due_date) }}</td>
                             <td class="number-cell">{{ $formatMoney($invoice->total_amount) }}</td>
                             <td class="number-cell">{{ $formatMoney($invoice->cash_back_amount) }}</td>
+                            <td class="number-cell">{{ $formatMoney($invoice->return_credit_amount) }}</td>
+                            <td class="number-cell">{{ $formatMoney($invoice->net_collectible_amount) }}</td>
                             <td class="number-cell">{{ $formatMoney($invoice->paid_amount) }}</td>
+                            <td class="number-cell">{{ $formatMoney($invoice->balance_amount) }}</td>
                             <td class="remark-cell">{{ $invoice->remark ?: '-' }}</td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" align="center">No invoices match the selected filters.</td>
+                            <td colspan="12" align="center">No invoices match the selected filters.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -344,7 +352,10 @@
                         <td colspan="5" class="number-cell">Total</td>
                         <td class="number-cell">{{ $formatMoney($totalAmount) }}</td>
                         <td class="number-cell">{{ $formatMoney($cashBackAmount) }}</td>
+                        <td class="number-cell">{{ $formatMoney($returnCreditAmount) }}</td>
+                        <td class="number-cell">{{ $formatMoney($netCollectibleAmount) }}</td>
                         <td class="number-cell">{{ $formatMoney($paidAmount) }}</td>
+                        <td class="number-cell">{{ $formatMoney($invoices->sum('balance_amount')) }}</td>
                         <td></td>
                     </tr>
                 </tfoot>

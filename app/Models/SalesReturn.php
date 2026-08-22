@@ -14,6 +14,9 @@ class SalesReturn extends Model
 
     protected $casts = [
         'return_date' => 'date',
+        'tax_amount' => 'decimal:2',
+        'posted_at' => 'datetime',
+        'voided_at' => 'datetime',
     ];
 
     public function invoice()
@@ -44,5 +47,15 @@ class SalesReturn extends Model
     public function items()
     {
         return $this->hasMany(SalesReturnItem::class);
+    }
+
+    public function focItems()
+    {
+        return $this->hasMany(SalesReturnFocItem::class);
+    }
+
+    public function commissionAdjustments()
+    {
+        return $this->hasMany(SalesReturnCommissionAdjustment::class);
     }
 }

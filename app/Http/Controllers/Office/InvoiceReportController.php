@@ -20,9 +20,23 @@ class InvoiceReportController extends Controller
 
         $invoices = Invoice::query()
             ->with(['company:id,name', 'customer:id,name'])
+            ->when(! $request->filled('status'), fn ($query) => $query->where('status', '!=', 'void'))
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
-            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
+            ->when($request->filled('status'), function ($query) use ($request) {
+                if ($request->status === 'inconsistent') {
+                    $query->where(function ($integrity) {
+                        $integrity->whereRaw('ABS(net_collectible_amount - GREATEST(0, COALESCE(NULLIF(original_total_amount, 0), total_amount) - cash_back_amount - return_credit_amount)) > 0.01')
+                            ->orWhereRaw('ABS(balance_amount - GREATEST(0, net_collectible_amount - paid_amount)) > 0.01')
+                            ->orWhere(fn ($falsePaid) => $falsePaid->where('status', 'paid')->where('paid_amount', '<=', 0));
+                    });
+                    return;
+                }
+                $query->where(function ($statusQuery) use ($request) {
+                    $statusQuery->where('status', $request->status)
+                        ->orWhere('settlement_status', $request->status);
+                });
+            })
             ->whereDate('invoice_date', '>=', $dateFrom)
             ->whereDate('invoice_date', '<=', $dateTo)
             ->when($request->filled('search'), function ($query) use ($request) {

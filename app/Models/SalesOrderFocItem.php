@@ -30,4 +30,9 @@ class SalesOrderFocItem extends Model
     {
         return $this->belongsTo(Product::class);
     }
+
+    public function returnDispositions()
+    {
+        return $this->hasMany(SalesReturnFocItem::class);
+    }
 }

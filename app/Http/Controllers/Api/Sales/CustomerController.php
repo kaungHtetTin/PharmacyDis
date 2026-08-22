@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Invoice;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CustomerController extends Controller
 {
@@ -31,6 +32,7 @@ class CustomerController extends Controller
         $invoices = $customer->invoices()
             ->with(['company:id,name', 'salesOrder:id,order_no', 'allocations.payment'])
             ->where('company_id', $companyId)
+            ->where('status', '!=', 'void')
             ->latest('invoice_date')
             ->limit(25)
             ->get();
@@ -45,9 +47,10 @@ class CustomerController extends Controller
         $monthlySales = Invoice::query()
             ->where('customer_id', $customer->id)
             ->where('company_id', $companyId)
+            ->where('status', '!=', 'void')
             ->whereYear('invoice_date', now()->year)
             ->whereMonth('invoice_date', now()->month)
-            ->sum('total_amount');
+            ->sum(DB::raw('COALESCE(NULLIF(original_total_amount, 0), total_amount)'));
 
         return response()->json([
             'customer' => $customer,

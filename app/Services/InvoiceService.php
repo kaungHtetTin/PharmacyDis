@@ -14,6 +14,7 @@ class InvoiceService
     public function __construct(
         private NumberGeneratorService $numberGeneratorService,
         private CustomerBalanceService $customerBalanceService,
+        private InvoiceSettlementService $invoiceSettlementService,
     ) {
     }
 
@@ -41,6 +42,7 @@ class InvoiceService
                     $order->update(['status' => 'invoiced']);
                 }
 
+                $existingInvoice = $this->invoiceSettlementService->recalculate($existingInvoice, $actor);
                 $this->customerBalanceService->refresh((int) $existingInvoice->customer_id, (int) $existingInvoice->company_id);
 
                 return $existingInvoice->fresh([
@@ -78,7 +80,12 @@ class InvoiceService
                 'tax_amount' => $taxAmount,
                 'foc_value_amount' => $order->foc_value_amount,
                 'total_amount' => $invoiceTotal,
+                'original_total_amount' => $invoiceTotal,
+                'return_credit_amount' => 0,
+                'net_collectible_amount' => $invoiceTotal,
                 'balance_amount' => $invoiceTotal,
+                'settlement_status' => 'unpaid',
+                'settlement_calculated_at' => now(),
                 'created_by' => $actor?->id,
             ]);
 

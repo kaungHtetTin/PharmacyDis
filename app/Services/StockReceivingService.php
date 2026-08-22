@@ -17,14 +17,24 @@ class StockReceivingService
     public function __construct(
         private ProductUnitConversionService $conversionService,
         private NumberGeneratorService $numberGeneratorService,
+        private CompanyPaymentService $companyPaymentService,
     ) {
     }
 
     public function postReceipt(array $data, ?User $actor = null): StockReceipt
     {
         return DB::transaction(function () use ($data, $actor) {
+            if (! empty($data['idempotency_key'])) {
+                $existing = StockReceipt::with(['company', 'warehouse', 'items.product.baseUnit', 'items.unit', 'items.focUnit', 'payable'])
+                    ->where('idempotency_key', $data['idempotency_key'])->first();
+                if ($existing) {
+                    return $existing;
+                }
+            }
+
             $receipt = StockReceipt::create([
                 'receipt_no' => $this->numberGeneratorService->next(StockReceipt::class, 'receipt_no', 'SR'),
+                'idempotency_key' => $data['idempotency_key'] ?? null,
                 'company_id' => $data['company_id'],
                 'warehouse_id' => $data['warehouse_id'] ?? null,
                 'received_date' => $data['received_date'] ?? now()->toDateString(),
@@ -143,32 +153,64 @@ class StockReceivingService
 
         $paidAmount = (float) ($data['paid_amount'] ?? 0);
         $total = max(0, $subtotal - $commissionTotal);
-        $due = max(0, $total - $paidAmount);
-        $paymentStatus = $due <= 0 ? 'paid' : ($paidAmount > 0 ? 'partial' : 'unpaid');
+        if ($paidAmount > $total) {
+            throw ValidationException::withMessages(['paid_amount' => 'Paid amount cannot exceed the receipt total.']);
+        }
+        if ($paidAmount > 0 && $actor && ! $actor->hasPermission('office.finance')) {
+            throw ValidationException::withMessages([
+                'paid_amount' => 'Initial supplier payment requires finance permission. Save the receipt unpaid or ask finance to record payment.',
+            ]);
+        }
 
         $receipt->update([
             'subtotal_amount' => $subtotal,
             'discount_amount' => $commissionTotal,
             'total_amount' => $total,
-            'paid_amount' => $paidAmount,
-            'due_amount' => $due,
-            'payment_status' => $paymentStatus,
+            'paid_amount' => 0,
+            'due_amount' => $total,
+            'payment_status' => 'unpaid',
         ]);
 
-        CompanyPayable::create([
+        $payable = CompanyPayable::create([
             'company_id' => $receipt->company_id,
             'stock_receipt_id' => $receipt->id,
             'payable_date' => $receipt->received_date,
             'due_date' => $receipt->payable_due_date,
             'amount' => $total,
-            'paid_amount' => $paidAmount,
-            'balance_amount' => $due,
-            'status' => $paymentStatus,
+            'paid_amount' => 0,
+            'balance_amount' => $total,
+            'status' => 'unpaid',
         ]);
+
+        if ($paidAmount > 0) {
+            $this->companyPaymentService->record([
+                'company_id' => $receipt->company_id,
+                'company_payable_id' => $payable->id,
+                'payment_date' => $receipt->received_date?->toDateString(),
+                'amount' => $paidAmount,
+                'payment_method' => $data['payment_method'] ?? 'cash',
+                'reference_no' => $data['payment_reference_no'] ?? $receipt->supplier_invoice_no,
+                'note' => 'Initial supplier payment recorded with stock receipt.',
+                'source_type' => StockReceipt::class,
+                'source_id' => $receipt->id,
+                'idempotency_key' => "stock-receipt:{$receipt->id}:initial-payment",
+            ], $actor);
+        }
     }
 
     private function clearGeneratedInventory(StockReceipt $receipt): void
     {
+        $hasPayment = CompanyPayable::query()
+            ->where('stock_receipt_id', $receipt->id)
+            ->whereHas('payments')
+            ->exists();
+
+        if ($hasPayment) {
+            throw ValidationException::withMessages([
+                'receipt' => 'This receiving record has a linked supplier payment and cannot be edited or deleted.',
+            ]);
+        }
+
         $receiptMovements = StockMovement::query()
             ->where('reference_type', StockReceipt::class)
             ->where('reference_id', $receipt->id)

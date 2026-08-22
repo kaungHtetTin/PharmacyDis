@@ -11,6 +11,7 @@ class SalesReturnResource extends JsonResource
         return [
             'id' => $this->id,
             'return_no' => $this->return_no,
+            'credit_note_no' => $this->credit_note_no,
             'invoice_id' => $this->invoice_id,
             'invoice' => $this->whenLoaded('invoice'),
             'sales_order_id' => $this->sales_order_id,
@@ -24,10 +25,14 @@ class SalesReturnResource extends JsonResource
             'return_date' => optional($this->return_date)->toDateString(),
             'status' => $this->status,
             'total_amount' => $this->total_amount,
+            'tax_amount' => $this->tax_amount,
             'payment_amount' => $this->relationLoaded('invoice') && $this->invoice ? $this->invoice->paid_amount : 0,
             'invoice_balance_amount' => $this->relationLoaded('invoice') && $this->invoice ? $this->invoice->balance_amount : 0,
             'reason' => $this->reason,
+            'reason_code' => $this->reason_code,
             'items' => $this->whenLoaded('items'),
+            'foc_items' => $this->whenLoaded('focItems'),
+            'commission_adjustments' => $this->whenLoaded('commissionAdjustments'),
             'items_count' => $this->items_count ?? $this->whenCounted('items'),
         ];
     }

@@ -5,16 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class SalesReturnItem extends Model
+class SalesReturnCommissionAdjustment extends Model
 {
     use HasFactory;
 
     protected $guarded = [];
 
     protected $casts = [
-        'base_unit_cost' => 'decimal:6',
-        'tax_amount' => 'decimal:2',
-        'expiry_date' => 'date',
+        'original_commission_amount' => 'decimal:2',
+        'reversal_amount' => 'decimal:2',
+        'approved_at' => 'datetime',
     ];
 
     public function salesReturn()
@@ -22,9 +22,9 @@ class SalesReturnItem extends Model
         return $this->belongsTo(SalesReturn::class);
     }
 
-    public function invoiceItem()
+    public function salesReturnItem()
     {
-        return $this->belongsTo(InvoiceItem::class);
+        return $this->belongsTo(SalesReturnItem::class);
     }
 
     public function salesOrderItem()
@@ -32,13 +32,8 @@ class SalesReturnItem extends Model
         return $this->belongsTo(SalesOrderItem::class);
     }
 
-    public function product()
+    public function approver()
     {
-        return $this->belongsTo(Product::class);
-    }
-
-    public function unit()
-    {
-        return $this->belongsTo(Unit::class);
+        return $this->belongsTo(User::class, 'approved_by');
     }
 }

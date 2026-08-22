@@ -7,6 +7,7 @@ use App\Http\Requests\StoreCustomerRequest;
 use App\Models\Customer;
 use App\Models\Invoice;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class CustomerController extends Controller
@@ -60,9 +61,10 @@ class CustomerController extends Controller
             ->get();
         $monthlySales = Invoice::query()
             ->where('customer_id', $customer->id)
+            ->where('status', '!=', 'void')
             ->whereYear('invoice_date', now()->year)
             ->whereMonth('invoice_date', now()->month)
-            ->sum('total_amount');
+            ->sum(DB::raw('COALESCE(NULLIF(original_total_amount, 0), total_amount)'));
         $invoiceTotal = (float) $invoices->sum('total_amount');
         $paidTotal = (float) $invoices->sum('paid_amount');
         $paymentRate = $invoiceTotal > 0 ? round(($paidTotal / $invoiceTotal) * 100) : 0;

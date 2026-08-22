@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Office\InventoryReportController;
 use App\Http\Controllers\Office\InvoiceReportController;
 use App\Http\Controllers\Office\InvoicePrintController;
+use App\Http\Controllers\Office\SalesReturnPrintController;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,6 +27,7 @@ Route::view('/office', 'welcome')->name('office.index');
 Route::get('/office/inventory/report', InventoryReportController::class)->name('office.inventory.report');
 Route::get('/office/invoices/report', InvoiceReportController::class)->name('office.invoices.report');
 Route::get('/office/invoices/{invoice}/print', InvoicePrintController::class)->name('office.invoices.print');
+Route::get('/office/sales-returns/{salesReturn}/print', SalesReturnPrintController::class)->name('office.sales-returns.print');
 Route::view('/office/{page}', 'welcome')
     ->whereIn('page', [
         'dashboard',

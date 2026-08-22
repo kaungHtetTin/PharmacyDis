@@ -22,6 +22,55 @@ export function InvoiceDetailContent({ customerName = '', fallbackInvoice = {}, 
 
     return (
         <section className="invoice-payment-section">
+            <p className="eyebrow">Settlement summary</p>
+            <div className="fact-grid invoice-settlement-grid">
+                {[
+                    ['Original invoice', invoiceDetail.originalAmount || invoiceDetail.amount],
+                    ['Cash back', invoiceDetail.cashBackAmount],
+                    ['Return credits', invoiceDetail.returnCreditAmount],
+                    ['Net collectible', invoiceDetail.netCollectibleAmount],
+                    ['Payments received', invoiceDetail.paidAmount || invoiceDetail.paid],
+                    ['Open balance', invoiceDetail.balanceAmount],
+                ].map(([label, value]) => (
+                    <div key={label}><span>{label}</span><strong>{value || '0'}</strong></div>
+                ))}
+            </div>
+
+            {(invoiceDetail.returnEvents || []).length > 0 && (
+                <>
+                    <p className="eyebrow">Returns and credit notes</p>
+                    <div className="finance-allocation-table">
+                        <div className="finance-allocation-head">
+                            <span>Credit note</span><span>Date</span><span>Amount</span><span>Status</span><span>FOC</span>
+                        </div>
+                        {invoiceDetail.returnEvents.map((event) => (
+                            <div className="finance-allocation-row" key={event.id}>
+                                <strong>{event.reference}</strong><span>{event.date}</span><strong>{event.amount}</strong>
+                                <StatusBadge value={event.status} />
+                                <span>{event.focItems?.length ? `${event.focItems.length} disposition(s)` : 'None'}</span>
+                            </div>
+                        ))}
+                    </div>
+                </>
+            )}
+
+            {(invoiceDetail.adjustmentEvents || []).length > 0 && (
+                <>
+                    <p className="eyebrow">Customer credits and charge adjustments</p>
+                    <div className="finance-allocation-table">
+                        <div className="finance-allocation-head">
+                            <span>Reference</span><span>Date</span><span>Type</span><span>Amount</span><span>Status</span>
+                        </div>
+                        {invoiceDetail.adjustmentEvents.map((event) => (
+                            <div className="finance-allocation-row" key={`${event.type}-${event.id}`}>
+                                <strong>{event.reference}</strong><span>{event.date}</span><span>{event.type}</span>
+                                <strong>{event.amount}</strong><StatusBadge value={event.status} />
+                            </div>
+                        ))}
+                    </div>
+                </>
+            )}
+
             <p className="eyebrow">Payment records</p>
             {invoiceDetail.paymentRecords.length > 0 ? (
                 <div className="finance-allocation-table">

@@ -24,6 +24,7 @@ class SalesOrderService
         private CreditControlService $creditControlService,
         private CustomerBalanceService $customerBalanceService,
         private InvoiceService $invoiceService,
+        private InvoiceSettlementService $invoiceSettlementService,
         private NumberGeneratorService $numberGeneratorService,
         private StockMovementService $stockMovementService,
     ) {
@@ -101,7 +102,7 @@ class SalesOrderService
     {
         return DB::transaction(function () use ($order, $data, $actor) {
             $order = SalesOrder::query()
-                ->with(['items', 'focItems', 'invoices.allocations'])
+                ->with(['items', 'focItems', 'invoices.allocations', 'invoices.salesReturns'])
                 ->lockForUpdate()
                 ->findOrFail($order->id);
 
@@ -183,7 +184,7 @@ class SalesOrderService
     {
         DB::transaction(function () use ($order, $actor) {
             $order = SalesOrder::query()
-                ->with(['invoices.allocations'])
+                ->with(['invoices.allocations', 'invoices.salesReturns'])
                 ->lockForUpdate()
                 ->findOrFail($order->id);
 
@@ -329,11 +330,15 @@ class SalesOrderService
 
     private function assertInvoicesCanChange(SalesOrder $order): void
     {
-        $hasPaidInvoice = $order->invoices->contains(fn ($invoice) => $invoice->allocations->isNotEmpty() || (float) $invoice->paid_amount > 0);
+        $hasPaidInvoice = $order->invoices->contains(fn ($invoice) =>
+            $invoice->allocations->isNotEmpty()
+            || $invoice->salesReturns->where('status', 'posted')->isNotEmpty()
+            || (float) $invoice->paid_amount > 0
+        );
 
         if ($hasPaidInvoice) {
             throw ValidationException::withMessages([
-                'invoice' => 'This order already has invoice payments and cannot be edited or deleted.',
+                'invoice' => 'This issued invoice has payments or returns and cannot be edited. Use an adjustment document.',
             ]);
         }
     }
@@ -357,12 +362,12 @@ class SalesOrderService
 
         foreach ($order->invoices()->with('items')->get() as $invoice) {
             $invoice->items()->delete();
-            $taxAmount = (float) ($invoice->tax_amount ?? 0);
+            $taxAmount = (float) ($order->tax_amount ?? 0);
             $cashBackAmount = round(min(
                 (float) ($invoice->cash_back_amount ?? 0),
-                max(0, (float) $order->total_amount + $taxAmount)
+                max(0, (float) $order->total_amount)
             ), 2);
-            $invoiceTotal = round(max(0, (float) $order->total_amount + $taxAmount - $cashBackAmount), 2);
+            $invoiceTotal = round(max(0, (float) $order->total_amount), 2);
 
             $invoice->update([
                 'company_id' => $order->company_id,
@@ -371,9 +376,10 @@ class SalesOrderService
                 'subtotal_amount' => $order->subtotal_amount,
                 'discount_amount' => $order->discount_amount,
                 'foc_value_amount' => $order->foc_value_amount,
+                'tax_amount' => $taxAmount,
                 'cash_back_amount' => $cashBackAmount,
                 'total_amount' => $invoiceTotal,
-                'balance_amount' => max(0, $invoiceTotal - (float) $invoice->paid_amount),
+                'original_total_amount' => $invoiceTotal,
                 'due_date' => $order->payment_due_date?->toDateString() ?? $invoice->due_date?->toDateString() ?? now()->addDays((int) config('billing.invoice_due_days', 30))->toDateString(),
                 'status' => (float) $invoice->paid_amount > 0 ? 'partial' : 'issued',
                 'created_by' => $invoice->created_by ?? $actor?->id,
@@ -395,6 +401,8 @@ class SalesOrderService
                     'line_total' => $item->line_total,
                 ]);
             }
+
+            $this->invoiceSettlementService->recalculate($invoice, $actor);
         }
     }
 

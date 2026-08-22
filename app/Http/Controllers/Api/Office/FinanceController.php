@@ -106,17 +106,27 @@ class FinanceController extends Controller
     {
         $query = Invoice::query()
             ->with(['company:id,name', 'customer:id,name,phone', 'salesOrder:id,order_no', 'allocations.payment'])
+            ->where('status', '!=', 'void')
             ->when($request->boolean('action_only', true), fn ($query) => $query->where('balance_amount', '>', 0))
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
             ->when($request->filled('status'), function ($query) use ($request) {
                 if ($request->status === 'overdue') {
-                    $query->where('status', '!=', 'paid')
+                    $query->whereNotIn('settlement_status', ['paid', 'credited', 'void'])
                         ->whereDate('due_date', '<', now()->toDateString());
                     return;
                 }
 
-                $query->where('status', $request->status);
+                if ($request->status === 'inconsistent') {
+                    $query->where(function ($integrity) {
+                        $integrity->whereRaw('ABS(net_collectible_amount - GREATEST(0, COALESCE(NULLIF(original_total_amount, 0), total_amount) - cash_back_amount - return_credit_amount)) > 0.01')
+                            ->orWhereRaw('ABS(balance_amount - GREATEST(0, net_collectible_amount - paid_amount)) > 0.01')
+                            ->orWhere(fn ($falsePaid) => $falsePaid->where('status', 'paid')->where('paid_amount', '<=', 0));
+                    });
+                    return;
+                }
+
+                $query->where('settlement_status', $request->status);
             })
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->search;
@@ -132,12 +142,12 @@ class FinanceController extends Controller
             ->latest('due_date');
 
         $summaryQuery = clone $query;
-        $creditQuery = DB::table('customer_balances')
-            ->join('customers', 'customers.id', '=', 'customer_balances.customer_id')
-            ->join('companies', 'companies.id', '=', 'customer_balances.company_id')
-            ->where('customer_balances.balance_amount', '<', 0)
-            ->when($request->filled('company_id'), fn ($query) => $query->where('customer_balances.company_id', $request->company_id))
-            ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_balances.customer_id', $request->customer_id))
+        $creditQuery = DB::table('customer_credits')
+            ->join('customers', 'customers.id', '=', 'customer_credits.customer_id')
+            ->join('companies', 'companies.id', '=', 'customer_credits.company_id')
+            ->where('customer_credits.status', 'available')
+            ->when($request->filled('company_id'), fn ($query) => $query->where('customer_credits.company_id', $request->company_id))
+            ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_credits.customer_id', $request->customer_id))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->search;
 
@@ -147,7 +157,12 @@ class FinanceController extends Controller
                 });
             });
         $receivableAmount = (float) (clone $summaryQuery)->sum('balance_amount');
-        $customerCreditAmount = abs((float) (clone $creditQuery)->sum('customer_balances.balance_amount'));
+        $customerCreditAmount = (float) (clone $creditQuery)->sum('customer_credits.available_amount');
+        $chargeQuery = DB::table('customer_charge_adjustments')
+            ->where('status', 'posted')
+            ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
+            ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id));
+        $customerChargeAmount = (float) (clone $chargeQuery)->sum('amount');
         $paginated = $query->paginate($request->integer('per_page', 15));
 
         return response()->json(array_merge($paginated->toArray(), [
@@ -155,7 +170,8 @@ class FinanceController extends Controller
                 'invoice_count' => (clone $summaryQuery)->count(),
                 'receivable_amount' => $receivableAmount,
                 'customer_credit_amount' => $customerCreditAmount,
-                'net_receivable_amount' => $receivableAmount - $customerCreditAmount,
+                'customer_charge_amount' => $customerChargeAmount,
+                'net_receivable_amount' => $receivableAmount + $customerChargeAmount - $customerCreditAmount,
                 'overdue_amount' => (float) (clone $summaryQuery)->whereDate('due_date', '<', now()->toDateString())->sum('balance_amount'),
             ],
         ]));

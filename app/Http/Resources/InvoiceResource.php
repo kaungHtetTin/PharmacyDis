@@ -26,11 +26,15 @@ class InvoiceResource extends JsonResource
             'discount_amount' => $this->discount_amount,
             'tax_amount' => $this->tax_amount,
             'cash_back_amount' => $this->cash_back_amount ?? 0,
-            'cash_back_limit_amount' => round((float) $this->total_amount + (float) ($this->cash_back_amount ?? 0), 2),
+            'cash_back_limit_amount' => round(max(0, (float) ($this->original_total_amount ?: $this->total_amount) - (float) $this->return_credit_amount), 2),
             'foc_value_amount' => $this->foc_value_amount,
             'total_amount' => $this->total_amount,
+            'original_total_amount' => $this->original_total_amount ?: $this->total_amount,
+            'return_credit_amount' => $this->return_credit_amount ?? 0,
+            'net_collectible_amount' => $this->net_collectible_amount ?? $this->total_amount,
             'paid_amount' => $this->paid_amount,
             'balance_amount' => $this->balance_amount,
+            'settlement_status' => $this->settlement_status ?? $this->status,
             'items' => $this->whenLoaded('items'),
             'allocations' => $this->whenLoaded('allocations', fn () => $this->allocations->map(fn ($allocation) => [
                 'id' => $allocation->id,
@@ -44,6 +48,9 @@ class InvoiceResource extends JsonResource
                     'reference_no' => $allocation->payment->reference_no,
                 ] : null,
             ])),
+            'sales_returns' => $this->whenLoaded('salesReturns'),
+            'customer_credits' => $this->whenLoaded('customerCredits'),
+            'customer_charge_adjustments' => $this->whenLoaded('customerChargeAdjustments'),
         ];
     }
 }

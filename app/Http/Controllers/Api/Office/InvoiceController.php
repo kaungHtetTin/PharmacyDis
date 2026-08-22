@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\SalesOrder;
 use App\Services\CustomerBalanceService;
 use App\Services\InvoiceService;
+use App\Services\InvoiceSettlementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -30,12 +31,31 @@ class InvoiceController extends Controller
                 'salesOrder.focItems.focRule',
                 'items.product',
                 'items.unit',
+                'items.salesReturnItems.salesReturn',
                 'allocations.payment',
+                'salesReturns.items.product',
+                'salesReturns.focItems.product',
+                'salesReturns.focItems.chargeAdjustment',
+                'customerCredits',
+                'customerChargeAdjustments',
             ])
             ->when($request->filled('invoice_id'), fn ($query) => $query->whereKey($request->integer('invoice_id')))
             ->when($request->filled('company_id'), fn ($query) => $query->where('company_id', $request->company_id))
             ->when($request->filled('customer_id'), fn ($query) => $query->where('customer_id', $request->customer_id))
-            ->when($request->filled('status'), fn ($query) => $query->where('status', $request->status))
+            ->when($request->filled('status'), function ($query) use ($request) {
+                if ($request->status === 'inconsistent') {
+                    $query->where(function ($integrity) {
+                        $integrity->whereRaw('ABS(net_collectible_amount - GREATEST(0, COALESCE(NULLIF(original_total_amount, 0), total_amount) - cash_back_amount - return_credit_amount)) > 0.01')
+                            ->orWhereRaw('ABS(balance_amount - GREATEST(0, net_collectible_amount - paid_amount)) > 0.01')
+                            ->orWhere(fn ($falsePaid) => $falsePaid->where('status', 'paid')->where('paid_amount', '<=', 0));
+                    });
+                    return;
+                }
+                $query->where(function ($statusQuery) use ($request) {
+                    $statusQuery->where('status', $request->status)
+                        ->orWhere('settlement_status', $request->status);
+                });
+            })
             ->when($request->filled('date_from'), fn ($query) => $query->whereDate('invoice_date', '>=', $request->date('date_from')->toDateString()))
             ->when($request->filled('date_to'), fn ($query) => $query->whereDate('invoice_date', '<=', $request->date('date_to')->toDateString()))
             ->when($request->filled('search'), function ($query) use ($request) {
@@ -51,7 +71,7 @@ class InvoiceController extends Controller
             })
             ->when($request->boolean('action_only'), fn ($query) => $query
                 ->where('balance_amount', '>', 0)
-                ->whereNotIn('status', ['paid', 'void']))
+                ->where('status', '!=', 'void'))
             ->latest()
             ->paginate($request->integer('per_page', 15));
 
@@ -73,7 +93,12 @@ class InvoiceController extends Controller
         return new InvoiceResource($invoice);
     }
 
-    public function updateRemark(Request $request, Invoice $invoice, CustomerBalanceService $customerBalanceService)
+    public function updateRemark(
+        Request $request,
+        Invoice $invoice,
+        CustomerBalanceService $customerBalanceService,
+        InvoiceSettlementService $invoiceSettlementService
+    )
     {
         $validated = $request->validate([
             'due_date' => ['nullable', 'date'],
@@ -82,7 +107,7 @@ class InvoiceController extends Controller
             'cash_back_amount' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        $updatedInvoice = DB::transaction(function () use ($customerBalanceService, $invoice, $validated) {
+        $updatedInvoice = DB::transaction(function () use ($customerBalanceService, $invoice, $invoiceSettlementService, $request, $validated) {
             $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
             $invoiceUpdates = [];
 
@@ -99,6 +124,9 @@ class InvoiceController extends Controller
             }
 
             if (array_key_exists('cash_back_amount', $validated)) {
+                if (! $request->user()?->hasPermission('office.finance')) {
+                    abort(403, 'Cash-back approval requires finance permission.');
+                }
                 if ($invoice->status === 'void') {
                     throw ValidationException::withMessages([
                         'cash_back_amount' => 'Void invoices cannot receive cash back adjustments.',
@@ -106,7 +134,8 @@ class InvoiceController extends Controller
                 }
 
                 $cashBackAmount = round((float) ($validated['cash_back_amount'] ?? 0), 2);
-                $cashBackLimit = round((float) $invoice->total_amount + (float) ($invoice->cash_back_amount ?? 0), 2);
+                $settlement = $invoiceSettlementService->preview($invoice);
+                $cashBackLimit = round(max(0, (float) $settlement['original_total_amount'] - (float) $settlement['return_credit_amount']), 2);
 
                 if ($cashBackAmount > $cashBackLimit) {
                     throw ValidationException::withMessages([
@@ -114,13 +143,9 @@ class InvoiceController extends Controller
                     ]);
                 }
 
-                $totalAmount = round($cashBackLimit - $cashBackAmount, 2);
-                $paidAmount = (float) $invoice->paid_amount;
-
                 $invoiceUpdates['cash_back_amount'] = $cashBackAmount;
-                $invoiceUpdates['total_amount'] = $totalAmount;
-                $invoiceUpdates['balance_amount'] = max(0, $totalAmount - $paidAmount);
-                $invoiceUpdates['status'] = $paidAmount >= $totalAmount ? 'paid' : ($paidAmount > 0 ? 'partial' : 'issued');
+                $invoiceUpdates['cash_back_approved_at'] = now();
+                $invoiceUpdates['cash_back_approved_by'] = $request->user()?->id;
             }
 
             if ($invoiceUpdates !== []) {
@@ -132,6 +157,7 @@ class InvoiceController extends Controller
             }
 
             if (array_key_exists('cash_back_amount', $invoiceUpdates)) {
+                $invoice = $invoiceSettlementService->recalculate($invoice, $request->user());
                 $customerBalanceService->refresh((int) $invoice->customer_id, (int) $invoice->company_id);
             }
 
@@ -151,7 +177,10 @@ class InvoiceController extends Controller
             'salesOrder.focItems.focRule',
             'items.product',
             'items.unit',
+            'items.salesReturnItems.salesReturn',
             'allocations.payment',
+            'salesReturns.items.product',
+            'salesReturns.focItems.product',
         ]));
     }
 }

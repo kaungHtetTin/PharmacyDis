@@ -21,6 +21,7 @@ import PrintPreview from '../../components/shared/PrintPreview';
 import ProductUnitGrid from '../../components/shared/ProductUnitGrid';
 import RepAssignmentGrid from '../../components/shared/RepAssignmentGrid';
 import ReportsWorkspace from '../../components/shared/ReportsWorkspace';
+import ReturnIntegrityReviewModal from '../../components/shared/ReturnIntegrityReviewModal';
 import RuleSetupPreview from '../../components/shared/RuleSetupPreview';
 import SalesReportSummary from '../../components/shared/SalesReportSummary';
 import SalesOrderDetail from '../../components/shared/SalesOrderDetail';
@@ -98,12 +99,15 @@ const blankStockReceiptItem = {
 };
 
 const blankStockReceiptForm = {
+    idempotency_key: '',
     company_id: '',
     warehouse_id: '',
     supplier_invoice_no: '',
     received_date: '',
     payable_due_date: '',
     paid_amount: '0',
+    payment_method: 'cash',
+    payment_reference_no: '',
     items: [{ ...blankStockReceiptItem }],
 };
 
@@ -133,12 +137,20 @@ const blankStockTransferForm = {
 };
 
 const blankSalesReturnForm = {
+    idempotency_key: '',
     invoice_id: '',
     warehouse_id: '',
     return_date: '',
     reason: '',
     items: [],
+    foc_items: [],
+    confirmed: false,
 };
+
+function makeIdempotencyKey(prefix) {
+    const suffix = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return `${prefix}:${suffix}`;
+}
 
 function newStockTransferLine(productId = '', productName = '') {
     return {
@@ -161,21 +173,80 @@ const STOCK_TRANSFER_TABS = [
 
 const STOCK_TRANSFER_PRODUCT_PAGE_SIZE = 12;
 
-function newSalesReturnLine(item) {
+function newSalesReturnLine(item, sourceOrderItem = {}) {
     return {
         id: `sales-return-line-${item.id}`,
         invoice_item_id: item.id,
         product: item.product,
         unit: item.unit,
-        max_quantity: Number(item.quantity || 0),
-        base_unit_quantity: Number(item.base_unit_quantity || 0),
+        sales_order_item_id: item.sales_order_item_id || '',
+        max_quantity: Number(item.returnable_quantity ?? item.quantity ?? 0),
+        base_unit_quantity: Number(item.returnable_base_unit_quantity ?? item.base_unit_quantity ?? 0),
+        original_quantity: Number(item.quantity || 0),
+        previously_returned_quantity: Number(item.returned_quantity || 0),
+        original_base_unit_quantity: Number(item.base_unit_quantity || 0),
+        previously_returned_base_unit_quantity: Number(item.returned_base_unit_quantity || 0),
         line_total: Number(item.line_total || 0),
+        commission_amount: Number(sourceOrderItem.commission_amount || 0),
         quantity: '',
         condition: 'sellable',
         batch_no: '',
         expiry_date: '',
         reason: '',
     };
+}
+
+function deriveFocDispositions(invoice, returnLines, currentDecisions = []) {
+    const affectedLines = new Map((returnLines || [])
+        .filter((item) => Number(item.quantity || 0) > 0 && Number(item.sales_order_item_id || 0))
+        .map((item) => [Number(item.sales_order_item_id), item]));
+    const alreadyDisposed = new Map();
+    (invoice?.returnEvents || []).forEach((event) => {
+        (event.focItems || []).filter((item) => item.status === 'posted').forEach((item) => {
+            const id = Number(item.sales_order_foc_item_id || 0);
+            alreadyDisposed.set(id, (alreadyDisposed.get(id) || 0) + Number(item.base_unit_quantity || 0));
+        });
+    });
+    const currentById = new Map((currentDecisions || []).map((item) => [Number(item.sales_order_foc_item_id), item]));
+
+    return (invoice?.sourceOrder?.focItems || [])
+        .filter((item) => affectedLines.has(Number(item.sales_order_item_id || 0)))
+        .map((item) => {
+            const line = affectedLines.get(Number(item.sales_order_item_id));
+            const originalBase = Math.max(1, Number(line.original_base_unit_quantity || 0));
+            const selectedBase = Number(line.base_unit_quantity || 0) * Number(line.quantity || 0) / Math.max(1, Number(line.max_quantity || 0));
+            const cumulativeReturnedBase = Number(line.previously_returned_base_unit_quantity || 0) + selectedBase;
+            const remainingPaidBase = Math.max(0, originalBase - cumulativeReturnedBase);
+            const sourceItem = invoice?.sourceOrder?.order_items_raw?.find((source) => Number(source.id) === Number(item.sales_order_item_id)) || {};
+            let remainingEntitlement = 0;
+            const threshold = item.rule_type === 'value'
+                ? Number(item.minimum_order_value || 0)
+                : Number(item.minimum_quantity_base_units || 0);
+            if (item.rule_type && threshold > 0) {
+                const basis = item.rule_type === 'value'
+                    ? Number(sourceItem.line_total || 0) * remainingPaidBase / originalBase
+                    : remainingPaidBase;
+                remainingEntitlement = Math.min(
+                    Number(item.base_quantity_value || 0),
+                    Math.floor(basis / threshold) * Number(item.reward_quantity_base_units || 0),
+                );
+            }
+            const remaining = Math.max(
+                0,
+                Number(item.base_quantity_value || 0) - remainingEntitlement - (alreadyDisposed.get(Number(item.id)) || 0),
+            );
+            const existing = currentById.get(Number(item.id));
+
+            return remaining > 0 ? {
+                sales_order_foc_item_id: item.id,
+                product: item.product,
+                base_unit_quantity: remaining,
+                estimated_value_amount: Number(item.estimated_value_amount || 0) * remaining / Math.max(1, Number(item.base_quantity_value || 0)),
+                disposition: existing?.disposition || 'returned',
+                reason: existing?.reason || '',
+            } : null;
+        })
+        .filter(Boolean);
 }
 
 function forceShowAllOnSearch(current, value) {
@@ -188,6 +259,7 @@ function forceShowAllOnSearch(current, value) {
 }
 
 const blankCustomerPaymentForm = {
+    idempotency_key: '',
     company_id: '',
     customer_id: '',
     invoice_id: '',
@@ -932,6 +1004,18 @@ function StockReceiptForm({
                 <FormField label="Received date" name="received_date" onChange={onChange} type="date" value={form.received_date} />
                 <FormField label="Payable due date" name="payable_due_date" onChange={onChange} type="date" value={form.payable_due_date} />
                 <FormField label="Paid amount" name="paid_amount" onChange={onChange} type="number" value={form.paid_amount} />
+                {paid > 0 && (
+                    <>
+                        <label className="form-field">
+                            <span>Initial payment method</span>
+                            <select name="payment_method" onChange={onChange} value={form.payment_method || 'cash'}>
+                                <option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option>
+                                <option value="cheque">Cheque</option><option value="mobile_money">Mobile money</option><option value="other">Other</option>
+                            </select>
+                        </label>
+                        <FormField label="Payment reference" name="payment_reference_no" onChange={onChange} value={form.payment_reference_no || ''} />
+                    </>
+                )}
             </div>
 
             <section className="form-section">
@@ -1009,6 +1093,7 @@ function StockReceiptForm({
                 <div><span>Paid amount</span><strong>{formatAmount(paid)}</strong></div>
                 <div><span>Company payable due</span><strong>{formatAmount(due)}</strong></div>
             </section>
+            {paid > 0 && <p className="helper-copy">Saving creates one linked supplier-payment transaction. Retrying the request will not duplicate it.</p>}
         </div>
     );
 }
@@ -1522,6 +1607,7 @@ function SalesReturnForm({
     loading = false,
     onChange,
     onItemChange,
+    onFocItemChange,
     warehouses = [],
     warehousesLoading = false,
 }) {
@@ -1534,6 +1620,17 @@ function SalesReturnForm({
         return sum + (maxQuantity > 0 ? (lineTotal * quantity / maxQuantity) : 0);
     }, 0);
     const returnedItemCount = returnableItems.filter((item) => Number(item.quantity || 0) > 0).length;
+    const returnedBaseQuantity = returnableItems.reduce((sum, item) => {
+        const maxQuantity = Math.max(1, Number(item.max_quantity || 0));
+        return sum + (Number(item.base_unit_quantity || 0) * Number(item.quantity || 0) / maxQuantity);
+    }, 0);
+    const commissionReversal = returnableItems.reduce((sum, item) => {
+        const maxQuantity = Math.max(1, Number(item.max_quantity || 0));
+        return sum + (Number(item.commission_amount || 0) * Number(item.quantity || 0) / maxQuantity);
+    }, 0);
+    const focValue = (form.foc_items || []).reduce((sum, item) => sum + Number(item.estimated_value_amount || 0), 0);
+    const netAfterReturn = Math.max(0, Number(invoice?.net_collectible_amount || 0) - estimatedReturnTotal);
+    const customerCreditAfter = Math.max(0, Number(invoice?.paid_amount || 0) - netAfterReturn);
 
     return (
         <div className="sales-return-form">
@@ -1620,11 +1717,52 @@ function SalesReturnForm({
                 </div>
             </section>
 
+            {(form.foc_items || []).length > 0 && (
+                <section className="form-section">
+                    <div className="section-heading">
+                        <div>
+                            <p className="eyebrow">FOC consequence</p>
+                            <h2>Confirm every linked free-item disposition</h2>
+                        </div>
+                    </div>
+                    <p className="helper-copy">Returning the full paid quantity removes the related FOC entitlement. Returned FOC increases stock; charged or waived FOC requires a reason.</p>
+                    <div className="sales-return-items">
+                        {form.foc_items.map((item, index) => (
+                            <article className="sales-return-item" key={item.sales_order_foc_item_id}>
+                                <div className="sales-return-item-head">
+                                    <div><strong>{item.product}</strong><small>{formatAmount(item.base_unit_quantity)} base units / value {formatAmount(item.estimated_value_amount)}</small></div>
+                                    <StatusBadge value={item.disposition} />
+                                </div>
+                                <div className="receiving-item-grid sales-return-item-grid">
+                                    <label className="form-field">
+                                        <span>Disposition</span>
+                                        <select name="disposition" onChange={(event) => onFocItemChange(index, event)} value={item.disposition}>
+                                            <option value="returned">Returned to warehouse</option>
+                                            <option value="charged">Charge customer</option>
+                                            <option value="waived">Waived with approval</option>
+                                        </select>
+                                    </label>
+                                    <FormField className="span-2" label="Decision reason" name="reason" onChange={(event) => onFocItemChange(index, event)} placeholder={item.disposition === 'returned' ? 'Optional receiving note' : 'Required approval reason'} value={item.reason} />
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                </section>
+            )}
+
             <section className="receiving-summary">
                 <div><span>Items selected</span><strong>{formatAmount(returnedItemCount)}</strong></div>
+                <div><span>Stock received</span><strong>{formatAmount(returnedBaseQuantity)} base units</strong></div>
                 <div><span>Estimated invoice credit</span><strong>{formatAmount(estimatedReturnTotal)}</strong></div>
-                <div><span>Invoice balance now</span><strong>{invoice?.balanceAmount || '-'}</strong></div>
+                <div><span>Net collectible after</span><strong>{formatAmount(netAfterReturn)}</strong></div>
+                <div><span>Customer credit after</span><strong>{formatAmount(customerCreditAfter)}</strong></div>
+                <div><span>FOC decisions</span><strong>{formatAmount((form.foc_items || []).length)} / value {formatAmount(focValue)}</strong></div>
+                <div><span>Commission reversal</span><strong>{formatAmount(commissionReversal)}</strong></div>
             </section>
+            <label className="approval-note">
+                <input checked={Boolean(form.confirmed)} name="confirmed" onChange={onChange} type="checkbox" />
+                <span>I reviewed the inventory, customer credit, FOC, and commission effects and confirm this return.</span>
+            </label>
         </div>
     );
 }
@@ -1637,6 +1775,14 @@ function CustomerPaymentForm({ form, onChange, record }) {
                 <strong>{record?.invoice || 'Select an invoice from receivables'}</strong>
                 <small>{record?.pharmacy || '-'} / Balance {record?.balanceAmount || '-'}</small>
             </div>
+            <section className="receiving-summary">
+                <div><span>Original invoice</span><strong>{record?.originalAmount || record?.amount || '-'}</strong></div>
+                <div><span>Cash back</span><strong>{record?.cashBackAmount || '0'}</strong></div>
+                <div><span>Return credits</span><strong>{record?.returnCreditAmount || '0'}</strong></div>
+                <div><span>Payments received</span><strong>{record?.paidAmount || '0'}</strong></div>
+                <div><span>Balance before</span><strong>{record?.balanceAmount || '0'}</strong></div>
+                <div><span>Balance after</span><strong>{formatAmount(Math.max(0, Number(record?.balance_amount || 0) - Number(form.amount || 0)))}</strong></div>
+            </section>
             <div className="crud-grid">
                 <FormField label="Payment date" name="payment_date" onChange={onChange} type="date" value={form.payment_date} />
                 <FormField label="Amount" name="amount" onChange={onChange} required type="number" value={form.amount} />
@@ -3840,12 +3986,17 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 {
                     label: 'Customer credit',
                     value: formatAmount(financeSummary.customer_credit_amount || 0),
-                    note: 'Returns or overpaid balance',
+                    note: 'Available overpayment liability',
+                },
+                {
+                    label: 'FOC charge adjustments',
+                    value: formatAmount(financeSummary.customer_charge_amount || 0),
+                    note: 'Approved separate customer charges',
                 },
                 {
                     label: 'Net receivable',
                     value: formatAmount(financeSummary.net_receivable_amount || 0),
-                    note: 'Receivable minus customer credit',
+                    note: 'Invoices + charges - customer credit',
                 },
             ] : []),
             {
@@ -3991,6 +4142,9 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const [salesReturnError, setSalesReturnError] = useState('');
     const [salesReturnLoading, setSalesReturnLoading] = useState(false);
     const [salesReturnSubmitting, setSalesReturnSubmitting] = useState(false);
+    const [returnIntegrityRecord, setReturnIntegrityRecord] = useState(null);
+    const [returnIntegrityBusy, setReturnIntegrityBusy] = useState(false);
+    const [returnIntegrityError, setReturnIntegrityError] = useState('');
     const [deliverySubmitting, setDeliverySubmitting] = useState(false);
     const receivingProductsResource = useApiResource(isReceivingPage && modalOpen && stockReceiptForm.company_id ? `/lookups/products?company_id=${stockReceiptForm.company_id}` : '');
     const stockTransferProductsResource = useApiResource(isStockTransferCreatePage && stockTransferForm.company_id ? `/lookups/products?company_id=${stockTransferForm.company_id}&limit=1000` : '');
@@ -4182,9 +4336,13 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             label: 'Status',
             options: [
                 { label: 'Issued', value: 'issued' },
+                { label: 'Unpaid', value: 'unpaid' },
                 { label: 'Partial', value: 'partial' },
                 { label: 'Paid', value: 'paid' },
+                { label: 'Credited / returned', value: 'credited' },
+                { label: 'Overpaid', value: 'overpaid' },
                 { label: 'Void', value: 'void' },
+                { label: 'Integrity warning', value: 'inconsistent' },
             ],
             placeholder: 'All statuses',
             value: invoiceListFilters.status,
@@ -4856,9 +5014,13 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             key: 'status',
             label: 'Invoice status',
             options: [
-                { label: 'Issued', value: 'issued' },
+                { label: 'Unpaid', value: 'unpaid' },
                 { label: 'Partial', value: 'partial' },
+                { label: 'Paid', value: 'paid' },
+                { label: 'Credited / returned', value: 'credited' },
+                { label: 'Overpaid', value: 'overpaid' },
                 { label: 'Overdue', value: 'overdue' },
+                { label: 'Integrity warning', value: 'inconsistent' },
             ],
             placeholder: 'All statuses',
             value: receivableListFilters.status,
@@ -4878,7 +5040,12 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setReceivableListFilters((current) => forceShowAllOnSearch(current, value));
     };
     const updateReceivableListFilter = (key, value) => {
-        setReceivableListFilters((current) => ({ ...current, [key]: value, page: 1 }));
+        setReceivableListFilters((current) => ({
+            ...current,
+            [key]: value,
+            action_only: key === 'status' && ['paid', 'credited', 'overpaid', 'inconsistent'].includes(value) ? false : current.action_only,
+            page: 1,
+        }));
     };
     const resetReceivableListFilters = () => {
         setReceivableListFilters(blankReceivableListFilters);
@@ -5811,6 +5978,8 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             received_date: record.received_date || '',
             payable_due_date: record.payable_due_date || '',
             paid_amount: String(record.paid_amount ?? 0),
+            payment_method: record.payment_method || 'cash',
+            payment_reference_no: record.payment_reference_no || '',
             items: (record.receipt_items_raw?.length ? record.receipt_items_raw : [{ ...blankStockReceiptItem }]).map((item) => ({
                 product_id: item.product_id || '',
                 unit_id: item.unit_id || '',
@@ -5822,7 +5991,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 manufactured_date: item.manufactured_date || '',
                 expiry_date: item.expiry_date || '',
             })),
-        } : { ...blankStockReceiptForm, items: [{ ...blankStockReceiptItem }] };
+        } : { ...blankStockReceiptForm, idempotency_key: makeIdempotencyKey('stock-receipt'), items: [{ ...blankStockReceiptItem }] };
 
         setSelectedRecord(record || {});
         setStockReceiptForm(nextForm);
@@ -6029,6 +6198,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setSalesReturnInvoice(null);
         setSalesReturnForm({
             ...blankSalesReturnForm,
+            idempotency_key: makeIdempotencyKey('sales-return'),
             invoice_id: invoiceId,
             warehouse_id: record?.warehouse_id || receivingWarehouses[0]?.id || '',
             return_date: new Date().toISOString().slice(0, 10),
@@ -6039,13 +6209,17 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
             const [invoice] = mapInvoices(response);
             const items = (invoice?.invoiceItems || [])
                 .filter((item) => Number(item.quantity || 0) > 0)
-                .map(newSalesReturnLine);
+                .map((item) => newSalesReturnLine(
+                    item,
+                    invoice?.sourceOrder?.order_items_raw?.find((sourceItem) => String(sourceItem.id) === String(item.sales_order_item_id)) || {},
+                ));
 
             setSalesReturnInvoice(invoice || null);
             setSalesReturnForm((current) => ({
                 ...current,
                 invoice_id: invoice?.id || invoiceId,
                 items,
+                foc_items: [],
             }));
 
             if (!invoice) {
@@ -6058,17 +6232,16 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         }
     };
     const updateSalesReturnForm = (event) => {
-        const { name, value } = event.target;
+        const { checked, name, type, value } = event.target;
 
-        setSalesReturnForm((current) => ({ ...current, [name]: value }));
+        setSalesReturnForm((current) => ({ ...current, [name]: type === 'checkbox' ? checked : value }));
         setSalesReturnError('');
     };
     const updateSalesReturnItem = (index, event) => {
         const { name, value } = event.target;
 
-        setSalesReturnForm((current) => ({
-            ...current,
-            items: current.items.map((item, itemIndex) => {
+        setSalesReturnForm((current) => {
+            const items = current.items.map((item, itemIndex) => {
                 if (itemIndex !== index) {
                     return item;
                 }
@@ -6081,15 +6254,33 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 }
 
                 return { ...item, [name]: value };
-            }),
+            });
+
+            return {
+                ...current,
+                items,
+                foc_items: deriveFocDispositions(salesReturnInvoice, items, current.foc_items),
+                confirmed: false,
+            };
+        });
+        setSalesReturnError('');
+    };
+    const updateSalesReturnFocItem = (index, event) => {
+        const { name, value } = event.target;
+        setSalesReturnForm((current) => ({
+            ...current,
+            foc_items: current.foc_items.map((item, itemIndex) => itemIndex === index ? { ...item, [name]: value } : item),
+            confirmed: false,
         }));
         setSalesReturnError('');
     };
     const salesReturnPayload = () => ({
+        idempotency_key: salesReturnForm.idempotency_key,
         invoice_id: salesReturnForm.invoice_id,
         warehouse_id: salesReturnForm.warehouse_id,
         return_date: salesReturnForm.return_date || null,
         reason: salesReturnForm.reason || null,
+        reason_code: 'customer_return',
         items: salesReturnForm.items
             .filter((item) => Number(item.quantity || 0) > 0)
             .map((item) => ({
@@ -6100,6 +6291,12 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                 expiry_date: item.expiry_date || null,
                 reason: item.reason || null,
             })),
+        foc_items: (salesReturnForm.foc_items || []).map((item) => ({
+            sales_order_foc_item_id: item.sales_order_foc_item_id,
+            base_unit_quantity: Number(item.base_unit_quantity || 0),
+            disposition: item.disposition,
+            reason: item.reason || null,
+        })),
     });
     const submitSalesReturnForm = async () => {
         const payload = salesReturnPayload();
@@ -6111,6 +6308,16 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
 
         if (payload.items.length === 0) {
             setSalesReturnError('Enter a return quantity for at least one invoice item.');
+            return;
+        }
+
+        const missingFocReason = payload.foc_items.some((item) => ['charged', 'waived'].includes(item.disposition) && !String(item.reason || '').trim());
+        if (missingFocReason) {
+            setSalesReturnError('Charged or waived FOC decisions require an approval reason.');
+            return;
+        }
+        if (!salesReturnForm.confirmed) {
+            setSalesReturnError('Review the financial and inventory impact summary, then confirm the return.');
             return;
         }
 
@@ -6526,6 +6733,7 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
     const openCustomerPaymentForm = (record = null) => {
         const nextForm = {
             ...blankCustomerPaymentForm,
+            idempotency_key: makeIdempotencyKey('customer-payment'),
             company_id: record?.company_id || '',
             customer_id: record?.customer_id || '',
             invoice_id: record?.id || '',
@@ -6545,11 +6753,23 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         setCustomerPaymentError('');
     };
     const submitCustomerPaymentForm = async () => {
+        const amount = Number(customerPaymentForm.amount || 0);
+        const balance = Number(selectedRecord?.balance_amount || 0);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            setCustomerPaymentError('Payment amount must be greater than zero.');
+            return;
+        }
+        if (amount > balance) {
+            setCustomerPaymentError('Payment cannot exceed the open collectible balance.');
+            return;
+        }
+
         setCustomerPaymentSubmitting(true);
         setCustomerPaymentError('');
 
         try {
             await api.post('/office/payments', {
+                idempotency_key: customerPaymentForm.idempotency_key,
                 company_id: customerPaymentForm.company_id,
                 customer_id: customerPaymentForm.customer_id,
                 payment_date: customerPaymentForm.payment_date || null,
@@ -6914,6 +7134,47 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         }
     };
     const closeConfirmAction = () => setConfirmAction(null);
+    const closeReturnIntegrityReview = () => {
+        if (returnIntegrityBusy) {
+            return;
+        }
+        setReturnIntegrityRecord(null);
+        setReturnIntegrityError('');
+    };
+    const resolveReturnFoc = async (item, payload) => {
+        setReturnIntegrityBusy(true);
+        setReturnIntegrityError('');
+        try {
+            const updated = await api.patch(`/office/sales-return-foc-items/${item.id}/resolve`, payload);
+            setReturnIntegrityRecord((current) => current ? {
+                ...current,
+                focItems: current.focItems.map((entry) => String(entry.id) === String(item.id) ? updated : entry),
+                pendingFocCount: Math.max(0, Number(current.pendingFocCount || 0) - 1),
+            } : current);
+            liveResource.refresh();
+        } catch (requestError) {
+            setReturnIntegrityError(requestError.message);
+        } finally {
+            setReturnIntegrityBusy(false);
+        }
+    };
+    const reviewReturnCommission = async (item, decision, reason) => {
+        setReturnIntegrityBusy(true);
+        setReturnIntegrityError('');
+        try {
+            const updated = await api.patch(`/office/sales-return-commission-adjustments/${item.id}/review`, { decision, reason });
+            setReturnIntegrityRecord((current) => current ? {
+                ...current,
+                commissionAdjustments: current.commissionAdjustments.map((entry) => String(entry.id) === String(item.id) ? updated : entry),
+                pendingCommissionCount: Math.max(0, Number(current.pendingCommissionCount || 0) - 1),
+            } : current);
+            liveResource.refresh();
+        } catch (requestError) {
+            setReturnIntegrityError(requestError.message);
+        } finally {
+            setReturnIntegrityBusy(false);
+        }
+    };
     const inventoryRowActions = isStockWorkspacePage ? [
         ...(isInventoryPage ? [
             {
@@ -6941,7 +7202,16 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
         { label: 'Return stock', orderAction: 'return', icon: 'box', shouldShow: (record) => orderStatusValue(record) === 'delivered' && record?.invoice_id },
         { label: 'Open invoice', orderAction: 'openInvoice', icon: 'receipt', variant: 'primary', shouldShow: (record) => orderStatusValue(record) === 'delivered' },
     ];
-    const workflowRowActions = isOrdersPage ? orderWorkflowActions : (screen.rowActions || []);
+    const returnIntegrityActions = isSalesReturnsPage ? [{
+        label: 'Review FOC and commission',
+        integrityAction: 'review',
+        variant: 'primary',
+        shouldShow: (record) => record?.hasPendingIntegrityReview,
+    }, {
+        label: 'Print credit receipt',
+        returnPrintAction: true,
+    }] : [];
+    const workflowRowActions = isOrdersPage ? orderWorkflowActions : [...(screen.rowActions || []), ...returnIntegrityActions];
     const workflowContextActions = isOrdersPage ? orderWorkflowActions : (screen.contextActions || []);
     const rowActions = [
         ...inventoryRowActions,
@@ -6975,6 +7245,18 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
 
                 if (action.financeAction === 'companyPayment') {
                     openCompanyPaymentForm(record);
+                    return;
+                }
+
+                if (action.integrityAction === 'review') {
+                    setReturnIntegrityRecord(record);
+                    setReturnIntegrityError('');
+                    return;
+                }
+
+                if (action.returnPrintAction) {
+                    const baseUrl = String(window.appConfig?.baseUrl || '').replace(/\/+$/g, '');
+                    window.location.href = `${baseUrl}/office/sales-returns/${record.id}/print`;
                     return;
                 }
 
@@ -7855,8 +8137,8 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                     open
                     onClose={closeSalesReturnDialog}
                     onSubmit={submitSalesReturnForm}
-                    submitDisabled={salesReturnLoading || salesReturnSubmitting || !salesReturnForm.warehouse_id || !salesReturnForm.items.some((item) => Number(item.quantity || 0) > 0)}
-                    submitDisabledReason={salesReturnError || (!salesReturnForm.warehouse_id ? 'Select a receiving warehouse.' : '')}
+                    submitDisabled={salesReturnLoading || salesReturnSubmitting || !salesReturnForm.warehouse_id || !salesReturnForm.items.some((item) => Number(item.quantity || 0) > 0) || !salesReturnForm.confirmed}
+                    submitDisabledReason={salesReturnError || (!salesReturnForm.warehouse_id ? 'Select a receiving warehouse.' : !salesReturnForm.confirmed ? 'Review the impact summary and confirm the return.' : '')}
                     submitLabel="Post return"
                     title={`Return stock - ${salesReturnRecord?.order || salesReturnInvoice?.invoice || 'Delivered order'}`}
                 >
@@ -7867,11 +8149,21 @@ export default function OfficeModulePage({ onNavigate, pageKey }) {
                         loading={salesReturnLoading}
                         onChange={updateSalesReturnForm}
                         onItemChange={updateSalesReturnItem}
+                        onFocItemChange={updateSalesReturnFocItem}
                         warehouses={receivingWarehouses}
                         warehousesLoading={receivingWarehousesResource.loading}
                     />
                 </Modal>
             )}
+
+            <ReturnIntegrityReviewModal
+                busy={returnIntegrityBusy}
+                error={returnIntegrityError}
+                onClose={closeReturnIntegrityReview}
+                onResolveFoc={resolveReturnFoc}
+                onReviewCommission={reviewReturnCommission}
+                record={returnIntegrityRecord}
+            />
 
             {confirmAction && (
                 <Modal

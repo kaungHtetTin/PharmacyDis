@@ -16,7 +16,9 @@ function InvoiceSnapshot({ invoice }) {
         ['Discount', invoice.discountAmount],
         ['Tax', invoice.taxAmount],
         ['Cash back', invoice.cashBackAmount],
-        ['Total', invoice.amount],
+        ['Original invoice', invoice.originalAmount],
+        ['Return credits', invoice.returnCreditAmount],
+        ['Net collectible', invoice.netCollectibleAmount],
         ['Paid', invoice.paidAmount || invoice.paid || '-'],
         ['Balance', invoice.balanceAmount],
         ['Payments', String(invoice.paymentRecords?.length || 0)],
@@ -123,7 +125,7 @@ export default function InvoiceDetailPage({ onNavigate }) {
                         )}
                     </div>
                 )}
-                description="Review invoice status, payment allocation, and open the standalone print page when needed."
+                description="Review the immutable invoice, return credits, payments, and current open balance."
                 eyebrow="Invoice"
                 title={invoiceResource.loading ? 'Loading invoice' : 'Invoice detail'}
             />
@@ -151,9 +153,9 @@ export default function InvoiceDetailPage({ onNavigate }) {
                             <p>{invoice.pharmacy} / {invoice.company}</p>
                         </div>
                         <div className="invoice-detail-total">
-                            <span>Invoice amount</span>
-                            <strong>{invoice.amount}</strong>
-                            <small>Balance {invoice.balanceAmount}</small>
+                            <span>Open balance</span>
+                            <strong>{invoice.balanceAmount}</strong>
+                            <small>Original {invoice.originalAmount} / Credits {invoice.returnCreditAmount}</small>
                         </div>
                     </section>
 

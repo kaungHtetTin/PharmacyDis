@@ -16,6 +16,11 @@ class Invoice extends Model
         'invoice_date' => 'date',
         'due_date' => 'date',
         'cash_back_amount' => 'decimal:2',
+        'original_total_amount' => 'decimal:2',
+        'return_credit_amount' => 'decimal:2',
+        'net_collectible_amount' => 'decimal:2',
+        'settlement_calculated_at' => 'datetime',
+        'cash_back_approved_at' => 'datetime',
     ];
 
     public function salesOrder()
@@ -51,5 +56,15 @@ class Invoice extends Model
     public function salesReturns()
     {
         return $this->hasMany(SalesReturn::class);
+    }
+
+    public function customerCredits()
+    {
+        return $this->hasMany(CustomerCredit::class);
+    }
+
+    public function customerChargeAdjustments()
+    {
+        return $this->hasMany(CustomerChargeAdjustment::class);
     }
 }

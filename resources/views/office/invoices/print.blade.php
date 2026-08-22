@@ -7,7 +7,9 @@
     $formatDate = fn ($value) => $value ? $value->format($dateFormat) : '-';
     $taxAmount = (float) ($invoice->tax_amount ?? 0);
     $cashBackAmount = (float) ($invoice->cash_back_amount ?? 0);
-    $netTotal = (float) $invoice->total_amount;
+    $originalTotal = (float) ($invoice->original_total_amount ?: $invoice->total_amount);
+    $returnCreditAmount = (float) ($invoice->return_credit_amount ?? 0);
+    $netTotal = (float) ($invoice->net_collectible_amount ?? $invoice->total_amount);
     $orderNo = $invoice->salesOrder?->order_no ?? '-';
     $faviconUrl = asset('favicon.png');
     $publicShareUrl = $shareUrl ?? route('public.invoices.show', $invoice);
@@ -154,8 +156,8 @@
                         <td width="45%" valign="top">
                             <table width="100%" border="1" cellpadding="4" cellspacing="0">
                                 <tr>
-                                    <td>Total Amount</td>
-                                    <td align="right">{{ $formatMoney($invoice->subtotal_amount ?: $invoice->total_amount) }}</td>
+                                    <td>Original Invoice</td>
+                                    <td align="right">{{ $formatMoney($originalTotal) }}</td>
                                 </tr>
                                 <tr>
                                     <td>Discount</td>
@@ -171,9 +173,23 @@
                                         <td align="right">{{ $formatMoney($cashBackAmount) }}</td>
                                     </tr>
                                 @endif
+                                @if ($returnCreditAmount > 0)
+                                    <tr>
+                                        <td>Return Credits</td>
+                                        <td align="right">{{ $formatMoney($returnCreditAmount) }}</td>
+                                    </tr>
+                                @endif
                                 <tr>
                                     <td><b>Net Total</b></td>
                                     <td align="right"><b>{{ $formatMoney($netTotal) }} {{ $settings['currency'] ?? 'MMK' }}</b></td>
+                                </tr>
+                                <tr>
+                                    <td>Payments Received</td>
+                                    <td align="right">{{ $formatMoney($invoice->paid_amount) }}</td>
+                                </tr>
+                                <tr>
+                                    <td>Open Balance</td>
+                                    <td align="right">{{ $formatMoney($invoice->balance_amount) }}</td>
                                 </tr>
                             </table>
                         </td>
@@ -199,6 +215,32 @@
                     <b>Remarks:</b>
                     <div>{{ $remarks ?: ' ' }}</div>
                 </div>
+
+                @if ($invoice->salesReturns->isNotEmpty())
+                    <div class="invoice-classic-remarks">
+                        <b>Credit notes:</b>
+                        <div>
+                            @foreach ($invoice->salesReturns as $return)
+                                {{ $return->credit_note_no ?: $return->return_no }}
+                                ({{ $formatDate($return->return_date) }} / {{ $formatMoney($return->total_amount) }}){{ $loop->last ? '' : ', ' }}
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
+                @if ($invoice->customerCredits->isNotEmpty() || $invoice->customerChargeAdjustments->isNotEmpty())
+                    <div class="invoice-classic-remarks">
+                        <b>Customer adjustments:</b>
+                        <div>
+                            @foreach ($invoice->customerCredits as $credit)
+                                {{ $credit->credit_no }} (Customer credit / {{ $formatDate($credit->credit_date) }} / {{ $formatMoney($credit->amount) }}){{ $loop->last && $invoice->customerChargeAdjustments->isEmpty() ? '' : ', ' }}
+                            @endforeach
+                            @foreach ($invoice->customerChargeAdjustments as $charge)
+                                {{ $charge->adjustment_no }} (FOC charge / {{ $formatDate($charge->adjustment_date) }} / {{ $formatMoney($charge->amount) }}){{ $loop->last ? '' : ', ' }}
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
 
                 <hr>
 

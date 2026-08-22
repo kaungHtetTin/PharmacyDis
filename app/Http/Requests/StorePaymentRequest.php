@@ -14,6 +14,7 @@ class StorePaymentRequest extends FormRequest
     public function rules()
     {
         return [
+            'idempotency_key' => ['nullable', 'string', 'max:100'],
             'company_id' => ['required', 'exists:companies,id'],
             'customer_id' => ['required', 'exists:customers,id'],
             'payment_date' => ['nullable', 'date'],

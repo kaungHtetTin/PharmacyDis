@@ -23,7 +23,10 @@ class DashboardMetricService
         return [
             'pending_orders' => $submittedOrderCount,
             'unpaid_invoices' => $openInvoiceCount,
-            'monthly_sales' => Invoice::whereMonth('invoice_date', now()->month)->sum('total_amount'),
+            'monthly_sales' => $this->salesInvoiceQuery()
+                ->whereYear('invoice_date', now()->year)
+                ->whereMonth('invoice_date', now()->month)
+                ->sum(DB::raw('COALESCE(NULLIF(original_total_amount, 0), total_amount)')),
             'low_stock_products' => $lowStockProductCount,
             'nav_action_counts' => $navActionCounts,
             'total_action_count' => $this->totalActionCount($navActionCounts),
@@ -46,7 +49,7 @@ class DashboardMetricService
             'monthly_sales' => $this->salesInvoiceQuery()
                 ->where('sales_representative_id', $salesRepresentativeId)
                 ->whereMonth('invoice_date', now()->month)
-                ->sum('total_amount'),
+                ->sum(DB::raw('COALESCE(NULLIF(original_total_amount, 0), total_amount)')),
             'monthly_performance' => $this->monthlyPerformance($salesRepresentativeId),
         ];
     }
@@ -162,6 +165,7 @@ class DashboardMetricService
     private function topProducts(): array
     {
         return InvoiceItem::query()
+            ->join('invoices', 'invoices.id', '=', 'invoice_items.invoice_id')
             ->join('products', 'products.id', '=', 'invoice_items.product_id')
             ->join('companies', 'companies.id', '=', 'products.company_id')
             ->select([
@@ -170,6 +174,8 @@ class DashboardMetricService
                 DB::raw('SUM(invoice_items.line_total) as sales'),
                 DB::raw('COUNT(DISTINCT invoice_items.invoice_id) as orders'),
             ])
+            ->whereNull('invoices.deleted_at')
+            ->where('invoices.status', '!=', 'void')
             ->groupBy('products.id', 'products.name', 'companies.name')
             ->orderByDesc('sales')
             ->limit(5)
@@ -190,6 +196,8 @@ class DashboardMetricService
     {
         return Invoice::query()
             ->join('customers', 'customers.id', '=', 'invoices.customer_id')
+            ->whereNull('invoices.deleted_at')
+            ->where('invoices.status', '!=', 'void')
             ->select([
                 'customers.name as pharmacy',
                 DB::raw('SUM(invoices.total_amount) as sales'),

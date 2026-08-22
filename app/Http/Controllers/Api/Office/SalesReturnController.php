@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreSalesReturnRequest;
 use App\Http\Resources\SalesReturnResource;
 use App\Models\SalesReturn;
+use App\Models\SalesReturnCommissionAdjustment;
+use App\Models\SalesReturnFocItem;
 use App\Services\SalesReturnService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +25,10 @@ class SalesReturnController extends Controller
                 'salesOrder:id,order_no',
                 'items.product:id,name,sku',
                 'items.unit:id,name,abbreviation',
+                'focItems.product:id,name,sku',
+                'focItems.approver:id,name',
+                'focItems.chargeAdjustment',
+                'commissionAdjustments',
             ])
             ->withCount('items')
             ->when($request->filled('company_id'), fn ($query) => $query->where('sales_returns.company_id', $request->company_id))
@@ -62,5 +68,33 @@ class SalesReturnController extends Controller
     public function store(StoreSalesReturnRequest $request, SalesReturnService $salesReturnService)
     {
         return response()->json($salesReturnService->post($request->validated(), $request->user()), 201);
+    }
+
+    public function void(Request $request, SalesReturn $salesReturn, SalesReturnService $salesReturnService)
+    {
+        abort_unless(in_array($request->user()?->role?->name, ['admin', 'super_admin'], true), 403, 'Only an administrator can void a posted return.');
+        $validated = $request->validate(['reason' => ['required', 'string', 'max:2000']]);
+
+        return new SalesReturnResource($salesReturnService->void($salesReturn, $request->user(), $validated['reason']));
+    }
+
+    public function resolveFoc(Request $request, SalesReturnFocItem $salesReturnFocItem, SalesReturnService $salesReturnService)
+    {
+        $validated = $request->validate([
+            'disposition' => ['required', 'in:returned,charged,waived'],
+            'reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        return response()->json($salesReturnService->resolveHistoricalFoc($salesReturnFocItem, $validated, $request->user()));
+    }
+
+    public function reviewCommission(Request $request, SalesReturnCommissionAdjustment $commissionAdjustment, SalesReturnService $salesReturnService)
+    {
+        $validated = $request->validate([
+            'decision' => ['required', 'in:approve,reject'],
+            'reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        return response()->json($salesReturnService->approveHistoricalCommission($commissionAdjustment, $validated, $request->user()));
     }
 }

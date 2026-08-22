@@ -6,7 +6,10 @@ use App\Models\Customer;
 use App\Models\AuditLog;
 use App\Models\Company;
 use App\Models\CompanyPayable;
+use App\Models\CompanyPayment;
+use App\Models\CustomerChargeAdjustment;
 use App\Models\CustomerBalance;
+use App\Models\CustomerCredit;
 use App\Models\CustomerCompanyCreditStatus;
 use App\Models\FocRule;
 use App\Models\Invoice;
@@ -15,6 +18,8 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ProductUnit;
 use App\Models\SalesReturn;
+use App\Models\SalesReturnCommissionAdjustment;
+use App\Models\SalesReturnFocItem;
 use App\Models\SalesOrder;
 use App\Models\SalesRepresentative;
 use App\Models\Setting;
@@ -27,6 +32,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use App\Services\InvoiceSettlementService;
 use Tests\TestCase;
 
 class BusinessWorkflowTest extends TestCase
@@ -98,7 +104,9 @@ class BusinessWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.remark', 'Deliver before noon.')
             ->assertJsonPath('data.sale_type', 'credit')
-            ->assertJsonPath('data.total_amount', '186000.00')
+            ->assertJsonPath('data.total_amount', '196000.00')
+            ->assertJsonPath('data.original_total_amount', '196000.00')
+            ->assertJsonPath('data.net_collectible_amount', '186000.00')
             ->assertJsonPath('data.balance_amount', '90000.00');
 
         $invoice->refresh();
@@ -106,7 +114,9 @@ class BusinessWorkflowTest extends TestCase
         $this->assertSame('Deliver before noon.', $invoice->remark);
         $this->assertSame('credit', $invoice->sale_type);
         $this->assertEquals(10000, (float) $invoice->cash_back_amount);
-        $this->assertEquals(186000, (float) $invoice->total_amount);
+        $this->assertEquals(196000, (float) $invoice->total_amount);
+        $this->assertEquals(196000, (float) $invoice->original_total_amount);
+        $this->assertEquals(186000, (float) $invoice->net_collectible_amount);
         $this->assertEquals(90000, (float) $invoice->balance_amount);
         $this->assertEquals(90000, (float) CustomerBalance::where('customer_id', $invoice->customer_id)->where('company_id', $invoice->company_id)->value('balance_amount'));
 
@@ -283,7 +293,7 @@ class BusinessWorkflowTest extends TestCase
             ->where('customer_id', $order->customer_id)
             ->where('company_id', $order->company_id)
             ->where('status', '!=', 'void')
-            ->sum('total_amount')
+            ->sum(DB::raw('CASE WHEN original_total_amount > 0 THEN net_collectible_amount ELSE total_amount END'))
             - Payment::query()
                 ->where('customer_id', $order->customer_id)
                 ->where('company_id', $order->company_id)
@@ -980,8 +990,11 @@ class BusinessWorkflowTest extends TestCase
             ->where('batch_no', 'RET-SELLABLE-001')
             ->firstOrFail();
 
-        $this->assertEquals(8, $invoiceItem->quantity);
-        $this->assertEquals($originalInvoiceTotal - $expectedReturnAmount, (float) $invoice->total_amount);
+        $this->assertEquals(10, $invoiceItem->quantity);
+        $this->assertEquals($originalInvoiceTotal, (float) $invoice->total_amount);
+        $this->assertEquals($originalInvoiceTotal, (float) $invoice->original_total_amount);
+        $this->assertEquals($expectedReturnAmount, (float) $invoice->return_credit_amount);
+        $this->assertEquals($originalInvoiceTotal - $expectedReturnAmount, (float) $invoice->net_collectible_amount);
         $this->assertEquals($originalInvoiceTotal - $expectedReturnAmount, (float) $invoice->balance_amount);
         $this->assertEquals($returnBaseQuantity, $returnBatch->available_base_quantity);
         $this->assertGreaterThan(0, (float) $returnBatch->base_unit_cost);
@@ -1015,7 +1028,7 @@ class BusinessWorkflowTest extends TestCase
             ->where('customer_id', $invoice->customer_id)
             ->where('company_id', $invoice->company_id)
             ->where('status', '!=', 'void')
-            ->sum('total_amount')
+            ->sum(DB::raw('CASE WHEN original_total_amount > 0 THEN net_collectible_amount ELSE total_amount END'))
             - Payment::query()
                 ->where('customer_id', $invoice->customer_id)
                 ->where('company_id', $invoice->company_id)
@@ -1039,6 +1052,311 @@ class BusinessWorkflowTest extends TestCase
 
         $this->assertNotNull($salesReturnsMetric);
         $this->assertEquals(number_format($expectedReturnAmount), $salesReturnsMetric['value']);
+    }
+
+    public function test_full_return_preserves_invoice_and_requires_explicit_foc_disposition(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)->where('product_id', $product->id)
+            ->select('warehouse_id')->groupBy('warehouse_id')
+            ->havingRaw('SUM(available_base_quantity) >= ?', [1100])->value('warehouse_id');
+
+        $order = $this->withToken($this->officeToken)->postJson('/api/office/orders', [
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'warehouse_id' => $warehouseId,
+            'auto_approve' => true,
+            'items' => [[
+                'product_id' => $product->id,
+                'unit_id' => $unit->id,
+                'quantity' => 10,
+                'foc_unit_id' => $unit->id,
+                'foc_quantity' => 1,
+            ]],
+        ])->assertCreated()->json('data');
+        $this->withToken($this->officeToken)->postJson("/api/office/orders/{$order['id']}/generate-invoice")->assertOk();
+        $this->withToken($this->officeToken)->postJson("/api/office/orders/{$order['id']}/deliver")->assertOk();
+
+        $invoice = Invoice::where('sales_order_id', $order['id'])->with(['items', 'salesOrder.focItems'])->firstOrFail();
+        $invoiceItem = $invoice->items->first();
+        $focItem = $invoice->salesOrder->focItems->firstOrFail();
+        $originalTotal = (float) $invoice->total_amount;
+        $idempotencyKey = 'test-full-return-foc';
+        $payload = [
+            'idempotency_key' => $idempotencyKey,
+            'invoice_id' => $invoice->id,
+            'warehouse_id' => $warehouseId,
+            'return_date' => now()->toDateString(),
+            'reason' => 'Full customer return',
+            'items' => [[
+                'invoice_item_id' => $invoiceItem->id,
+                'quantity' => $invoiceItem->quantity,
+                'condition' => 'sellable',
+                'batch_no' => 'RET-FULL-FOC-001',
+            ]],
+            'foc_items' => [[
+                'sales_order_foc_item_id' => $focItem->id,
+                'base_unit_quantity' => $focItem->reward_base_unit_quantity,
+                'disposition' => 'returned',
+                'reason' => 'FOC physically received with paid goods.',
+            ]],
+        ];
+
+        $response = $this->withToken($this->officeToken)->postJson('/api/office/sales-returns', $payload)
+            ->assertCreated()->json();
+        $this->withToken($this->officeToken)->postJson('/api/office/sales-returns', $payload)->assertCreated();
+
+        $invoice->refresh();
+        $invoiceItem->refresh();
+        $this->assertEquals($originalTotal, (float) $invoice->total_amount);
+        $this->assertEquals($originalTotal, (float) $invoice->original_total_amount);
+        $this->assertEquals($originalTotal, (float) $invoice->return_credit_amount);
+        $this->assertEquals(0, (float) $invoice->net_collectible_amount);
+        $this->assertEquals(0, (float) $invoice->paid_amount);
+        $this->assertEquals(0, (float) $invoice->balance_amount);
+        $this->assertSame('credited', $invoice->settlement_status);
+        $this->assertSame('issued', $invoice->status);
+        $this->assertEquals(10, $invoiceItem->quantity);
+        $this->assertSame(1, SalesReturn::where('idempotency_key', $idempotencyKey)->count());
+        $this->assertDatabaseHas('sales_return_foc_items', [
+            'sales_return_id' => $response['id'],
+            'sales_order_foc_item_id' => $focItem->id,
+            'disposition' => 'returned',
+            'status' => 'posted',
+        ]);
+        $this->assertTrue(SalesReturnCommissionAdjustment::where('sales_return_id', $response['id'])->exists());
+    }
+
+    public function test_partial_return_recalculates_tiered_foc_entitlement(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)->where('product_id', $product->id)
+            ->select('warehouse_id')->groupBy('warehouse_id')
+            ->havingRaw('SUM(available_base_quantity) >= ?', [1200])->value('warehouse_id');
+
+        FocRule::query()
+            ->where('company_id', $company->id)
+            ->where('product_id', $product->id)
+            ->update(['status' => 'inactive']);
+        $focRule = FocRule::create([
+            'company_id' => $company->id,
+            'product_id' => $product->id,
+            'rule_type' => 'quantity',
+            'minimum_quantity_base_units' => 500,
+            'reward_quantity_base_units' => 100,
+            'status' => 'active',
+        ]);
+
+        $order = $this->withToken($this->officeToken)->postJson('/api/office/orders', [
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'warehouse_id' => $warehouseId,
+            'auto_approve' => true,
+            'items' => [[
+                'product_id' => $product->id,
+                'unit_id' => $unit->id,
+                'quantity' => 10,
+                'foc_unit_id' => $unit->id,
+                'foc_quantity' => 2,
+            ]],
+        ])->assertCreated()->json('data');
+        DB::table('sales_order_foc_items')
+            ->where('sales_order_id', $order['id'])
+            ->update(['foc_rule_id' => $focRule->id]);
+        $this->withToken($this->officeToken)->postJson("/api/office/orders/{$order['id']}/generate-invoice")->assertOk();
+        $this->withToken($this->officeToken)->postJson("/api/office/orders/{$order['id']}/deliver")->assertOk();
+
+        $invoice = Invoice::where('sales_order_id', $order['id'])->with(['items', 'salesOrder.focItems'])->firstOrFail();
+        $invoiceItem = $invoice->items->firstOrFail();
+        $focItem = $invoice->salesOrder->focItems->firstOrFail();
+        $this->assertSame(200, (int) $focItem->reward_base_unit_quantity);
+
+        $payload = [
+            'idempotency_key' => 'test-partial-tiered-foc',
+            'invoice_id' => $invoice->id,
+            'warehouse_id' => $warehouseId,
+            'return_date' => now()->toDateString(),
+            'reason' => 'Partial return crosses one FOC tier',
+            'items' => [[
+                'invoice_item_id' => $invoiceItem->id,
+                'quantity' => 5,
+                'condition' => 'sellable',
+                'batch_no' => 'RET-PARTIAL-FOC-001',
+            ]],
+        ];
+
+        $this->withToken($this->officeToken)
+            ->postJson('/api/office/sales-returns', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('foc_items');
+
+        $payload['foc_items'] = [[
+            'sales_order_foc_item_id' => $focItem->id,
+            'base_unit_quantity' => 100,
+            'disposition' => 'returned',
+            'reason' => 'One FOC tier returned with the partial paid-goods return.',
+        ]];
+        $salesReturn = $this->withToken($this->officeToken)
+            ->postJson('/api/office/sales-returns', $payload)
+            ->assertCreated()
+            ->json();
+
+        $this->assertDatabaseHas('sales_return_foc_items', [
+            'sales_return_id' => $salesReturn['id'],
+            'sales_order_foc_item_id' => $focItem->id,
+            'base_unit_quantity' => 100,
+            'disposition' => 'returned',
+            'status' => 'posted',
+        ]);
+        $this->get("/office/sales-returns/{$salesReturn['id']}/print")
+            ->assertOk()
+            ->assertSee($salesReturn['credit_note_no']);
+    }
+
+    public function test_initial_receipt_payment_creates_one_linked_cash_transaction_on_retry(): void
+    {
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouse = Warehouse::firstOrFail();
+        $payload = [
+            'idempotency_key' => 'test-receipt-initial-payment',
+            'company_id' => $company->id,
+            'warehouse_id' => $warehouse->id,
+            'received_date' => now()->toDateString(),
+            'supplier_invoice_no' => 'SUP-INITIAL-PAY-001',
+            'paid_amount' => 500,
+            'payment_method' => 'cash',
+            'items' => [[
+                'product_id' => $product->id,
+                'unit_id' => $unit->id,
+                'quantity' => 1,
+                'unit_cost' => 1000,
+                'batch_no' => 'INITIAL-PAY-BATCH-001',
+            ]],
+        ];
+
+        $first = $this->withToken($this->officeToken)->postJson('/api/office/stock-receipts', $payload)
+            ->assertCreated()->json();
+        $this->withToken($this->officeToken)->postJson('/api/office/stock-receipts', $payload)->assertCreated();
+
+        $this->assertSame(1, CompanyPayment::where('idempotency_key', "stock-receipt:{$first['id']}:initial-payment")->count());
+        $this->assertDatabaseHas('company_payments', [
+            'company_payable_id' => $first['payable']['id'],
+            'source_type' => \App\Models\StockReceipt::class,
+            'source_id' => $first['id'],
+            'amount' => 500,
+        ]);
+    }
+
+    public function test_charged_foc_creates_separate_adjustment_and_commission_review_is_auditable(): void
+    {
+        $customer = Customer::where('name', 'Shwe Clinic Store')->firstOrFail();
+        $company = Company::where('code', 'MEDILIFE')->firstOrFail();
+        $product = Product::where('sku', 'ML-PARA-500')->firstOrFail();
+        $unit = Unit::where('abbreviation', 'Box')->firstOrFail();
+        $warehouseId = StockBatch::query()
+            ->where('company_id', $company->id)->where('product_id', $product->id)
+            ->select('warehouse_id')->groupBy('warehouse_id')
+            ->havingRaw('SUM(available_base_quantity) >= ?', [1100])->value('warehouse_id');
+
+        $order = $this->withToken($this->officeToken)->postJson('/api/office/orders', [
+            'company_id' => $company->id,
+            'customer_id' => $customer->id,
+            'warehouse_id' => $warehouseId,
+            'auto_approve' => true,
+            'items' => [[
+                'product_id' => $product->id,
+                'unit_id' => $unit->id,
+                'quantity' => 10,
+                'foc_unit_id' => $unit->id,
+                'foc_quantity' => 1,
+            ]],
+        ])->assertCreated()->json('data');
+        $this->withToken($this->officeToken)->postJson("/api/office/orders/{$order['id']}/generate-invoice")->assertOk();
+        $this->withToken($this->officeToken)->postJson("/api/office/orders/{$order['id']}/deliver")->assertOk();
+
+        $invoice = Invoice::where('sales_order_id', $order['id'])->with(['items', 'salesOrder.focItems'])->firstOrFail();
+        $invoiceItem = $invoice->items->firstOrFail();
+        $focItem = $invoice->salesOrder->focItems->firstOrFail();
+        $return = $this->withToken($this->officeToken)->postJson('/api/office/sales-returns', [
+            'idempotency_key' => 'test-charged-foc-adjustment',
+            'invoice_id' => $invoice->id,
+            'warehouse_id' => $warehouseId,
+            'return_date' => now()->toDateString(),
+            'reason' => 'Full return without free goods',
+            'items' => [[
+                'invoice_item_id' => $invoiceItem->id,
+                'quantity' => $invoiceItem->quantity,
+                'condition' => 'sellable',
+                'batch_no' => 'RET-CHARGED-FOC-001',
+            ]],
+            'foc_items' => [[
+                'sales_order_foc_item_id' => $focItem->id,
+                'base_unit_quantity' => $focItem->reward_base_unit_quantity,
+                'disposition' => 'charged',
+                'reason' => 'Customer retained the free goods.',
+            ]],
+        ])->assertCreated()->json();
+
+        $returnFocItem = SalesReturnFocItem::where('sales_return_id', $return['id'])->firstOrFail();
+        $this->assertDatabaseHas('customer_charge_adjustments', [
+            'sales_return_foc_item_id' => $returnFocItem->id,
+            'invoice_id' => $invoice->id,
+            'amount' => $returnFocItem->estimated_value_amount,
+            'status' => 'posted',
+        ]);
+        $this->assertSame(1, CustomerChargeAdjustment::where('idempotency_key', "foc-charge:{$returnFocItem->id}")->count());
+
+        $commission = SalesReturnCommissionAdjustment::where('sales_return_id', $return['id'])->firstOrFail();
+        $commission->update(['status' => 'pending_approval', 'approved_by' => null, 'approved_at' => null]);
+        $this->withToken($this->officeToken)
+            ->patchJson("/api/office/sales-return-commission-adjustments/{$commission->id}/review", [
+                'decision' => 'approve',
+                'reason' => 'Finance verified the proportional reversal.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'posted');
+        $this->assertNotNull($commission->fresh()->approved_at);
+    }
+
+    public function test_return_after_payment_creates_explicit_customer_credit(): void
+    {
+        $invoice = Invoice::where('invoice_no', 'INV-DEMO-1000')->firstOrFail();
+        $warehouse = Warehouse::firstOrFail();
+        SalesReturn::create([
+            'return_no' => 'SRN-CREDIT-TEST',
+            'credit_note_no' => 'CRN-CREDIT-TEST',
+            'invoice_id' => $invoice->id,
+            'sales_order_id' => $invoice->sales_order_id,
+            'company_id' => $invoice->company_id,
+            'customer_id' => $invoice->customer_id,
+            'warehouse_id' => $warehouse->id,
+            'return_date' => now()->toDateString(),
+            'status' => 'posted',
+            'total_amount' => 150000,
+            'posted_at' => now(),
+        ]);
+
+        $recalculated = app(InvoiceSettlementService::class)->recalculate($invoice);
+        $expectedCredit = max(0, (float) $recalculated->paid_amount - (float) $recalculated->net_collectible_amount);
+
+        $this->assertSame('overpaid', $recalculated->settlement_status);
+        $this->assertGreaterThan(0, $expectedCredit);
+        $this->assertDatabaseHas('customer_credits', [
+            'invoice_id' => $invoice->id,
+            'status' => 'available',
+            'amount' => $expectedCredit,
+            'available_amount' => $expectedCredit,
+        ]);
     }
 
     public function test_office_can_transfer_stock_between_warehouses_preserving_batch_and_expiry(): void
@@ -1247,7 +1565,7 @@ class BusinessWorkflowTest extends TestCase
         $this->assertGreaterThan(0, (float) $legacyRow['base_unit_cost_amount']);
         $this->assertGreaterThan(0, (float) $legacyRow['stock_value_amount']);
 
-        $this->artisan('stock:backfill-batch-costs')
+        $this->artisan('stock:backfill-batch-costs', ['--apply' => true])
             ->assertExitCode(0);
         $this->assertNotNull($legacyBatch->fresh()->base_unit_cost);
         $this->assertSame('receipt_backfill', $legacyBatch->fresh()->cost_source);

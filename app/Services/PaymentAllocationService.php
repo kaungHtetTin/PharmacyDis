@@ -14,12 +14,23 @@ class PaymentAllocationService
     public function __construct(
         private NumberGeneratorService $numberGeneratorService,
         private CustomerBalanceService $customerBalanceService,
+        private InvoiceSettlementService $invoiceSettlementService,
     ) {
     }
 
     public function recordCustomerPayment(array $data, ?User $actor = null): Payment
     {
         return DB::transaction(function () use ($data, $actor) {
+            if (! empty($data['idempotency_key'])) {
+                $existing = Payment::with('allocations.invoice')
+                    ->where('idempotency_key', $data['idempotency_key'])
+                    ->first();
+
+                if ($existing) {
+                    return $existing;
+                }
+            }
+
             $allocations = $data['allocations'] ?? [];
             $allocatedTotal = array_reduce($allocations, fn ($total, $allocation) => $total + (float) ($allocation['allocated_amount'] ?? 0), 0.0);
 
@@ -31,6 +42,7 @@ class PaymentAllocationService
 
             $payment = Payment::create([
                 'payment_no' => $this->numberGeneratorService->next(Payment::class, 'payment_no', 'PAY'),
+                'idempotency_key' => $data['idempotency_key'] ?? null,
                 'company_id' => $data['company_id'],
                 'customer_id' => $data['customer_id'],
                 'payment_date' => $data['payment_date'] ?? now()->toDateString(),
@@ -44,6 +56,18 @@ class PaymentAllocationService
             foreach ($allocations as $allocation) {
                 $invoice = Invoice::lockForUpdate()->findOrFail($allocation['invoice_id']);
                 $allocatedAmount = (float) $allocation['allocated_amount'];
+
+                if ($invoice->status === 'void' || in_array($invoice->settlement_status, ['credited', 'void'], true)) {
+                    throw ValidationException::withMessages([
+                        'allocations' => 'Payments cannot be allocated to a void or fully credited invoice.',
+                    ]);
+                }
+
+                if ($allocatedAmount <= 0) {
+                    throw ValidationException::withMessages([
+                        'allocations' => 'Allocated payment amounts must be greater than zero.',
+                    ]);
+                }
 
                 if ((int) $invoice->company_id !== (int) $payment->company_id || (int) $invoice->customer_id !== (int) $payment->customer_id) {
                     throw ValidationException::withMessages([
@@ -63,13 +87,7 @@ class PaymentAllocationService
                     'allocated_amount' => $allocatedAmount,
                 ]);
 
-                $paidAmount = (float) $invoice->paid_amount + $allocatedAmount;
-                $balanceAmount = max(0, (float) $invoice->total_amount - $paidAmount);
-                $invoice->update([
-                    'paid_amount' => $paidAmount,
-                    'balance_amount' => $balanceAmount,
-                    'status' => $balanceAmount <= 0 ? 'paid' : 'partial',
-                ]);
+                $this->invoiceSettlementService->recalculate($invoice, $actor);
             }
 
             $this->customerBalanceService->refresh($payment->customer_id, $payment->company_id);

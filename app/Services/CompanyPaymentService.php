@@ -17,6 +17,16 @@ class CompanyPaymentService
     public function record(array $data, ?User $actor = null): CompanyPayment|array
     {
         return DB::transaction(function () use ($data, $actor) {
+            if (! empty($data['idempotency_key'])) {
+                $existing = CompanyPayment::with(['company', 'payable.stockReceipt'])
+                    ->where('idempotency_key', $data['idempotency_key'])
+                    ->first();
+
+                if ($existing) {
+                    return $existing;
+                }
+            }
+
             if (! empty($data['pay_all'])) {
                 return $this->settleCompanyPayables($data, $actor);
             }
@@ -32,7 +42,7 @@ class CompanyPaymentService
                     ]);
                 }
 
-                if ((float) $data['amount'] > (float) $payable->balance_amount) {
+                if (empty($data['_preserve_payable_cache']) && (float) $data['amount'] > (float) $payable->balance_amount) {
                     throw ValidationException::withMessages([
                         'amount' => 'Payment amount cannot exceed the selected payable balance.',
                     ]);
@@ -43,6 +53,9 @@ class CompanyPaymentService
                 'payment_no' => $this->numberGeneratorService->next(CompanyPayment::class, 'payment_no', 'CPAY'),
                 'company_id' => $data['company_id'],
                 'company_payable_id' => $payable?->id,
+                'source_type' => $data['source_type'] ?? null,
+                'source_id' => $data['source_id'] ?? null,
+                'idempotency_key' => $data['idempotency_key'] ?? null,
                 'payment_date' => $data['payment_date'] ?? now()->toDateString(),
                 'amount' => $data['amount'],
                 'payment_method' => $data['payment_method'] ?? 'cash',
@@ -51,7 +64,7 @@ class CompanyPaymentService
                 'created_by' => $actor?->id,
             ]);
 
-            if ($payable) {
+            if ($payable && empty($data['_preserve_payable_cache'])) {
                 $paidAmount = (float) $payable->paid_amount + (float) $data['amount'];
                 $balanceAmount = max(0, (float) $payable->amount - $paidAmount);
 
@@ -66,6 +79,17 @@ class CompanyPaymentService
 
             return $payment->fresh(['company', 'payable.stockReceipt']);
         });
+    }
+
+    /**
+     * Record a missing historical cash transaction without changing a payable
+     * whose paid/balance cache already includes that payment.
+     */
+    public function recordReconciliation(array $data, ?User $actor = null): CompanyPayment
+    {
+        $data['_preserve_payable_cache'] = true;
+
+        return $this->record($data, $actor);
     }
 
     private function settleCompanyPayables(array $data, ?User $actor = null): array
@@ -97,6 +121,9 @@ class CompanyPaymentService
                 'payment_no' => $this->numberGeneratorService->next(CompanyPayment::class, 'payment_no', 'CPAY'),
                 'company_id' => $payable->company_id,
                 'company_payable_id' => $payable->id,
+                'source_type' => $data['source_type'] ?? null,
+                'source_id' => $data['source_id'] ?? null,
+                'idempotency_key' => ! empty($data['idempotency_key']) ? $data['idempotency_key'] . ":{$payable->id}" : null,
                 'payment_date' => $data['payment_date'] ?? now()->toDateString(),
                 'amount' => $amount,
                 'payment_method' => $data['payment_method'] ?? 'cash',

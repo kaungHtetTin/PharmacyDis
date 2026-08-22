@@ -21,6 +21,9 @@ class InvoicePrintController extends Controller
             'items.unit',
             'items.salesOrderItem.focUnit',
             'allocations.payment',
+            'salesReturns' => fn ($query) => $query->where('status', 'posted')->orderBy('return_date'),
+            'customerCredits' => fn ($query) => $query->where('status', 'available')->orderBy('credit_date'),
+            'customerChargeAdjustments' => fn ($query) => $query->where('status', 'posted')->orderBy('adjustment_date'),
         ]);
 
         return view('office.invoices.print', [

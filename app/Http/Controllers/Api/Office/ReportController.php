@@ -6,10 +6,11 @@ use App\Http\Controllers\Controller;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Services\FinancialReportService;
 
 class ReportController extends Controller
 {
-    public function financeOverview(Request $request)
+    public function financeOverview(Request $request, FinancialReportService $financialReportService)
     {
         $duration = in_array($request->query('duration'), ['month', 'year'], true)
             ? $request->query('duration')
@@ -49,11 +50,15 @@ class ReportController extends Controller
             ->whereBetween('return_date', [$start->toDateString(), $end->toDateString()])
             ->when($companyId, fn ($query) => $query->where('company_id', $companyId));
 
-        $salesTotal = (float) (clone $invoiceQuery)->sum('total_amount');
-        $salesReturnTotal = (float) (clone $salesReturnQuery)->sum('total_amount');
-        $salesReturnCount = (int) (clone $salesReturnQuery)->count();
-        $invoiceCount = (int) (clone $invoiceQuery)->count();
-        $receivableTotal = (float) (clone $invoiceQuery)->sum('balance_amount');
+        $financialSnapshot = $financialReportService->periodSnapshot($start, $end, $companyId);
+        $costCoverage = $financialReportService->stockCostCoverage($companyId);
+        $salesTotal = $financialSnapshot['gross_sales'];
+        $salesReturnTotal = $financialSnapshot['return_credits'];
+        $salesReturnCount = $financialSnapshot['return_count'];
+        $invoiceCount = $financialSnapshot['invoice_count'];
+        $cashBackTotal = $financialSnapshot['cash_back'];
+        $netSalesTotal = $financialSnapshot['net_sales'];
+        $receivableTotal = $financialSnapshot['receivable_as_of'];
         $customerIncome = (float) (clone $customerPaymentQuery)->sum('amount');
         $supplierOutcome = (float) (clone $companyPaymentQuery)->sum('amount');
         $ledgerIncome = $includeFreeLedger ? (float) (clone $ledgerQuery)->where('direction', 'income')->sum('amount') : 0.0;
@@ -67,7 +72,7 @@ class ReportController extends Controller
             ->when($companyId, fn ($query) => $query->where('company_id', $companyId))
             ->sum('balance_amount');
         $stockHoldingValue = $this->stockHoldingValue($companyId);
-        $collectionRate = $salesTotal > 0 ? round(($incomeTotal / $salesTotal) * 100, 1) : 0;
+        $collectionRate = $netSalesTotal > 0 ? round(($customerIncome / $netSalesTotal) * 100, 1) : 0;
         $profitMargin = $incomeTotal > 0 ? round(($netCash / $incomeTotal) * 100, 1) : 0;
 
         $incomeBuckets = $this->emptyFinanceBucketValues($buckets);
@@ -108,13 +113,17 @@ class ReportController extends Controller
 
         return [
             'metrics' => [
-                ['label' => 'Invoice sales', 'value' => number_format($salesTotal), 'note' => "{$invoiceCount} invoices in {$durationLabel}"],
-                ['label' => 'Sales returns', 'value' => number_format($salesReturnTotal), 'note' => "{$salesReturnCount} returns posted in {$durationLabel}"],
+                ['label' => 'Gross sales', 'value' => number_format($salesTotal), 'note' => "{$invoiceCount} non-void invoices by invoice date"],
+                ['label' => 'Sales returns', 'value' => number_format($salesReturnTotal), 'note' => "{$salesReturnCount} posted credits by return date"],
+                ['label' => 'Cash back', 'value' => number_format($cashBackTotal), 'note' => 'Approved sales deductions in period'],
+                ['label' => 'Net sales', 'value' => number_format($netSalesTotal), 'note' => 'Gross sales - returns - cash back'],
                 ['label' => 'Cash income', 'value' => number_format($incomeTotal), 'note' => $includeFreeLedger ? 'Customer payments + free ledger income' : 'Customer payments for selected company'],
                 ['label' => 'Outcome', 'value' => number_format($outcomeTotal), 'note' => $includeFreeLedger ? 'Supplier payments + free ledger outcome' : 'Supplier payments for selected company'],
                 ['label' => 'Net cash', 'value' => number_format($netCash), 'note' => 'Income minus outcome'],
-                ['label' => 'Receivable', 'value' => number_format($receivableTotal), 'note' => 'Open invoice balance in period'],
-                ['label' => 'Stock holding value', 'value' => number_format($stockHoldingValue), 'note' => 'Available warehouse stock at receipt cost'],
+                ['label' => 'Receivable as of', 'value' => number_format($receivableTotal), 'note' => 'Event-based open balance at period end'],
+                ['label' => 'Customer credits', 'value' => number_format($financialSnapshot['customer_credit_liability']), 'note' => 'Available overpayment liability at period end'],
+                ['label' => 'FOC charges', 'value' => number_format($financialSnapshot['customer_charge_adjustments']), 'note' => 'Approved customer charge adjustments in period'],
+                ['label' => 'Stock holding value', 'value' => number_format($stockHoldingValue), 'note' => $costCoverage['unresolved_batch_count'] > 0 ? "Warning: {$costCoverage['unresolved_batch_count']} batches have unresolved cost" : 'All available batches have a resolved cost'],
                 ['label' => 'Profit margin', 'value' => "{$profitMargin}%", 'note' => 'Net cash against income'],
             ],
             'lineChart' => [
@@ -147,7 +156,7 @@ class ReportController extends Controller
                 [
                     'label' => 'Collection performance',
                     'value' => "{$collectionRate}%",
-                    'note' => 'Cash income collected against invoice sales',
+                    'note' => 'Customer payments collected against net sales',
                 ],
                 [
                     'label' => $companyId ? 'Marketing focus' : 'Best company',
@@ -164,6 +173,9 @@ class ReportController extends Controller
                 ['label' => 'Company', 'value' => $companyName ?: 'All companies', 'note' => 'Page-level filter'],
                 ['label' => 'Duration', 'value' => $durationLabel, 'note' => $start->toDateString() . ' to ' . $end->toDateString()],
                 ['label' => 'Ledger scope', 'value' => $includeFreeLedger ? 'Included' : 'Company-only', 'note' => $includeFreeLedger ? 'Free finance ledger is included in cash totals' : 'Free finance ledger is excluded because it is not linked to company'],
+                ['label' => 'Date basis', 'value' => 'Event date', 'note' => 'Invoices, returns, cash back, and payments use their own effective dates'],
+                ['label' => 'Sales reconciliation', 'value' => number_format($netSalesTotal), 'note' => number_format($salesTotal) . ' gross - ' . number_format($salesReturnTotal) . ' returns - ' . number_format($cashBackTotal) . ' cash back'],
+                ['label' => 'Commission', 'value' => number_format($financialSnapshot['commission_net']), 'note' => number_format($financialSnapshot['commission_gross']) . ' gross - ' . number_format($financialSnapshot['commission_reversed']) . ' reversed'],
             ],
             'tableColumns' => [
                 ['key' => 'rank', 'label' => 'Rank'],
@@ -197,6 +209,8 @@ class ReportController extends Controller
         $rows = DB::table('invoices')
             ->join('customers', 'customers.id', '=', 'invoices.customer_id')
             ->join('companies', 'companies.id', '=', 'invoices.company_id')
+            ->whereNull('invoices.deleted_at')
+            ->where('invoices.status', '!=', 'void')
             ->whereBetween('invoices.invoice_date', [$start->toDateString(), $end->toDateString()])
             ->when($request->filled('company_id'), fn ($query) => $query->where('invoices.company_id', $request->company_id))
             ->select([
@@ -206,7 +220,7 @@ class ReportController extends Controller
                 DB::raw('MIN(companies.name) as company'),
                 DB::raw('COUNT(DISTINCT invoices.company_id) as company_count'),
                 DB::raw('COUNT(invoices.id) as invoice_count'),
-                DB::raw('SUM(invoices.total_amount) as sales_total'),
+                DB::raw('SUM(COALESCE(NULLIF(invoices.original_total_amount, 0), invoices.total_amount)) as sales_total'),
                 DB::raw('SUM(invoices.balance_amount) as balance_total'),
             ])
             ->groupBy('customers.id', 'customers.code', 'customers.name')

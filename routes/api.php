@@ -68,6 +68,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('office')->middleware('user.type:office')->group(function () {
         Route::post('profile', [OfficeProfileController::class, 'update']);
         Route::get('dashboard', OfficeDashboardController::class)->middleware('permission:office.dashboard');
+        Route::patch('sales-return-foc-items/{salesReturnFocItem}/resolve', [OfficeSalesReturnController::class, 'resolveFoc']);
 
         Route::middleware('permission:office.master-data')->group(function () {
             Route::apiResource('companies', OfficeCompanyController::class)->except(['show']);
@@ -97,7 +98,6 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::patch('invoices/{invoice}/print-details', [OfficeInvoiceController::class, 'updateRemark']);
             Route::patch('invoices/{invoice}/remark', [OfficeInvoiceController::class, 'updateRemark']);
             Route::post('orders/{salesOrder}/generate-invoice', [OfficeInvoiceController::class, 'generateFromOrder']);
-            Route::post('sales-returns', [OfficeSalesReturnController::class, 'store']);
 
             Route::get('stock-receipts', [OfficeStockReceiptController::class, 'index']);
             Route::post('stock-receipts', [OfficeStockReceiptController::class, 'store']);
@@ -117,6 +117,9 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('payments/{payment}', [OfficePaymentController::class, 'show']);
             Route::post('payments', [OfficePaymentController::class, 'store']);
             Route::get('sales-returns', [OfficeSalesReturnController::class, 'index']);
+            Route::post('sales-returns', [OfficeSalesReturnController::class, 'store']);
+            Route::post('sales-returns/{salesReturn}/void', [OfficeSalesReturnController::class, 'void']);
+            Route::patch('sales-return-commission-adjustments/{commissionAdjustment}/review', [OfficeSalesReturnController::class, 'reviewCommission']);
             Route::apiResource('finance-categories', OfficeFinanceCategoryController::class)->except(['show']);
             Route::get('finance/transactions', [OfficeFinanceController::class, 'transactions']);
             Route::post('finance/transactions', [OfficeFinanceController::class, 'storeTransaction']);

@@ -100,22 +100,33 @@ function formatProductQuantity(baseQuantity, product = {}) {
 }
 
 function mapInvoiceItems(items = []) {
-    return items.map((item) => ({
+    return items.map((item) => {
+        const postedReturns = (item.sales_return_items || []).filter((returnItem) => returnItem.sales_return?.status === 'posted');
+        const returnedQuantity = postedReturns.reduce((sum, returnItem) => sum + Number(returnItem.quantity || 0), 0);
+        const returnedBaseQuantity = postedReturns.reduce((sum, returnItem) => sum + Number(returnItem.base_unit_quantity || 0), 0);
+
+        return ({
         id: item.id,
+        sales_order_item_id: item.sales_order_item_id || '',
         product_id: item.product_id,
         unit_id: item.unit_id,
         product: item.product?.name || `Product #${item.product_id}`,
         unit: item.unit?.name || `Unit #${item.unit_id}`,
         quantity: Number(item.quantity || 0),
+        returned_quantity: returnedQuantity,
+        returnable_quantity: Math.max(0, Number(item.quantity || 0) - returnedQuantity),
         conversion_factor_to_base: Number(item.conversion_factor_to_base || 1),
         base_unit_quantity: Number(item.base_unit_quantity || 0),
+        returned_base_unit_quantity: returnedBaseQuantity,
+        returnable_base_unit_quantity: Math.max(0, Number(item.base_unit_quantity || 0) - returnedBaseQuantity),
         unit_price: Number(item.unit_price || 0),
         discount_amount: Number(item.discount_amount || 0),
         line_total: Number(item.line_total || 0),
         foc: item.foc_base_unit_quantity || 0,
         total: money(item.line_total),
         status: 'Issued',
-    }));
+        });
+    });
 }
 
 function mapInvoicePayments(invoice) {
@@ -197,15 +208,26 @@ export function mapOrders(response) {
                 product_id: item.product_id,
                 unit_id: item.unit_id,
                 quantity: item.quantity,
+                base_unit_quantity: Number(item.base_unit_quantity || 0),
+                line_total: Number(item.line_total || 0),
                 foc_unit_id: item.foc_unit_id || '',
                 foc_quantity: item.foc_quantity || 0,
                 discount_percentage: item.discount_percentage || 0,
+                commission_amount: Number(item.commission_amount || 0),
             })),
             focItems: (order.foc_items || []).map((item) => ({
                 id: item.id,
+                sales_order_item_id: item.sales_order_item_id || '',
+                product_id: item.product_id,
                 product: item.product?.name || `Product #${item.product_id}`,
                 quantity: `${money(item.reward_base_unit_quantity)} base units`,
                 baseQuantity: `${money(item.reward_base_unit_quantity)} base units`,
+                base_quantity_value: Number(item.reward_base_unit_quantity || 0),
+                estimated_value_amount: Number(item.estimated_value_amount || 0),
+                rule_type: item.foc_rule?.rule_type || '',
+                minimum_quantity_base_units: Number(item.foc_rule?.minimum_quantity_base_units || 0),
+                minimum_order_value: Number(item.foc_rule?.minimum_order_value || 0),
+                reward_quantity_base_units: Number(item.foc_rule?.reward_quantity_base_units || 0),
                 rule: item.foc_rule
                     ? item.foc_rule.rule_type === 'value'
                         ? `Minimum order value ${money(item.foc_rule.minimum_order_value || 0)}`
@@ -233,6 +255,45 @@ export function mapInvoices(response) {
         const paymentRecords = mapInvoicePayments(invoice);
         const [sourceOrder] = invoice.sales_order ? mapOrders({ data: [invoice.sales_order] }) : [];
 
+        const originalAmount = Number(invoice.original_total_amount || invoice.total_amount || 0);
+        const returnCreditAmount = Number(invoice.return_credit_amount || 0);
+        const netCollectibleAmount = Number(invoice.net_collectible_amount || 0);
+        const paidAmount = Number(invoice.paid_amount || 0);
+        const balanceAmount = Number(invoice.balance_amount || 0);
+        const expectedNetCollectible = Math.max(0, originalAmount - Number(invoice.cash_back_amount || 0) - returnCreditAmount);
+        const expectedBalance = Math.max(0, expectedNetCollectible - paidAmount);
+        const hasIntegrityWarning = Math.abs(netCollectibleAmount - expectedNetCollectible) > 0.01
+            || Math.abs(balanceAmount - expectedBalance) > 0.01
+            || (invoice.status === 'paid' && paidAmount <= 0 && expectedNetCollectible > 0);
+        const settlementStatus = invoice.settlement_status || invoice.status || 'unpaid';
+        const returnEvents = (invoice.sales_returns || []).map((salesReturn) => ({
+            id: salesReturn.id,
+            reference: salesReturn.credit_note_no || salesReturn.return_no,
+            returnNo: salesReturn.return_no,
+            date: dateOnly(salesReturn.return_date) || '-',
+            amount: money(salesReturn.total_amount),
+            amount_value: Number(salesReturn.total_amount || 0),
+            status: titleCase(salesReturn.status),
+            focItems: salesReturn.foc_items || [],
+        }));
+        const creditEvents = (invoice.customer_credits || []).map((credit) => ({
+            id: credit.id,
+            reference: credit.credit_no,
+            date: dateOnly(credit.credit_date) || '-',
+            amount: money(credit.amount),
+            availableAmount: money(credit.available_amount),
+            status: titleCase(credit.status),
+            type: 'Customer credit',
+        }));
+        const chargeEvents = (invoice.customer_charge_adjustments || []).map((charge) => ({
+            id: charge.id,
+            reference: charge.adjustment_no,
+            date: dateOnly(charge.adjustment_date) || '-',
+            amount: money(charge.amount),
+            status: titleCase(charge.status),
+            type: 'FOC charge',
+        }));
+
         return {
             id: invoice.id,
             sales_order_id: invoice.sales_order_id || '',
@@ -258,20 +319,35 @@ export function mapInvoices(response) {
             discountAmount: money(invoice.discount_amount),
             taxAmount: money(invoice.tax_amount),
             amount: money(invoice.total_amount),
+            originalAmount: money(originalAmount),
+            original_total_amount: originalAmount,
+            returnCreditAmount: money(returnCreditAmount),
+            return_credit_amount: returnCreditAmount,
+            netCollectibleAmount: money(netCollectibleAmount),
+            net_collectible_amount: netCollectibleAmount,
             paid: money(invoice.paid_amount),
             paidAmount: money(invoice.paid_amount),
+            paid_amount: paidAmount,
             balanceAmount: money(invoice.balance_amount),
-            status_value: invoice.status || '',
-            status: titleCase(invoice.status),
+            integrityStatus: hasIntegrityWarning ? 'Review required' : 'Reconciled',
+            hasIntegrityWarning,
+            status_value: settlementStatus,
+            document_status: invoice.status || '',
+            settlement_status: settlementStatus,
+            status: titleCase(invoice.status === 'void' ? 'void' : settlementStatus),
             invoiceItems: mapInvoiceItems(invoice.items || []),
             totals: [
                 { label: 'Subtotal', value: money(invoice.subtotal_amount) },
                 { label: 'Discount', value: money(invoice.discount_amount) },
                 { label: 'Tax', value: money(invoice.tax_amount) },
                 { label: 'Cash back', value: money(invoice.cash_back_amount) },
-                { label: 'Total', value: money(invoice.total_amount) },
+                { label: 'Original invoice', value: money(originalAmount) },
+                { label: 'Return credits', value: money(returnCreditAmount) },
+                { label: 'Net collectible', value: money(netCollectibleAmount) },
             ],
             paymentRecords,
+            returnEvents,
+            adjustmentEvents: [...creditEvents, ...chargeEvents],
             sourceOrder,
         };
     });
@@ -313,9 +389,16 @@ export function mapPayments(response) {
 }
 
 export function mapSalesReturns(response) {
-    return unwrapCollection(response).map((salesReturn) => ({
+    return unwrapCollection(response).map((salesReturn) => {
+        const focItems = salesReturn.foc_items || [];
+        const commissionAdjustments = salesReturn.commission_adjustments || [];
+        const pendingFocCount = focItems.filter((item) => item.status === 'pending_review').length;
+        const pendingCommissionCount = commissionAdjustments.filter((item) => item.status === 'pending_approval').length;
+
+        return ({
         id: salesReturn.id,
         returnNo: salesReturn.return_no,
+        creditNote: salesReturn.credit_note_no || '-',
         invoice_id: salesReturn.invoice_id || '',
         invoice: salesReturn.invoice?.invoice_no || `Invoice #${salesReturn.invoice_id || '-'}`,
         order: salesReturn.sales_order?.order_no || `SO #${salesReturn.sales_order_id || '-'}`,
@@ -334,9 +417,18 @@ export function mapSalesReturns(response) {
         invoice_balance_amount: Number(salesReturn.invoice_balance_amount || 0),
         items: `${salesReturn.items_count || (salesReturn.items || []).length || 0} items`,
         reason: salesReturn.reason || '-',
+        focItems,
+        commissionAdjustments,
+        pendingFocCount,
+        pendingCommissionCount,
+        integrityReview: pendingFocCount || pendingCommissionCount
+            ? `${pendingFocCount} FOC / ${pendingCommissionCount} commission pending`
+            : 'Complete',
+        hasPendingIntegrityReview: pendingFocCount > 0 || pendingCommissionCount > 0,
         status_value: salesReturn.status || 'posted',
         status: titleCase(salesReturn.status || 'posted'),
-    }));
+        });
+    });
 }
 
 export function mapFinanceTransactions(response) {
@@ -379,10 +471,21 @@ export function mapReceivables(response) {
     return unwrapCollection(response).map((invoice) => {
         const dueDate = dateOnly(invoice.due_date);
         const today = new Date().toISOString().slice(0, 10);
-        const status = dueDate && dueDate < today && invoice.status !== 'paid'
+        const settlementStatus = invoice.settlement_status || invoice.status;
+        const status = dueDate && dueDate < today && !['paid', 'credited', 'void'].includes(settlementStatus)
             ? 'Overdue'
-            : titleCase(invoice.status);
+            : titleCase(invoice.status === 'void' ? 'void' : settlementStatus);
         const paymentRecords = mapInvoicePayments(invoice);
+        const originalAmount = Number(invoice.original_total_amount || invoice.total_amount || 0);
+        const returnCreditAmount = Number(invoice.return_credit_amount || 0);
+        const netCollectibleAmount = Number(invoice.net_collectible_amount || 0);
+        const paidAmount = Number(invoice.paid_amount || 0);
+        const balanceAmount = Number(invoice.balance_amount || 0);
+        const expectedNetCollectible = Math.max(0, originalAmount - Number(invoice.cash_back_amount || 0) - returnCreditAmount);
+        const expectedBalance = Math.max(0, expectedNetCollectible - paidAmount);
+        const hasIntegrityWarning = Math.abs(netCollectibleAmount - expectedNetCollectible) > 0.01
+            || Math.abs(balanceAmount - expectedBalance) > 0.01
+            || (invoice.status === 'paid' && paidAmount <= 0 && expectedNetCollectible > 0);
 
         return {
             id: invoice.id,
@@ -399,10 +502,18 @@ export function mapReceivables(response) {
             cash_back_amount: Number(invoice.cash_back_amount || 0),
             cash_back_limit_amount: Number(invoice.cash_back_limit_amount || 0),
             amount: money(invoice.total_amount),
+            originalAmount: money(invoice.original_total_amount || invoice.total_amount),
+            original_total_amount: originalAmount,
+            returnCreditAmount: money(invoice.return_credit_amount),
+            return_credit_amount: returnCreditAmount,
+            netCollectibleAmount: money(invoice.net_collectible_amount),
+            net_collectible_amount: netCollectibleAmount,
             paid: money(invoice.paid_amount),
             paidAmount: money(invoice.paid_amount),
             balanceAmount: money(invoice.balance_amount),
             balance_amount: invoice.balance_amount || 0,
+            integrityStatus: hasIntegrityWarning ? 'Review required' : 'Reconciled',
+            hasIntegrityWarning,
             status,
             invoiceItems: mapInvoiceItems(invoice.items || []),
             paymentRecords,
@@ -412,6 +523,10 @@ export function mapReceivables(response) {
                 invoice_id: invoice.id,
                 invoice_no: invoice.invoice_no,
                 balance_amount: invoice.balance_amount || 0,
+                original_total_amount: invoice.original_total_amount || invoice.total_amount || 0,
+                cash_back_amount: invoice.cash_back_amount || 0,
+                return_credit_amount: invoice.return_credit_amount || 0,
+                paid_amount: invoice.paid_amount || 0,
             },
         };
     });

@@ -14,6 +14,7 @@ class StoreCompanyPaymentRequest extends FormRequest
     public function rules()
     {
         return [
+            'idempotency_key' => ['nullable', 'string', 'max:100'],
             'company_id' => ['required', 'exists:companies,id'],
             'company_payable_id' => ['nullable', 'exists:company_payables,id'],
             'pay_all' => ['nullable', 'boolean'],
